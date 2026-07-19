@@ -3,11 +3,16 @@ package org.accessibilizer.pdf;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.itextpdf.kernel.exceptions.BadPasswordException;
+import com.itextpdf.kernel.exceptions.PdfException;
 import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.geom.PageSize;
 import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfArray;
+import com.itextpdf.kernel.pdf.PdfDictionary;
 import com.itextpdf.kernel.pdf.PdfName;
+import com.itextpdf.kernel.pdf.PdfObject;
 import com.itextpdf.kernel.pdf.PdfOutline;
 import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.PdfString;
@@ -30,7 +35,10 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 public final class Author {
     private static final Path FONT = Path.of("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
@@ -39,16 +47,118 @@ public final class Author {
     }
 
     public static void main(String[] arguments) throws Exception {
+        if (arguments.length == 2 && arguments[0].equals("--preflight")) {
+            System.out.println(new Gson().toJson(preflight(Path.of(arguments[1]))));
+            return;
+        }
         if (arguments.length == 2 && arguments[0].equals("--inspect")) {
             System.out.println(new Gson().toJson(inspect(Path.of(arguments[1]))));
             return;
         }
         if (arguments.length != 3) {
             throw new IllegalArgumentException(
-                    "usage: pdf-author CONTRACT SOURCE OUTPUT | pdf-author --inspect OUTPUT");
+                    "usage: pdf-author CONTRACT SOURCE OUTPUT | "
+                            + "pdf-author --preflight SOURCE | pdf-author --inspect OUTPUT");
         }
         JsonObject contract = readContract(Path.of(arguments[0]));
         author(contract, Path.of(arguments[1]), Path.of(arguments[2]));
+    }
+
+    private static JsonObject preflight(Path sourcePath) throws IOException {
+        JsonArray unsupportedFeatures = new JsonArray();
+        try (PdfDocument document = new PdfDocument(new PdfReader(sourcePath.toString()))) {
+            if (document.getReader().isEncrypted()) {
+                unsupportedFeatures.add("encryption");
+            }
+            for (int objectNumber = 1;
+                    objectNumber < document.getNumberOfPdfObjects();
+                    objectNumber++) {
+                PdfObject object = document.getPdfObject(objectNumber);
+                inspectObject(
+                        object,
+                        unsupportedFeatures,
+                        Collections.newSetFromMap(new IdentityHashMap<>()));
+            }
+        } catch (BadPasswordException error) {
+            unsupportedFeatures.add("encryption");
+        } catch (PdfException error) {
+            if (error.getMessage() != null && error.getMessage().contains("PdfEncryption")) {
+                unsupportedFeatures.add("encryption");
+            } else {
+                throw error;
+            }
+        }
+        JsonObject result = new JsonObject();
+        result.add("unsupported_features", unsupportedFeatures);
+        return result;
+    }
+
+    private static void inspectObject(
+            PdfObject object, JsonArray unsupportedFeatures, Set<PdfObject> visited) {
+        if (object == null || object.isIndirectReference() || !visited.add(object)) {
+            return;
+        }
+        if (object instanceof PdfDictionary dictionary) {
+            inspectDictionary(dictionary, unsupportedFeatures);
+            for (var entry : dictionary.entrySet()) {
+                inspectObject(entry.getValue(), unsupportedFeatures, visited);
+            }
+        } else if (object instanceof PdfArray array) {
+            for (int index = 0; index < array.size(); index++) {
+                inspectObject(array.get(index, false), unsupportedFeatures, visited);
+            }
+        }
+    }
+
+    private static void inspectDictionary(
+            PdfDictionary dictionary, JsonArray unsupportedFeatures) {
+        if (dictionary.containsKey(new PdfName("AcroForm"))) {
+            addFinding(unsupportedFeatures, "form fields");
+        }
+        if (dictionary.containsKey(new PdfName("JavaScript"))) {
+            addFinding(unsupportedFeatures, "JavaScript");
+        }
+        if (dictionary.containsKey(new PdfName("EmbeddedFiles"))
+                || dictionary.containsKey(new PdfName("AF"))) {
+            addFinding(unsupportedFeatures, "embedded files");
+        }
+        if (dictionary.containsKey(new PdfName("OpenAction"))
+                || dictionary.containsKey(new PdfName("AA"))) {
+            addFinding(unsupportedFeatures, "automatic or additional actions");
+        }
+
+        PdfName fieldType = dictionary.getAsName(new PdfName("FT"));
+        PdfName type = dictionary.getAsName(PdfName.Type);
+        if (PdfName.Sig.equals(fieldType) || PdfName.Sig.equals(type)
+                || dictionary.containsKey(new PdfName("ByteRange"))) {
+            addFinding(unsupportedFeatures, "digital signatures");
+        }
+
+        PdfName action = dictionary.getAsName(PdfName.S);
+        Set<String> unsupportedActions = Set.of(
+                "JavaScript", "Launch", "Sound", "Movie", "Rendition", "GoToE", "GoToR",
+                "GoTo", "URI", "Named", "SubmitForm", "ResetForm", "ImportData", "Hide",
+                "SetOCGState", "Trans");
+        if (action != null && unsupportedActions.contains(action.getValue())) {
+            addFinding(unsupportedFeatures, "interactive action " + action.getValue());
+        }
+
+        PdfName subtype = dictionary.getAsName(PdfName.Subtype);
+        Set<String> unsupportedAnnotations = Set.of(
+                "Widget", "Link", "FileAttachment", "Sound", "Movie", "Screen", "RichMedia",
+                "3D");
+        if (subtype != null && unsupportedAnnotations.contains(subtype.getValue())) {
+            addFinding(unsupportedFeatures, "interactive annotation " + subtype.getValue());
+        }
+    }
+
+    private static void addFinding(JsonArray findings, String finding) {
+        for (var existing : findings) {
+            if (existing.getAsString().equals(finding)) {
+                return;
+            }
+        }
+        findings.add(finding);
     }
 
     private static JsonObject readContract(Path path) throws IOException {

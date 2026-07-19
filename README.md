@@ -26,6 +26,11 @@ Run the public host launcher:
 ```
 
 The launcher supports macOS and Linux paths and keeps Docker as an implementation detail. It refuses to overwrite an existing Conversion Bundle.
+Pass `--replace` to explicitly authorize replacement. Accessibilizer builds the replacement in a protected staging directory and leaves the existing bundle, including Reviewer edits, untouched if conversion fails.
+
+Before conversion, Accessibilizer rejects encrypted or digitally signed Source PDFs and PDFs containing forms, JavaScript, embedded files or media, links, or other interactive actions that this version cannot preserve safely.
+
+With `--json`, every outcome is machine-readable. Exit `0` reports `accessible`, exit `2` reports `review_required` when unresolved Conversion Warnings remain, and exit `1` reports `operational_failure`.
 
 ## Conversion Bundle
 
