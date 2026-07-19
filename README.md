@@ -4,6 +4,8 @@ Accessibilizer turns visually readable Source PDFs into documents whose Visual L
 
 The current implementation is the one-page PDF/UA feasibility slice from issue #2. It accepts a deterministic semantic contract, imports one native source page as artifact content, adds representative heading, paragraph, Formula, and Informative Figure semantics, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. Recognition and model-provider integration are intentionally outside this slice.
 
+The feasibility output is not yet compatible with the primary assistive-technology environment. The [macOS Preview and VoiceOver validation](docs/validation/2026-07-19-macos-preview-voiceover.md) found clipped text and missing Figure Alternative and Detailed Figure Description content even though the Visual Layer and automated PDF/UA checks passed. ADR 0026 blocks recognition work from expanding on the current Semantic Layer overlay.
+
 ## Build and convert
 
 Build the canonical runtime:
