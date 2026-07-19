@@ -16,7 +16,7 @@ operational_failure() {
 }
 
 if [ "${1:-}" != "convert" ]; then
-    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [provider options] [--replace] [--json]"
+    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [provider options] [runtime options] [--resume] [--replace] [--json]"
 fi
 shift
 
@@ -35,6 +35,11 @@ provider_model=
 provider_api_key_env=
 provider_data_location=
 allow_remote_flag=
+max_requests=
+provider_max_retries=
+provider_retry_base_seconds=
+provider_retry_max_seconds=
+resume_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --page) [ "$#" -ge 2 ] || operational_failure "--page requires a value"; page=$2; shift 2 ;;
@@ -44,7 +49,12 @@ while [ "$#" -gt 0 ]; do
         --provider-model) [ "$#" -ge 2 ] || operational_failure "--provider-model requires a value"; provider_model=$2; shift 2 ;;
         --provider-api-key-env) [ "$#" -ge 2 ] || operational_failure "--provider-api-key-env requires a value"; provider_api_key_env=$2; shift 2 ;;
         --provider-data-location) [ "$#" -ge 2 ] || operational_failure "--provider-data-location requires a value"; provider_data_location=$2; shift 2 ;;
+        --max-requests) [ "$#" -ge 2 ] || operational_failure "--max-requests requires a value"; max_requests=$2; shift 2 ;;
+        --provider-max-retries) [ "$#" -ge 2 ] || operational_failure "--provider-max-retries requires a value"; provider_max_retries=$2; shift 2 ;;
+        --provider-retry-base-seconds) [ "$#" -ge 2 ] || operational_failure "--provider-retry-base-seconds requires a value"; provider_retry_base_seconds=$2; shift 2 ;;
+        --provider-retry-max-seconds) [ "$#" -ge 2 ] || operational_failure "--provider-retry-max-seconds requires a value"; provider_retry_max_seconds=$2; shift 2 ;;
         --allow-remote) allow_remote_flag=--allow-remote; shift ;;
+        --resume) resume_flag=--resume; shift ;;
         --replace) replace_flag=--replace; shift ;;
         --json) json_flag=--json; shift ;;
         *) operational_failure "unknown argument" ;;
@@ -103,7 +113,24 @@ else
     operational_failure "provider configuration could not be resolved"
 fi
 
+cid_directory=$(mktemp -d "$bundle_parent/.${bundle_name}.container.XXXXXX") || \
+    operational_failure "could not prepare the container runtime"
+cidfile="$cid_directory/id"
+stop_conversion_container() {
+    if [ -f "$cidfile" ]; then
+        container_id=
+        IFS= read -r container_id < "$cidfile" || true
+        if [ -n "$container_id" ]; then
+            docker stop --time 1 "$container_id" >/dev/null 2>&1 || true
+        fi
+    fi
+    rm -f "$cidfile"
+    rmdir "$cid_directory" 2>/dev/null || true
+}
+trap 'stop_conversion_container; exit 143' HUP INT TERM
+
 set -- --rm \
+    --cidfile "$cidfile" \
     --user "$(id -u):$(id -g)" \
     --add-host "host.docker.internal:host-gateway" \
     --volume "$source_path:/work/source.pdf:ro" \
@@ -129,14 +156,22 @@ if [ -n "$provider_model" ]; then set -- "$@" --provider-model "$provider_model"
 if [ -n "$provider_api_key_env" ]; then set -- "$@" --provider-api-key-env "$provider_api_key_env"; fi
 if [ -n "$provider_data_location" ]; then set -- "$@" --provider-data-location "$provider_data_location"; fi
 if [ -n "$allow_remote_flag" ]; then set -- "$@" --allow-remote; fi
+if [ -n "$max_requests" ]; then set -- "$@" --max-requests "$max_requests"; fi
+if [ -n "$provider_max_retries" ]; then set -- "$@" --provider-max-retries "$provider_max_retries"; fi
+if [ -n "$provider_retry_base_seconds" ]; then set -- "$@" --provider-retry-base-seconds "$provider_retry_base_seconds"; fi
+if [ -n "$provider_retry_max_seconds" ]; then set -- "$@" --provider-retry-max-seconds "$provider_retry_max_seconds"; fi
 if [ -n "$json_flag" ]; then set -- "$@" --json; fi
 if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
+if [ -n "$resume_flag" ]; then set -- "$@" --resume; fi
 
 if docker run "$@"; then
     result=0
 else
     result=$?
 fi
+trap - HUP INT TERM
+rm -f "$cidfile"
+rmdir "$cid_directory" 2>/dev/null || true
 if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] && [ -n "$json_flag" ]; then
     printf '{"error":"container runtime failed","status":"operational_failure"}\n'
 fi

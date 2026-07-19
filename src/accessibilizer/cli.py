@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import hashlib
 import html
 import json
 import os
@@ -14,7 +13,21 @@ import sys
 import tempfile
 from typing import Any, TypedDict
 
-from accessibilizer.provider import authorize_remote, check_capabilities, resolve_provider
+from accessibilizer import __version__
+from accessibilizer.checkpoint import (
+    CheckpointStore,
+    atomic_write_json,
+    dependency_key,
+    file_sha256,
+)
+from accessibilizer.provider import (
+    RequestBudget,
+    RequestCeilingExceeded,
+    authorize_remote,
+    check_capabilities,
+    resolve_provider,
+)
+from accessibilizer.runtime import ConversionLimits, resolve_conversion_limits
 
 
 REQUIRED_NODE_FIELDS = {
@@ -51,7 +64,12 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--bundle", type=Path, required=True)
     _add_provider_arguments(convert)
     convert.add_argument("--allow-remote", action="store_true")
+    convert.add_argument("--max-requests", type=int)
+    convert.add_argument("--provider-max-retries", type=int)
+    convert.add_argument("--provider-retry-base-seconds", type=float)
+    convert.add_argument("--provider-retry-max-seconds", type=float)
     convert.add_argument("--replace", action="store_true")
+    convert.add_argument("--resume", action="store_true")
     convert.add_argument("--json", action="store_true")
     provider_key_env = subparsers.add_parser("provider-key-env", help=argparse.SUPPRESS)
     _add_provider_arguments(provider_key_env)
@@ -94,16 +112,91 @@ def _load_semantics(path: Path) -> dict[str, Any]:
     return data
 
 
-def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+def _atomic_copy(source: Path, destination: Path, mode: int | None = None) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", dir=destination.parent
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    try:
+        shutil.copyfile(source, temporary)
+        if mode is not None:
+            os.chmod(temporary, mode)
+        os.replace(temporary, destination)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+def _workspace_for(bundle: Path) -> Path:
+    return bundle.parent / f".{bundle.name}.in-progress"
+
+
+def _prepare_workspace(bundle: Path, *, replace: bool, resume: bool) -> Path:
+    workspace = _workspace_for(bundle)
+    if bundle.exists() and not replace:
+        raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
+    if workspace.exists():
+        if resume:
+            return workspace
+        if not replace:
+            raise FileExistsError(
+                f"incomplete conversion exists: {workspace}; pass --resume to continue "
+                "or --replace to start over"
+            )
+        shutil.rmtree(workspace)
+    elif resume:
+        raise FileNotFoundError(f"no incomplete conversion exists for: {bundle}")
+    if bundle.exists():
+        if not bundle.is_dir():
+            raise FileExistsError(f"Conversion Bundle path is not a directory: {bundle}")
+        shutil.copytree(
+            bundle,
+            workspace,
+            copy_function=shutil.copy2,
+            ignore=shutil.ignore_patterns("provenance.json", "request-usage.json"),
+        )
+        os.chmod(workspace, 0o700)
+    else:
+        workspace.mkdir(mode=0o700)
+    return workspace
+
+
+def _request_budget(
+    workspace: Path, limits: ConversionLimits, *, estimated_requests: int
+) -> RequestBudget:
+    usage_path = workspace / "request-usage.json"
+    actual_requests = 0
+    reported_usage: dict[str, int] = {}
+    if usage_path.is_file():
+        try:
+            stored: Any = json.loads(usage_path.read_text(encoding="utf-8"))
+            if not isinstance(stored, dict):
+                raise ValueError("request usage must be an object")
+            actual_requests = int(stored.get("actual_requests", 0))
+            raw_usage = stored.get("reported_token_usage", {})
+            if isinstance(raw_usage, dict):
+                reported_usage = {
+                    str(name): value
+                    for name, value in raw_usage.items()
+                    if isinstance(value, int) and not isinstance(value, bool)
+                }
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise RuntimeError("incomplete conversion has invalid request usage") from error
+
+    def persist(budget: RequestBudget) -> None:
+        atomic_write_json(usage_path, budget.as_dict())
+
+    budget = RequestBudget(
+        estimated_requests=estimated_requests,
+        ceiling=limits.max_requests,
+        actual_requests=actual_requests,
+        reported_token_usage=reported_usage,
+        on_change=persist,
+    )
+    persist(budget)
+    return budget
 
 
 def _publish_bundle(staging: Path, bundle: Path, replace: bool) -> None:
@@ -171,6 +264,14 @@ def _review_report(semantics: dict[str, Any]) -> str:
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, text=True, capture_output=True, check=False)
+
+
+def _tool_version(command: list[str]) -> str:
+    result = _run(command)
+    version = (result.stdout + result.stderr).strip()
+    if result.returncode or not version:
+        raise RuntimeError(f"could not determine tool version: {command[0]}")
+    return version
 
 
 def _read_ppm(path: Path) -> tuple[int, int, bytes]:
@@ -252,24 +353,63 @@ def _convert(args: argparse.Namespace) -> int:
     bundle: Path = args.bundle
     if args.page < 1:
         raise ValueError("--page must be positive")
-    if bundle.exists() and not args.replace:
-        raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
     provider = resolve_provider(args)
+    limits = resolve_conversion_limits(args)
     authorize_remote(provider, allow_remote=args.allow_remote)
-    check_capabilities(provider)
-    semantics = _load_semantics(args.semantic_input)
     bundle.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{bundle.name}.", dir=bundle.parent))
-    os.chmod(staging, 0o700)
-    try:
-        validation = staging / "validation"
-        validation.mkdir(mode=0o700)
-        source_copy = staging / "source.pdf"
-        source_sha256 = _sha256(source)
-        shutil.copyfile(source, source_copy)
-        if _sha256(source_copy) != source_sha256:
+    workspace = _prepare_workspace(
+        bundle, replace=args.replace, resume=args.resume
+    )
+    checkpoints = CheckpointStore(workspace)
+
+    capability_key = dependency_key({
+        "base_url": provider.base_url,
+        "capability_contract_version": "1.0",
+        "capability_prompt_version": "1.0",
+        "capability_schema_version": "1.0",
+        "model": provider.model,
+    })
+    capability_reusable = checkpoints.is_reusable("provider-capability", capability_key)
+    estimated_requests = 0 if capability_reusable else 1
+    budget = _request_budget(
+        workspace, limits, estimated_requests=estimated_requests
+    )
+    if not args.json:
+        print(
+            f"Estimated provider requests: {budget.estimated_requests} "
+            f"(ceiling: {budget.ceiling})"
+        )
+    if not capability_reusable:
+        if budget.actual_requests + 1 > budget.ceiling:
+            raise RequestCeilingExceeded(
+                f"conversion paused before exceeding request ceiling {budget.ceiling}; "
+                "resume with a higher --max-requests value"
+            )
+        check_capabilities(
+            provider,
+            budget=budget,
+            max_retries=limits.provider_max_retries,
+            retry_base_seconds=limits.provider_retry_base_seconds,
+            retry_max_seconds=limits.provider_retry_max_seconds,
+        )
+        checkpoints.complete("provider-capability", capability_key, [])
+
+    semantics = _load_semantics(args.semantic_input)
+    validation = workspace / "validation"
+    validation.mkdir(mode=0o700, exist_ok=True)
+    source_copy = workspace / "source.pdf"
+    source_sha256 = file_sha256(source)
+    source_key = dependency_key({
+        "pdf_author_sha256": file_sha256(Path("/opt/accessibilizer/pdf-author.jar")),
+        "preflight_contract_version": "1.0",
+        "preflight_stage_version": "1.0",
+        "source_sha256": source_sha256,
+    })
+    preflight_artifact = validation / "preflight.json"
+    if not checkpoints.is_reusable("source", source_key):
+        _atomic_copy(source, source_copy, stat.S_IRUSR)
+        if file_sha256(source_copy) != source_sha256:
             raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
-        os.chmod(source_copy, stat.S_IRUSR)
         preflight = _run([
             "java", "-jar", "/opt/accessibilizer/pdf-author.jar", "--preflight",
             str(source_copy),
@@ -286,18 +426,50 @@ def _convert(args: argparse.Namespace) -> int:
         if unsupported_features:
             features = ", ".join(str(feature) for feature in unsupported_features)
             raise RuntimeError(f"Unsupported Source PDF: {features}")
-        _write_json(staging / "review-record.json", semantics)
-        (staging / "review-report.html").write_text(
-            _review_report(semantics), encoding="utf-8"
-        )
-        regions = staging / "regions"
-        regions.mkdir(mode=0o700)
+        atomic_write_json(preflight_artifact, preflight_result)
+        checkpoints.complete("source", source_key, [source_copy, preflight_artifact])
+
+    regions = workspace / "regions"
+    regions.mkdir(mode=0o700, exist_ok=True)
+    crop_artifact = regions / f"page-{args.page}.png"
+    region_key = dependency_key({
+        "format": "png",
+        "page": args.page,
+        "renderer": "pdftoppm",
+        "renderer_version": _tool_version(["pdftoppm", "-v"]),
+        "rendering_dpi": 144,
+        "source_sha256": source_sha256,
+    })
+    if not checkpoints.is_reusable(f"region-page-{args.page}", region_key):
         crop = _run([
             "pdftoppm", "-f", str(args.page), "-l", str(args.page), "-singlefile",
-            "-r", "144", "-png", str(source_copy), str(regions / "page-1"),
+            "-r", "144", "-png", str(source_copy),
+            str(regions / f"page-{args.page}"),
         ])
         if crop.returncode:
             raise RuntimeError(f"source-region crop failed: {crop.stderr}")
+        checkpoints.complete(
+            f"region-page-{args.page}", region_key, [crop_artifact]
+        )
+
+    semantic_input_sha256 = file_sha256(args.semantic_input)
+    page_key = dependency_key({
+        "authoring_contract_version": "1.0",
+        "page_stage_version": "1.0",
+        "pdf_author_sha256": file_sha256(Path("/opt/accessibilizer/pdf-author.jar")),
+        "page": args.page,
+        "review_report_version": "1.0",
+        "semantic_input_sha256": semantic_input_sha256,
+        "source_sha256": source_sha256,
+    })
+    review_record = workspace / "review-record.json"
+    review_report = workspace / "review-report.html"
+    authoring_contract = workspace / "authoring.json"
+    output = workspace / "output.pdf"
+    page_stage = f"page-{args.page}"
+    if not checkpoints.is_reusable(page_stage, page_key):
+        atomic_write_json(review_record, semantics)
+        review_report.write_text(_review_report(semantics), encoding="utf-8")
         contract = {
             "language": semantics["language"],
             "page": args.page,
@@ -305,15 +477,32 @@ def _convert(args: argparse.Namespace) -> int:
             "semantic_layer": semantics["semantic_layer"],
             "title": semantics["title"],
         }
-        _write_json(staging / "authoring.json", contract)
-        output = staging / "output.pdf"
+        atomic_write_json(authoring_contract, contract)
         authored = _run([
             "java", "-jar", "/opt/accessibilizer/pdf-author.jar",
-            str(staging / "authoring.json"), str(source_copy), str(output),
+            str(authoring_contract), str(source_copy), str(output),
         ])
         if authored.returncode:
             raise RuntimeError(f"PDF authoring failed: {authored.stderr}")
+        checkpoints.complete(
+            page_stage,
+            page_key,
+            [review_record, review_report, authoring_contract, output],
+        )
 
+    validation_key = dependency_key({
+        "internal_checks_version": "1.0",
+        "page_stage": page_key,
+        "region_stage": region_key,
+        "verapdf_profile": "ua1",
+        "verapdf_version": _tool_version(["verapdf", "--version"]),
+        "visual_dpi": 144,
+        "visual_tolerance": 0.0001,
+    })
+    internal_artifact = validation / "internal.json"
+    visual_artifact = validation / "visual.json"
+    verapdf_artifact = validation / "verapdf.xml"
+    if not checkpoints.is_reusable("validation", validation_key):
         inspected = _run([
             "java", "-jar", "/opt/accessibilizer/pdf-author.jar", "--inspect", str(output),
         ])
@@ -324,32 +513,36 @@ def _convert(args: argparse.Namespace) -> int:
         except json.JSONDecodeError as error:
             raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
         internal = _internal_checks(semantics, extracted_semantics)
-        _write_json(validation / "internal.json", internal)
-        visual = _visual_report(source_copy, output, args.page, staging)
-        _write_json(validation / "visual.json", visual)
-        for render in staging.glob("*-render.ppm"):
+        atomic_write_json(internal_artifact, internal)
+        visual = _visual_report(source_copy, output, args.page, workspace)
+        atomic_write_json(visual_artifact, visual)
+        for render in workspace.glob("*-render.ppm"):
             render.unlink()
 
         verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
-        (validation / "verapdf.xml").write_text(verapdf.stdout, encoding="utf-8")
+        verapdf_artifact.write_text(verapdf.stdout, encoding="utf-8")
         compliant = 'isCompliant="true"' in verapdf.stdout
         visual_failed = visual["different_pixel_ratio"] > visual["tolerance"]
         if not internal["passed"] or visual_failed or not compliant:
             raise RuntimeError("conversion failed its accessibility or visual-preservation gates")
-        _write_json(staging / "provenance.json", {
-            "accessibilizer_version": "0.1.0",
-            "authoring_contract_version": "1.0",
-            "source_copy_verified": True,
-            "source_sha256": source_sha256,
-            "source_page": args.page,
-            "provider_data_location": provider.data_location,
-            "provider_endpoint": provider.base_url,
-            "provider_model": provider.model,
-        })
-        _publish_bundle(staging, bundle, args.replace)
-    except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
+        checkpoints.complete(
+            "validation",
+            validation_key,
+            [internal_artifact, visual_artifact, verapdf_artifact],
+        )
+
+    atomic_write_json(workspace / "provenance.json", {
+        "accessibilizer_version": __version__,
+        "authoring_contract_version": "1.0",
+        "source_copy_verified": True,
+        "source_sha256": source_sha256,
+        "source_page": args.page,
+        "provider_data_location": provider.data_location,
+        "provider_endpoint": provider.base_url,
+        "provider_model": provider.model,
+        "provider_usage": budget.as_dict(),
+    })
+    _publish_bundle(workspace, bundle, args.replace)
 
     host_bundle = Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
     review_required = any(

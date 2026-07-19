@@ -6,14 +6,17 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 try:
     import tomllib
 except ImportError:  # pragma: no cover - the canonical Python 3.10 image uses tomli
     import tomli as tomllib  # type: ignore[import-not-found, no-redef]
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, Mapping, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+from accessibilizer.configuration import config_path
 
 
 CAPABILITY_IMAGE = (
@@ -32,9 +35,74 @@ class ProviderConfig:
     data_location: DataLocation
 
 
-def _config_path(environment_name: str, default: Path) -> Path:
-    configured = os.environ.get(environment_name)
-    return Path(configured) if configured else default
+class RequestCeilingExceeded(RuntimeError):
+    pass
+
+
+class RequestBudget:
+    def __init__(
+        self,
+        *,
+        estimated_requests: int,
+        ceiling: int,
+        actual_requests: int = 0,
+        reported_token_usage: Mapping[str, int] | None = None,
+        on_change: Callable[[RequestBudget], None] | None = None,
+    ) -> None:
+        if estimated_requests < 0 or ceiling < 0 or actual_requests < 0:
+            raise ValueError("request counts and request ceiling must not be negative")
+        if actual_requests > ceiling:
+            raise RequestCeilingExceeded(
+                f"conversion already used {actual_requests} requests, above the configured "
+                f"request ceiling {ceiling}; resume with a higher --max-requests value"
+            )
+        self.estimated_requests = estimated_requests
+        self.ceiling = ceiling
+        self.actual_requests = actual_requests
+        self.reported_token_usage: dict[str, int] = {}
+        for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = (reported_token_usage or {}).get(name)
+            if value is not None:
+                if isinstance(value, bool) or value < 0:
+                    raise ValueError("reported token usage must not be negative")
+                self.reported_token_usage[name] = int(value)
+        self._on_change = on_change
+
+    def reserve(self) -> None:
+        if self.actual_requests >= self.ceiling:
+            raise RequestCeilingExceeded(
+                f"conversion paused before exceeding request ceiling {self.ceiling}; "
+                "resume with a higher --max-requests value"
+            )
+        self.actual_requests += 1
+        self._changed()
+
+    def record_reported_usage(self, response: object) -> None:
+        if not isinstance(response, dict) or not isinstance(response.get("usage"), dict):
+            return
+        usage: dict[object, object] = response["usage"]
+        changed = False
+        for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            value = usage.get(name)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                self.reported_token_usage[name] = (
+                    self.reported_token_usage.get(name, 0) + value
+                )
+                changed = True
+        if changed:
+            self._changed()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "actual_requests": self.actual_requests,
+            "estimated_requests": self.estimated_requests,
+            "reported_token_usage": dict(self.reported_token_usage),
+            "request_ceiling": self.ceiling,
+        }
+
+    def _changed(self) -> None:
+        if self._on_change is not None:
+            self._on_change(self)
 
 
 def _load_provider_config(path: Path) -> dict[str, str]:
@@ -63,8 +131,8 @@ def _load_provider_config(path: Path) -> dict[str, str]:
 
 def resolve_provider(args: argparse.Namespace) -> ProviderConfig:
     user_default = Path.home() / ".config" / "accessibilizer" / "config.toml"
-    user_path = _config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
-    project_path = _config_path(
+    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
+    project_path = config_path(
         "ACCESSIBILIZER_PROJECT_CONFIG", Path.cwd() / "accessibilizer.toml"
     )
     resolved = _load_provider_config(user_path)
@@ -147,7 +215,19 @@ def _capability_base_url(config: ProviderConfig) -> str:
     return config.base_url
 
 
-def check_capabilities(config: ProviderConfig) -> None:
+def check_capabilities(
+    config: ProviderConfig,
+    *,
+    budget: RequestBudget | None = None,
+    max_retries: int = 3,
+    retry_base_seconds: float = 0.5,
+    retry_max_seconds: float = 8.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    if max_retries < 0:
+        raise ValueError("provider max retries must not be negative")
+    if retry_base_seconds < 0 or retry_max_seconds < 0:
+        raise ValueError("provider retry delays must not be negative")
     schema = {
         "type": "object",
         "properties": {
@@ -189,13 +269,37 @@ def check_capabilities(config: ProviderConfig) -> None:
         headers=headers,
         method="POST",
     )
-    try:
-        with urlopen(request, timeout=15) as response:
-            result: Any = json.loads(response.read())
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
-        raise RuntimeError(
-            "provider capability check failed; base64 vision input and JSON-Schema responses are required"
-        ) from error
+    result: Any = None
+    for attempt in range(max_retries + 1):
+        if budget is not None:
+            budget.reserve()
+        try:
+            with urlopen(request, timeout=15) as response:
+                result = json.loads(response.read())
+            if budget is not None:
+                budget.record_reported_usage(result)
+            break
+        except HTTPError as error:
+            transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
+            error.close()
+            if not transient or attempt == max_retries:
+                raise RuntimeError(
+                    "provider capability check failed; base64 vision input and "
+                    "JSON-Schema responses are required"
+                ) from error
+        except (URLError, TimeoutError) as error:
+            if attempt == max_retries:
+                raise RuntimeError(
+                    "provider capability check failed; base64 vision input and "
+                    "JSON-Schema responses are required"
+                ) from error
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "provider capability check failed; provider returned invalid JSON"
+            ) from error
+        delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
+        if delay:
+            sleep(delay)
     try:
         content = result["choices"][0]["message"]["content"]
         checked: Any = json.loads(content)
