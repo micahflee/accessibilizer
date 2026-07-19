@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from tests.test_provider_acceptance import FakeProvider
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
@@ -74,6 +76,17 @@ def write_pdf(
 
 
 class OnePageConversionTest(unittest.TestCase):
+    provider: FakeProvider
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.provider = FakeProvider()
+        cls.provider.__enter__()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.provider.__exit__()
+
     def run_conversion(
         self,
         source: Path,
@@ -95,6 +108,12 @@ class OnePageConversionTest(unittest.TestCase):
                 str(semantic_input),
                 "--bundle",
                 str(bundle),
+                "--provider-base-url",
+                self.provider.base_url,
+                "--provider-model",
+                "acceptance-model-2026-07-19",
+                "--provider-data-location",
+                "local",
                 *replacement_arguments,
                 "--json",
             ],
@@ -259,6 +278,12 @@ class OnePageConversionTest(unittest.TestCase):
                     str(SEMANTIC_INPUT),
                     "--bundle",
                     str(bundle),
+                    "--provider-base-url",
+                    self.provider.base_url,
+                    "--provider-model",
+                    "acceptance-model-2026-07-19",
+                    "--provider-data-location",
+                    "local",
                     "--json",
                 ],
                 cwd=ROOT,
