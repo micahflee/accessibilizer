@@ -19,8 +19,16 @@ SEMANTIC_INPUT = ROOT / "testdata" / "one-page-semantic.json"
 
 
 class FakeProvider:
-    def __init__(self, *, compatible: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        compatible: bool = True,
+        transient_failures: int = 0,
+        usage: dict[str, int] | None = None,
+    ) -> None:
         self.compatible = compatible
+        self.transient_failures = transient_failures
+        self.usage = usage
         self.requests: list[dict[str, Any]] = []
         self.authorizations: list[str | None] = []
         provider = self
@@ -55,13 +63,23 @@ class FakeProvider:
                 if not valid_contract:
                     self.send_error(400)
                     return
+                if provider.transient_failures:
+                    provider.transient_failures -= 1
+                    self.send_response(429)
+                    self.send_header("Retry-After", "0")
+                    self.end_headers()
+                    return
                 if not provider.compatible:
                     self.send_response(400)
                     self.end_headers()
                     self.wfile.write(b'{"error":{"message":"response_format unsupported"}}')
                     return
                 content = json.dumps({"blue_square_count": 3})
-                response = {"choices": [{"message": {"content": content}}]}
+                response: dict[str, Any] = {
+                    "choices": [{"message": {"content": content}}]
+                }
+                if provider.usage is not None:
+                    response["usage"] = provider.usage
                 encoded = json.dumps(response).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -248,6 +266,67 @@ class ProviderConfigurationTest(unittest.TestCase):
             self.assertIn("--allow-remote", json.loads(result.stdout)["error"])
             self.assertEqual(provider.requests, [])
             self.assertFalse(bundle.exists())
+
+    def test_transient_failure_pauses_at_ceiling_then_resumes_with_usage(self) -> None:
+        usage = {
+            "prompt_tokens": 11,
+            "completion_tokens": 4,
+            "total_tokens": 15,
+        }
+        with (
+            FakeProvider(transient_failures=1, usage=usage) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            temporary = Path(directory)
+            bundle = temporary / "resumed.accessibilizer"
+            provider_arguments = (
+                "--provider-base-url",
+                provider.base_url,
+                "--provider-model",
+                "exact-model",
+                "--provider-data-location",
+                "local",
+                "--provider-max-retries",
+                "2",
+                "--provider-retry-base-seconds",
+                "0",
+            )
+
+            paused = self.run_conversion(
+                temporary,
+                bundle,
+                extra_arguments=(*provider_arguments, "--max-requests", "1"),
+            )
+
+            self.assertEqual(paused.returncode, 1, paused.stderr)
+            self.assertIn("request ceiling", json.loads(paused.stdout)["error"])
+            self.assertFalse(bundle.exists())
+            self.assertTrue((temporary / ".resumed.accessibilizer.in-progress").is_dir())
+            self.assertEqual(len(provider.requests), 1)
+
+            resumed = self.run_conversion(
+                temporary,
+                bundle,
+                extra_arguments=(
+                    *provider_arguments,
+                    "--max-requests",
+                    "2",
+                    "--resume",
+                ),
+            )
+
+            self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+            self.assertEqual(len(provider.requests), 2)
+            provenance = json.loads((bundle / "provenance.json").read_text())
+            self.assertEqual(
+                provenance["provider_usage"],
+                {
+                    "actual_requests": 2,
+                    "estimated_requests": 1,
+                    "reported_token_usage": usage,
+                    "request_ceiling": 2,
+                },
+            )
 
 
 if __name__ == "__main__":

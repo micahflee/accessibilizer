@@ -6,6 +6,7 @@ from pathlib import Path
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 
 from tests.test_provider_acceptance import FakeProvider
@@ -87,6 +88,43 @@ class OnePageConversionTest(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.provider.__exit__()
 
+    def conversion_command(
+        self,
+        source: Path,
+        bundle: Path,
+        *,
+        page: int = 1,
+        replace: bool = False,
+        resume: bool = False,
+        semantic_input: Path = SEMANTIC_INPUT,
+    ) -> list[str]:
+        replacement_arguments = ["--replace"] if replace else []
+        resume_arguments = ["--resume"] if resume else []
+        return [
+            str(ROOT / "accessibilizer"),
+            "convert",
+            str(source),
+            "--page",
+            str(page),
+            "--semantic-input",
+            str(semantic_input),
+            "--bundle",
+            str(bundle),
+            "--provider-base-url",
+            self.provider.base_url,
+            "--provider-model",
+            "acceptance-model-2026-07-19",
+            "--provider-data-location",
+            "local",
+            *replacement_arguments,
+            *resume_arguments,
+            "--json",
+        ]
+
+    @staticmethod
+    def conversion_environment() -> dict[str, str]:
+        return {**os.environ, "ACCESSIBILIZER_IMAGE": "accessibilizer:test"}
+
     def run_conversion(
         self,
         source: Path,
@@ -94,34 +132,23 @@ class OnePageConversionTest(unittest.TestCase):
         *,
         page: int = 1,
         replace: bool = False,
+        resume: bool = False,
         semantic_input: Path = SEMANTIC_INPUT,
     ) -> subprocess.CompletedProcess[str]:
-        replacement_arguments = ["--replace"] if replace else []
         return subprocess.run(
-            [
-                str(ROOT / "accessibilizer"),
-                "convert",
-                str(source),
-                "--page",
-                str(page),
-                "--semantic-input",
-                str(semantic_input),
-                "--bundle",
-                str(bundle),
-                "--provider-base-url",
-                self.provider.base_url,
-                "--provider-model",
-                "acceptance-model-2026-07-19",
-                "--provider-data-location",
-                "local",
-                *replacement_arguments,
-                "--json",
-            ],
+            self.conversion_command(
+                source,
+                bundle,
+                page=page,
+                replace=replace,
+                resume=resume,
+                semantic_input=semantic_input,
+            ),
             cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,
-            env={**os.environ, "ACCESSIBILIZER_IMAGE": "accessibilizer:test"},
+            env=self.conversion_environment(),
         )
 
     def test_public_cli_reports_launcher_failures_as_json(self) -> None:
@@ -190,6 +217,87 @@ class OnePageConversionTest(unittest.TestCase):
 
             self.assertEqual(replaced.returncode, 0, replaced.stderr + replaced.stdout)
             self.assertNotEqual((bundle / "review-record.json").read_text(), reviewer_edit)
+
+    def test_replacement_reuses_unaffected_provider_and_region_stages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "cached.accessibilizer"
+            created = self.run_conversion(SOURCE, bundle)
+            self.assertEqual(created.returncode, 0, created.stderr)
+            provider_requests = len(self.provider.requests)
+            crop = bundle / "regions" / "page-1.png"
+            os.utime(crop, ns=(1_000_000_000, 1_000_000_000))
+            changed_semantics = temporary / "changed-semantic.json"
+            semantics = json.loads(SEMANTIC_INPUT.read_text())
+            semantics["title"] = "Changed title"
+            changed_semantics.write_text(json.dumps(semantics))
+
+            replaced = self.run_conversion(
+                SOURCE,
+                bundle,
+                replace=True,
+                semantic_input=changed_semantics,
+            )
+
+            self.assertEqual(replaced.returncode, 0, replaced.stderr + replaced.stdout)
+            self.assertEqual(len(self.provider.requests), provider_requests)
+            self.assertEqual(crop.stat().st_mtime_ns, 1_000_000_000)
+            review_record = json.loads((bundle / "review-record.json").read_text())
+            self.assertEqual(review_record["title"], "Changed title")
+            provenance = json.loads((bundle / "provenance.json").read_text())
+            self.assertEqual(provenance["provider_usage"]["estimated_requests"], 0)
+            self.assertEqual(provenance["provider_usage"]["actual_requests"], 0)
+
+    def test_interrupted_conversion_reuses_completed_page_and_region_stages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "interrupted.accessibilizer"
+            command = self.conversion_command(SOURCE, bundle)
+            process = subprocess.Popen(
+                command,
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.conversion_environment(),
+            )
+            workspace = temporary / ".interrupted.accessibilizer.in-progress"
+            page_checkpoint = workspace / "checkpoints" / "page-1.json"
+            deadline = time.monotonic() + 30
+            while not page_checkpoint.is_file() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    self.fail("page checkpoint was not completed before the timeout")
+                time.sleep(0.01)
+            self.assertIsNone(process.poll(), "conversion finished before interruption")
+
+            cid_directories = list(
+                temporary.glob(".interrupted.accessibilizer.container.*")
+            )
+            self.assertEqual(len(cid_directories), 1)
+            container_id = (cid_directories[0] / "id").read_text().strip()
+            stopped = subprocess.run(
+                ["docker", "stop", "--time", "0", container_id],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            process.communicate(timeout=10)
+
+            self.assertFalse(bundle.exists())
+            crop = workspace / "regions" / "page-1.png"
+            output = workspace / "output.pdf"
+            fixed_time = 1_000_000_000
+            os.utime(crop, ns=(fixed_time, fixed_time))
+            os.utime(output, ns=(fixed_time, fixed_time))
+            provider_requests = len(self.provider.requests)
+
+            resumed = self.run_conversion(SOURCE, bundle, resume=True)
+
+            self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+            self.assertEqual(len(self.provider.requests), provider_requests)
+            self.assertEqual((bundle / "regions" / "page-1.png").stat().st_mtime_ns, fixed_time)
+            self.assertEqual((bundle / "output.pdf").stat().st_mtime_ns, fixed_time)
 
     def test_public_cli_safely_rejects_protected_and_interactive_pdfs(self) -> None:
         unsafe_pdfs = {
@@ -307,13 +415,20 @@ class OnePageConversionTest(unittest.TestCase):
 
             expected_files = {
                 "authoring.json",
+                "checkpoints/page-1.json",
+                "checkpoints/provider-capability.json",
+                "checkpoints/region-page-1.json",
+                "checkpoints/source.json",
+                "checkpoints/validation.json",
                 "output.pdf",
                 "provenance.json",
                 "regions/page-1.png",
+                "request-usage.json",
                 "review-record.json",
                 "review-report.html",
                 "source.pdf",
                 "validation/internal.json",
+                "validation/preflight.json",
                 "validation/verapdf.xml",
                 "validation/visual.json",
             }
@@ -338,6 +453,9 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
+            self.assertEqual(provenance["provider_usage"]["actual_requests"], 1)
+            self.assertEqual(provenance["provider_usage"]["estimated_requests"], 1)
+            self.assertEqual(provenance["provider_usage"]["request_ceiling"], 100)
             self.assertIn('<html lang="en-US">', (bundle / "review-report.html").read_text())
 
             internal = json.loads((bundle / "validation/internal.json").read_text())
