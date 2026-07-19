@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "accessibilizer"
+version = "0.1.0"
+description = "Convert visually readable PDFs into verifiably accessible PDFs"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["accessibilizer"]
+
+[tool.mypy]
+strict = true
