@@ -1,40 +1,51 @@
 #!/bin/sh
 set -eu
 
-if [ "${1:-}" != "convert" ]; then
-    echo "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [--json]" >&2
+json_flag=
+for argument in "$@"; do
+    if [ "$argument" = "--json" ]; then json_flag=--json; fi
+done
+
+operational_failure() {
+    if [ -n "$json_flag" ]; then
+        printf '{"error":"%s","status":"operational_failure"}\n' "$1"
+    else
+        echo "accessibilizer: $1" >&2
+    fi
     exit 1
+}
+
+if [ "${1:-}" != "convert" ]; then
+    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [--replace] [--json]"
 fi
 shift
 
 source_path=${1:-}
 if [ -z "$source_path" ]; then
-    echo "accessibilizer: SOURCE is required" >&2
-    exit 1
+    operational_failure "SOURCE is required"
 fi
 shift
 
 page=
 semantic_path=
 bundle_path=
-json_flag=
+replace_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --page) page=${2:-}; shift 2 ;;
-        --semantic-input) semantic_path=${2:-}; shift 2 ;;
-        --bundle) bundle_path=${2:-}; shift 2 ;;
+        --page) [ "$#" -ge 2 ] || operational_failure "--page requires a value"; page=$2; shift 2 ;;
+        --semantic-input) [ "$#" -ge 2 ] || operational_failure "--semantic-input requires a value"; semantic_path=$2; shift 2 ;;
+        --bundle) [ "$#" -ge 2 ] || operational_failure "--bundle requires a value"; bundle_path=$2; shift 2 ;;
+        --replace) replace_flag=--replace; shift ;;
         --json) json_flag=--json; shift ;;
-        *) echo "accessibilizer: unknown argument: $1" >&2; exit 1 ;;
+        *) operational_failure "unknown argument" ;;
     esac
 done
 
 if [ -z "$page" ] || [ -z "$semantic_path" ] || [ -z "$bundle_path" ]; then
-    echo "accessibilizer: --page, --semantic-input, and --bundle are required" >&2
-    exit 1
+    operational_failure "--page, --semantic-input, and --bundle are required"
 fi
 if [ ! -f "$source_path" ] || [ ! -f "$semantic_path" ]; then
-    echo "accessibilizer: source and semantic input must be files" >&2
-    exit 1
+    operational_failure "source and semantic input must be files"
 fi
 
 absolute_file() {
@@ -47,7 +58,7 @@ source_path=$(absolute_file "$source_path")
 semantic_path=$(absolute_file "$semantic_path")
 bundle_parent=$(dirname "$bundle_path")
 bundle_name=$(basename "$bundle_path")
-mkdir -p "$bundle_parent"
+mkdir -p "$bundle_parent" || operational_failure "could not create the bundle parent directory"
 case "$bundle_path" in
     /*) host_bundle_path=$bundle_path ;;
     *) host_bundle_path="$(pwd)/$bundle_path" ;;
@@ -70,10 +81,17 @@ set -- "$@" "$image" \
     --semantic-input /work/semantic.json \
     --bundle "/work/output/$bundle_name"
 if [ -n "$json_flag" ]; then set -- "$@" --json; fi
+if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
 
 if docker run "$@"; then
-    chmod 400 "$bundle_path/source.pdf"
-    exit 0
+    result=0
 else
-    exit $?
+    result=$?
 fi
+if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] && [ -n "$json_flag" ]; then
+    printf '{"error":"container runtime failed","status":"operational_failure"}\n'
+fi
+if [ "$result" -eq 0 ] || [ "$result" -eq 2 ]; then
+    chmod 400 "$bundle_path/source.pdf"
+fi
+exit "$result"

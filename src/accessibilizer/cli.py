@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import html
 import json
@@ -39,6 +40,7 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--page", type=int, required=True)
     convert.add_argument("--semantic-input", type=Path, required=True)
     convert.add_argument("--bundle", type=Path, required=True)
+    convert.add_argument("--replace", action="store_true")
     convert.add_argument("--json", action="store_true")
     return parser
 
@@ -68,6 +70,14 @@ def _load_semantics(path: Path) -> dict[str, Any]:
                 raise ValueError(f"{node['type']}.{field} must be a non-empty string")
     if [node["type"] for node in nodes] != ["heading", "paragraph", "formula", "figure"]:
         raise ValueError("semantic_layer is not in the required Logical Reading Order")
+    warnings = data.get("warnings", [])
+    if not isinstance(warnings, list):
+        raise ValueError("warnings must be an array")
+    for warning in warnings:
+        if not isinstance(warning, dict) or warning.get("status") not in {
+            "unresolved", "corrected", "accepted", "not_applicable",
+        }:
+            raise ValueError("each warning requires a valid status")
     return data
 
 
@@ -81,6 +91,44 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _publish_bundle(staging: Path, bundle: Path, replace: bool) -> None:
+    if not bundle.exists():
+        os.replace(staging, bundle)
+        return
+    if not replace:
+        raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
+    if not bundle.is_dir():
+        raise FileExistsError(f"Conversion Bundle path is not a directory: {bundle}")
+
+    rename_exchange = ctypes.CDLL(None, use_errno=True).renameat2
+    rename_exchange.argtypes = [
+        ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint,
+    ]
+    rename_exchange.restype = ctypes.c_int
+    at_current_working_directory = -100
+    exchange = 2
+    result = rename_exchange(
+        at_current_working_directory,
+        os.fsencode(staging),
+        at_current_working_directory,
+        os.fsencode(bundle),
+        exchange,
+    )
+    if result == 0:
+        shutil.rmtree(staging, ignore_errors=True)
+        return
+
+    backup = Path(tempfile.mkdtemp(prefix=f".{bundle.name}.replaced.", dir=bundle.parent))
+    backup.rmdir()
+    os.replace(bundle, backup)
+    try:
+        os.replace(staging, bundle)
+    except Exception:
+        os.replace(backup, bundle)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
 
 
 def _review_report(semantics: dict[str, Any]) -> str:
@@ -191,7 +239,7 @@ def _convert(args: argparse.Namespace) -> int:
     bundle: Path = args.bundle
     if args.page < 1:
         raise ValueError("--page must be positive")
-    if bundle.exists():
+    if bundle.exists() and not args.replace:
         raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
     semantics = _load_semantics(args.semantic_input)
     bundle.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +254,22 @@ def _convert(args: argparse.Namespace) -> int:
         if _sha256(source_copy) != source_sha256:
             raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
         os.chmod(source_copy, stat.S_IRUSR)
+        preflight = _run([
+            "java", "-jar", "/opt/accessibilizer/pdf-author.jar", "--preflight",
+            str(source_copy),
+        ])
+        if preflight.returncode:
+            raise RuntimeError(f"Source PDF preflight failed: {preflight.stderr.strip()}")
+        try:
+            preflight_result: dict[str, Any] = json.loads(preflight.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Source PDF preflight returned invalid JSON") from error
+        unsupported_features = preflight_result.get("unsupported_features")
+        if not isinstance(unsupported_features, list):
+            raise RuntimeError("Source PDF preflight returned an invalid result")
+        if unsupported_features:
+            features = ", ".join(str(feature) for feature in unsupported_features)
+            raise RuntimeError(f"Unsupported Source PDF: {features}")
         _write_json(staging / "review-record.json", semantics)
         (staging / "review-report.html").write_text(
             _review_report(semantics), encoding="utf-8"
@@ -263,19 +327,27 @@ def _convert(args: argparse.Namespace) -> int:
             "source_sha256": source_sha256,
             "source_page": args.page,
         })
-        os.replace(staging, bundle)
+        _publish_bundle(staging, bundle, args.replace)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
     host_bundle = Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
+    review_required = any(
+        warning.get("status") == "unresolved" for warning in semantics.get("warnings", [])
+    )
     result = {
         "bundle": str(host_bundle),
         "output": str(host_bundle / "output.pdf"),
-        "status": "accessible",
+        "status": "review_required" if review_required else "accessible",
     }
-    print(json.dumps(result, sort_keys=True) if args.json else f"Accessible PDF: {result['output']}")
-    return 0
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    elif review_required:
+        print(f"Review-Required PDF: {result['output']}")
+    else:
+        print(f"Accessible PDF: {result['output']}")
+    return 2 if review_required else 0
 
 
 def main() -> int:
@@ -283,7 +355,10 @@ def main() -> int:
     try:
         if args.command == "convert":
             return _convert(args)
-    except (FileExistsError, RuntimeError, ValueError) as error:
-        print(f"accessibilizer: {error}", file=sys.stderr)
+    except Exception as error:
+        if args.json:
+            print(json.dumps({"error": str(error), "status": "operational_failure"}, sort_keys=True))
+        else:
+            print(f"accessibilizer: {error}", file=sys.stderr)
         return 1
     return 1
