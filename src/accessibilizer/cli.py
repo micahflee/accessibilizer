@@ -14,6 +14,8 @@ import sys
 import tempfile
 from typing import Any, TypedDict
 
+from accessibilizer.provider import authorize_remote, check_capabilities, resolve_provider
+
 
 REQUIRED_NODE_FIELDS = {
     "heading": {"level", "text"},
@@ -32,6 +34,13 @@ class VisualReport(TypedDict):
     tolerance: float
 
 
+def _add_provider_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--provider-base-url")
+    parser.add_argument("--provider-model")
+    parser.add_argument("--provider-api-key-env")
+    parser.add_argument("--provider-data-location", choices=("local", "remote"))
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="accessibilizer")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -40,8 +49,12 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("--page", type=int, required=True)
     convert.add_argument("--semantic-input", type=Path, required=True)
     convert.add_argument("--bundle", type=Path, required=True)
+    _add_provider_arguments(convert)
+    convert.add_argument("--allow-remote", action="store_true")
     convert.add_argument("--replace", action="store_true")
     convert.add_argument("--json", action="store_true")
+    provider_key_env = subparsers.add_parser("provider-key-env", help=argparse.SUPPRESS)
+    _add_provider_arguments(provider_key_env)
     return parser
 
 
@@ -241,6 +254,9 @@ def _convert(args: argparse.Namespace) -> int:
         raise ValueError("--page must be positive")
     if bundle.exists() and not args.replace:
         raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
+    provider = resolve_provider(args)
+    authorize_remote(provider, allow_remote=args.allow_remote)
+    check_capabilities(provider)
     semantics = _load_semantics(args.semantic_input)
     bundle.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{bundle.name}.", dir=bundle.parent))
@@ -326,6 +342,9 @@ def _convert(args: argparse.Namespace) -> int:
             "source_copy_verified": True,
             "source_sha256": source_sha256,
             "source_page": args.page,
+            "provider_data_location": provider.data_location,
+            "provider_endpoint": provider.base_url,
+            "provider_model": provider.model,
         })
         _publish_bundle(staging, bundle, args.replace)
     except Exception:
@@ -355,6 +374,11 @@ def main() -> int:
     try:
         if args.command == "convert":
             return _convert(args)
+        if args.command == "provider-key-env":
+            provider = resolve_provider(args)
+            if provider.api_key_env is not None:
+                print(provider.api_key_env)
+            return 0
     except Exception as error:
         if args.json:
             print(json.dumps({"error": str(error), "status": "operational_failure"}, sort_keys=True))

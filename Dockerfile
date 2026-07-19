@@ -19,11 +19,13 @@ RUN wget --quiet --output-document=/tmp/verapdf.zip \
 
 FROM eclipse-temurin:21-jre-jammy@sha256:d63bd8d9b171999cbed8576f2c76e874dd4856791a358536e5c4d407e77edc13
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends fonts-dejavu-core poppler-utils python3 \
+    && apt-get install --yes --no-install-recommends \
+      fonts-dejavu-core poppler-utils python3 python3-tomli \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=author-build /build/target/pdf-author.jar /opt/accessibilizer/pdf-author.jar
 COPY --from=verapdf-install /opt/verapdf /opt/verapdf
 COPY src /opt/accessibilizer/src
 ENV PATH="/opt/verapdf:${PATH}" \
+    ACCESSIBILIZER_CONTAINERIZED="1" \
     PYTHONPATH="/opt/accessibilizer/src"
 WORKDIR /work

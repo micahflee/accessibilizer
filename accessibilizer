@@ -16,7 +16,7 @@ operational_failure() {
 }
 
 if [ "${1:-}" != "convert" ]; then
-    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [--replace] [--json]"
+    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [provider options] [--replace] [--json]"
 fi
 shift
 
@@ -30,11 +30,21 @@ page=
 semantic_path=
 bundle_path=
 replace_flag=
+provider_base_url=
+provider_model=
+provider_api_key_env=
+provider_data_location=
+allow_remote_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --page) [ "$#" -ge 2 ] || operational_failure "--page requires a value"; page=$2; shift 2 ;;
         --semantic-input) [ "$#" -ge 2 ] || operational_failure "--semantic-input requires a value"; semantic_path=$2; shift 2 ;;
         --bundle) [ "$#" -ge 2 ] || operational_failure "--bundle requires a value"; bundle_path=$2; shift 2 ;;
+        --provider-base-url) [ "$#" -ge 2 ] || operational_failure "--provider-base-url requires a value"; provider_base_url=$2; shift 2 ;;
+        --provider-model) [ "$#" -ge 2 ] || operational_failure "--provider-model requires a value"; provider_model=$2; shift 2 ;;
+        --provider-api-key-env) [ "$#" -ge 2 ] || operational_failure "--provider-api-key-env requires a value"; provider_api_key_env=$2; shift 2 ;;
+        --provider-data-location) [ "$#" -ge 2 ] || operational_failure "--provider-data-location requires a value"; provider_data_location=$2; shift 2 ;;
+        --allow-remote) allow_remote_flag=--allow-remote; shift ;;
         --replace) replace_flag=--replace; shift ;;
         --json) json_flag=--json; shift ;;
         *) operational_failure "unknown argument" ;;
@@ -67,12 +77,46 @@ bundle_parent=$(cd "$bundle_parent" && pwd -P)
 bundle_path="$bundle_parent/$bundle_name"
 
 image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+user_config_path=
+if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    user_config_path=$XDG_CONFIG_HOME/accessibilizer/config.toml
+elif [ -n "${HOME:-}" ]; then
+    user_config_path=$HOME/.config/accessibilizer/config.toml
+fi
+project_config_path=$(pwd)/accessibilizer.toml
+
+set -- --rm
+if [ -n "$user_config_path" ] && [ -f "$user_config_path" ]; then
+    set -- "$@" --volume "$user_config_path:/work/user-config.toml:ro" --env ACCESSIBILIZER_USER_CONFIG=/work/user-config.toml
+fi
+if [ -f "$project_config_path" ]; then
+    set -- "$@" --volume "$project_config_path:/work/project-config.toml:ro" --env ACCESSIBILIZER_PROJECT_CONFIG=/work/project-config.toml
+fi
+set -- "$@" "$image" python3 -m accessibilizer provider-key-env
+if [ -n "$provider_base_url" ]; then set -- "$@" --provider-base-url "$provider_base_url"; fi
+if [ -n "$provider_model" ]; then set -- "$@" --provider-model "$provider_model"; fi
+if [ -n "$provider_api_key_env" ]; then set -- "$@" --provider-api-key-env "$provider_api_key_env"; fi
+if [ -n "$provider_data_location" ]; then set -- "$@" --provider-data-location "$provider_data_location"; fi
+if api_key_env=$(docker run "$@"); then
+    :
+else
+    operational_failure "provider configuration could not be resolved"
+fi
+
 set -- --rm \
     --user "$(id -u):$(id -g)" \
+    --add-host "host.docker.internal:host-gateway" \
     --volume "$source_path:/work/source.pdf:ro" \
     --volume "$semantic_path:/work/semantic.json:ro" \
     --volume "$bundle_parent:/work/output" \
     --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
+if [ -n "$user_config_path" ] && [ -f "$user_config_path" ]; then
+    set -- "$@" --volume "$user_config_path:/work/user-config.toml:ro" --env ACCESSIBILIZER_USER_CONFIG=/work/user-config.toml
+fi
+if [ -f "$project_config_path" ]; then
+    set -- "$@" --volume "$project_config_path:/work/project-config.toml:ro" --env ACCESSIBILIZER_PROJECT_CONFIG=/work/project-config.toml
+fi
+if [ -n "$api_key_env" ]; then set -- "$@" --env "$api_key_env"; fi
 if [ -t 0 ]; then set -- --interactive "$@"; fi
 if [ -t 1 ]; then set -- --tty "$@"; fi
 set -- "$@" "$image" \
@@ -80,6 +124,11 @@ set -- "$@" "$image" \
     --page "$page" \
     --semantic-input /work/semantic.json \
     --bundle "/work/output/$bundle_name"
+if [ -n "$provider_base_url" ]; then set -- "$@" --provider-base-url "$provider_base_url"; fi
+if [ -n "$provider_model" ]; then set -- "$@" --provider-model "$provider_model"; fi
+if [ -n "$provider_api_key_env" ]; then set -- "$@" --provider-api-key-env "$provider_api_key_env"; fi
+if [ -n "$provider_data_location" ]; then set -- "$@" --provider-data-location "$provider_data_location"; fi
+if [ -n "$allow_remote_flag" ]; then set -- "$@" --allow-remote; fi
 if [ -n "$json_flag" ]; then set -- "$@" --json; fi
 if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
 
