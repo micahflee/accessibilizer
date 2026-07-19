@@ -47,6 +47,8 @@ class FakeProvider:
                         and response_format["type"] == "json_schema"
                         and response_format["json_schema"]["strict"] is True
                         and schema["properties"]["blue_square_count"]["type"] == "integer"
+                        and request["max_completion_tokens"] == 256
+                        and "max_tokens" not in request
                     )
                 except (KeyError, IndexError, TypeError, ValueError):
                     valid_contract = False

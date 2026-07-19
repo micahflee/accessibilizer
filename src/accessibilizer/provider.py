@@ -177,7 +177,7 @@ def check_capabilities(config: ProviderConfig) -> None:
             "type": "json_schema",
             "json_schema": {"name": "accessibilizer_capability_check", "strict": True, "schema": schema},
         },
-        "max_tokens": 32,
+        "max_completion_tokens": 256,
     }
     headers = {"Content-Type": "application/json"}
     api_key = _api_key(config)
