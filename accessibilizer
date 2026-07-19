@@ -1,0 +1,79 @@
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" != "convert" ]; then
+    echo "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [--json]" >&2
+    exit 1
+fi
+shift
+
+source_path=${1:-}
+if [ -z "$source_path" ]; then
+    echo "accessibilizer: SOURCE is required" >&2
+    exit 1
+fi
+shift
+
+page=
+semantic_path=
+bundle_path=
+json_flag=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --page) page=${2:-}; shift 2 ;;
+        --semantic-input) semantic_path=${2:-}; shift 2 ;;
+        --bundle) bundle_path=${2:-}; shift 2 ;;
+        --json) json_flag=--json; shift ;;
+        *) echo "accessibilizer: unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [ -z "$page" ] || [ -z "$semantic_path" ] || [ -z "$bundle_path" ]; then
+    echo "accessibilizer: --page, --semantic-input, and --bundle are required" >&2
+    exit 1
+fi
+if [ ! -f "$source_path" ] || [ ! -f "$semantic_path" ]; then
+    echo "accessibilizer: source and semantic input must be files" >&2
+    exit 1
+fi
+
+absolute_file() {
+    directory=$(dirname "$1")
+    filename=$(basename "$1")
+    printf '%s/%s\n' "$(cd "$directory" && pwd -P)" "$filename"
+}
+
+source_path=$(absolute_file "$source_path")
+semantic_path=$(absolute_file "$semantic_path")
+bundle_parent=$(dirname "$bundle_path")
+bundle_name=$(basename "$bundle_path")
+mkdir -p "$bundle_parent"
+case "$bundle_path" in
+    /*) host_bundle_path=$bundle_path ;;
+    *) host_bundle_path="$(pwd)/$bundle_path" ;;
+esac
+bundle_parent=$(cd "$bundle_parent" && pwd -P)
+bundle_path="$bundle_parent/$bundle_name"
+
+image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+set -- --rm \
+    --user "$(id -u):$(id -g)" \
+    --volume "$source_path:/work/source.pdf:ro" \
+    --volume "$semantic_path:/work/semantic.json:ro" \
+    --volume "$bundle_parent:/work/output" \
+    --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
+if [ -t 0 ]; then set -- --interactive "$@"; fi
+if [ -t 1 ]; then set -- --tty "$@"; fi
+set -- "$@" "$image" \
+    python3 -m accessibilizer convert /work/source.pdf \
+    --page "$page" \
+    --semantic-input /work/semantic.json \
+    --bundle "/work/output/$bundle_name"
+if [ -n "$json_flag" ]; then set -- "$@" --json; fi
+
+if docker run "$@"; then
+    chmod 400 "$bundle_path/source.pdf"
+    exit 0
+else
+    exit $?
+fi

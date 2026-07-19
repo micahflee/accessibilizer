@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/authoring-1.0.schema.json",
+  "title": "Accessibilizer PDF authoring contract 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["language", "page", "schema_version", "semantic_layer", "title"],
+  "properties": {
+    "language": {"type": "string", "minLength": 1},
+    "page": {"type": "integer", "minimum": 1},
+    "schema_version": {"const": "1.0"},
+    "title": {"type": "string", "minLength": 1},
+    "semantic_layer": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/heading"},
+        {"$ref": "#/$defs/paragraph"},
+        {"$ref": "#/$defs/formula"},
+        {"$ref": "#/$defs/figure"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "text", "type"],
+      "properties": {
+        "level": {"const": 1},
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "heading"}
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "type"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "paragraph"}
+      }
+    },
+    "formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized_math", "spoken_math_alternative", "type"],
+      "properties": {
+        "normalized_math": {"type": "string", "minLength": 1},
+        "spoken_math_alternative": {"type": "string", "minLength": 1},
+        "type": {"const": "formula"}
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detailed_figure_description", "figure_alternative", "type"],
+      "properties": {
+        "detailed_figure_description": {"type": "string", "minLength": 1},
+        "figure_alternative": {"type": "string", "minLength": 1},
+        "type": {"const": "figure"}
+      }
+    }
+  }
+}

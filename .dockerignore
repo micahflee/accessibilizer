@@ -1,0 +1,6 @@
+.git
+.codegraph
+tests
+testdata
+**/__pycache__
+*.pyc
