@@ -48,12 +48,14 @@ Both TOML files use the same shape:
 ```toml
 [provider]
 base_url = "https://api.openai.com/v1"
-model = "exact-model-identifier"
+model = "gpt-5.6-sol"
 api_key_env = "OPENAI_API_KEY"
 data_location = "remote"
 ```
 
 `base_url` and `model` are required after the layers are merged. The corresponding flags are `--provider-base-url`, `--provider-model`, `--provider-api-key-env`, and `--provider-data-location`. The model must be an explicit, exact identifier; explicit `latest` aliases are rejected. URL credentials, queries, and fragments are rejected so the recorded endpoint cannot capture a query-string secret.
+
+For the initial hosted OpenAI quality baseline, use `gpt-5.6-sol`, the official identifier for the flagship GPT-5.6 variant. Do not configure the shorter `gpt-5.6` routing alias when exact model selection and reproducible Conversion Provenance are required. See OpenAI's [GPT-5.6 model guidance](https://developers.openai.com/api/docs/guides/latest-model).
 
 `api_key_env` names an environment variable; it does not contain the secret. The host launcher forwards only that named variable into the canonical container. Credentials are never written to TOML or Conversion Provenance. Providers that do not require a key may omit it.
 
