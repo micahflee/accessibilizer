@@ -1,0 +1,3 @@
+# Produce protected conversion bundles
+
+Each Source PDF will produce a dedicated Conversion Bundle containing an immutable copy of the Source PDF, the output PDF, editable Review Record, HTML report, region crops, provenance, and validation reports. The source copy is hash-verified before finalization so reviewer corrections cannot be applied to a changed document. The CLI will not overwrite an existing bundle without an explicit replacement flag, and finalization will refresh generated artifacts while preserving reviewer edits; reviewability and auditability cannot be delivered by a lone PDF.

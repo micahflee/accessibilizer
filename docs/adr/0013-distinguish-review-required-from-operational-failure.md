@@ -1,0 +1,3 @@
+# Distinguish review-required from operational failure
+
+The CLI will exit `0` only when an Accessible PDF is produced without warnings, `2` when conversion succeeds but produces a Review-Required PDF and review bundle for semantic correction, and `1` when an operational failure prevents usable output. A veraPDF or malformed-structure failure is operational because editing the Review Record cannot repair an authoring-engine defect, though diagnostic artifacts may be retained. This stable contract lets noninteractive workflows route semantic uncertainty to review without confusing it with infrastructure or execution failure; a flag will expose the same result as structured JSON.

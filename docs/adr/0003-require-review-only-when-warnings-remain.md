@@ -1,0 +1,3 @@
+# Require review only when warnings remain
+
+Accessibilizer may declare an output to be an Accessible PDF without human approval when automated semantic checks and PDF/UA-1 validation pass without Conversion Warnings. If warnings remain, the generated file is a Review-Required PDF until a person resolves them through an editable Review Record and finalizes it again without repeating recognition. Warnings will conservatively favor unnecessary review over silent semantic corruption and must be driven by verification, disagreement, or ambiguity rather than model self-confidence alone. Required gates cannot be disabled or weakened to force exit `0`; users may tighten them or run a relaxed experimental mode whose output remains Review-Required.

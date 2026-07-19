@@ -1,0 +1,3 @@
+# Allow remote models with explicit run-time consent
+
+Hosted vision models may be the normal provider because local Ollama models might not meet the required semantic accuracy. Provider configuration declares its data location as `local` or `remote`; loopback endpoints may default to local, while every uncertain or custom endpoint defaults to remote, and the resolved declaration is recorded in provenance. Before transmitting to a remote provider, Accessibilizer must identify it and ask for confirmation in interactive mode; noninteractive use requires an explicit `--allow-remote` flag, and an API key or config entry alone is not consent. The tool must never silently fall back from a local endpoint to a remote one.

@@ -1,0 +1,3 @@
+# Use PaddleOCR as the default specialized backend
+
+Version 1 will use PaddleOCR's maintained layout, text, table, and printed/handwritten formula-recognition components for the specialized local pass. Exact model weights will be pinned and included in the canonical Docker image rather than downloaded on first use, making recognition reproducible and independent of model-registry availability. The backend will be isolated behind an internal adapter so evaluation can replace individual models without changing the Review Record or pipeline contract; PaddleOCR is preferred initially because the supported document class needs all four capabilities and handwriting is a stated limitation of prominent alternatives such as Surya.

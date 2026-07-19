@@ -1,0 +1,3 @@
+# Checkpoint and resume the conversion graph
+
+Accessibilizer will checkpoint each completed page and region atomically, retry transient provider failures with bounded exponential backoff, and resume from the last valid checkpoint. Cache keys will include the source hash, model versions, prompt and schema versions, rendering settings, and relevant upstream artifacts so a change invalidates only affected stages. Every conversion also has a configurable maximum LLM-request count: the CLI estimates requests before starting, records requests and reported token usage, and pauses resumably before exceeding the ceiling; it does not infer dollar cost for arbitrary compatible providers.

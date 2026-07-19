@@ -1,0 +1,3 @@
+# Require an explicit and recorded model
+
+Every conversion must resolve an explicit model identifier rather than silently follow a changing default or `latest` alias. The Review Record will capture full Conversion Provenance: the Source PDF hash; Accessibilizer, specialized-model, prompt, and schema versions; LLM endpoint and exact model; rendering settings; timestamps; and reviewer changes attributed to a required non-secret reviewer identifier. Credentials, hidden model reasoning, unnecessary request metadata, and mandatory reviewer email addresses are excluded. Interactive setup may recommend tested models, but pinning the actual choices makes quality and cost auditable.

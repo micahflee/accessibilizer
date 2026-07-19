@@ -1,0 +1,3 @@
+# Preserve the source visual layer
+
+Accessibilizer will preserve the Source PDF's page appearance as the Visual Layer and add a distinct Semantic Layer for assistive technology. Delivered pages retain their native PDF/vector content and mark it as an accessibility artifact; rasterization is used for recognition inputs, not as the normal output representation. Redrawing handwritten or scanned material could alter emphasis, spatial relationships, diagrams, zoom quality, or authorial intent, so version 1 is an accessibility-remediation tool rather than a document-redesign tool; semantic improvements must not silently change what sighted readers see.

@@ -1,0 +1,3 @@
+# Target verifiable PDF/UA conformance
+
+Accessibilizer version 1 will treat accessibility as verifiable PDF/UA-1 conformance rather than equating accessibility with searchable OCR text or informal screen-reader usability. PDF/UA-1 was selected over PDF/UA-2 because its validator, PDF viewer, and screen-reader ecosystem is more mature; normalized mathematical content should be retained internally so a later PDF/UA-2/MathML output path does not require OCR to be repeated. Declaring an Accessible PDF requires both a clean veraPDF PDF/UA-1 result and clean internal semantic checks for reading order, alternatives, table relationships, recognition agreement, source coverage, and Review Record consistency.
