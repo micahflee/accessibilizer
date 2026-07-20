@@ -1,0 +1,7 @@
+---
+status: accepted
+---
+
+# Author the Semantic Layer as a full-size text overlay
+
+ADR 0026 rejected the one-point-wide, zero-opacity `ActualText` overlay because macOS Preview derives accessibility text from the glyphs physically laid out on the page — so the narrow boxes produced single-letter fragments (`w`, `c`, …) instead of the complete strings, and the empty zero-opacity figure `Div` was dropped entirely. We replace that technique by drawing the real strings at a readable size across the page with text rendering mode 3, which produces no marks on screen or in the print path: the glyphs Preview reads now spell the complete heading, paragraph, Formula, and Figure strings. Each node occupies its own vertical band, top to bottom in Logical Reading Order, so no run overlaps another and the intended sequence is preserved. Because ADR 0026 showed Preview ignores the `ActualText`/`Alt` attributes in favour of laid-out glyphs, every string a reader must reach is drawn as a glyph run — the Formula draws its normalized math and the Figure draws both its alternative and its detailed description — while `ActualText` and `Alt` remain on every structure element so the internal extraction, veraPDF PDF/UA-1, and visual-preservation gates pass unchanged. The Figure is attached to a real glyph run rather than an empty element so Preview cannot omit it. This spike prepares the artifact for the recorded human Preview and VoiceOver session tracked by #3; it does not by itself close #3.

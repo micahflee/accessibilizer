@@ -8,6 +8,7 @@ import com.itextpdf.kernel.exceptions.PdfException;
 import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.geom.PageSize;
+import com.itextpdf.kernel.geom.Rectangle;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfArray;
 import com.itextpdf.kernel.pdf.PdfDictionary;
@@ -21,13 +22,14 @@ import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.kernel.pdf.action.PdfAction;
 import com.itextpdf.kernel.pdf.canvas.CanvasArtifact;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
+import com.itextpdf.kernel.pdf.canvas.PdfCanvasConstants.TextRenderingMode;
 import com.itextpdf.kernel.pdf.navigation.PdfExplicitDestination;
 import com.itextpdf.kernel.pdf.tagging.StandardRoles;
 import com.itextpdf.kernel.pdf.tagging.IStructureNode;
 import com.itextpdf.kernel.pdf.tagging.PdfStructElem;
 import com.itextpdf.layout.Canvas;
-import com.itextpdf.layout.element.Div;
 import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.layout.properties.Property;
 import com.itextpdf.pdfua.PdfUAConfig;
 import com.itextpdf.pdfua.PdfUADocument;
 
@@ -198,58 +200,81 @@ public final class Author {
         }
     }
 
+    // The Semantic Layer is authored as real text drawn at a readable size across
+    // the page with text rendering mode 3, so it produces no marks on screen or in
+    // the print path. macOS Preview derives its accessibility text from the glyphs
+    // physically laid out on the page, so the glyphs must spell the complete
+    // strings at full width rather than the clipped fragments produced by the
+    // one-point-wide overlay that ADR 0026 rejected. Each node occupies its own
+    // vertical band, top to bottom in Logical Reading Order, so no run overlaps
+    // another. Every string a reader must reach is drawn as a glyph run: the
+    // Formula draws its normalized math, and the Figure draws both its alternative
+    // and its detailed description rather than hiding either in an attribute the
+    // rejected overlay proved Preview ignores. ActualText and Alt remain on every
+    // structure element so the internal extraction and PDF/UA gates are
+    // unaffected, and the Figure is attached to a real glyph run instead of an
+    // empty container so Preview cannot drop it.
+    private static final float PAGE_MARGIN = 40f;
+    private static final float SEMANTIC_FONT_SIZE = 10f;
+
     private static void addSemanticLayer(
             com.itextpdf.kernel.pdf.PdfPage page, PdfFont font, JsonArray nodes) {
-        try (Canvas canvas = new Canvas(page, page.getPageSize())) {
-            float top = page.getPageSize().getTop() - 1;
-            for (var element : nodes) {
-                JsonObject node = element.getAsJsonObject();
+        Rectangle pageSize = page.getPageSize();
+        float usableWidth = pageSize.getWidth() - 2 * PAGE_MARGIN;
+        int count = nodes.size();
+        float bandHeight = count == 0 ? 0 : (pageSize.getHeight() - 2 * PAGE_MARGIN) / count;
+        try (Canvas canvas = new Canvas(page, pageSize)) {
+            for (int index = 0; index < count; index++) {
+                JsonObject node = nodes.get(index).getAsJsonObject();
+                float bandBottom =
+                        pageSize.getTop() - PAGE_MARGIN - (index + 0.5f) * bandHeight;
                 String type = requiredString(node, "type");
                 switch (type) {
-                    case "heading" -> addInvisibleParagraph(canvas, font, top, node, StandardRoles.H1);
-                    case "paragraph" -> addInvisibleParagraph(canvas, font, top, node, StandardRoles.P);
-                    case "formula" -> addFormula(canvas, font, top, node);
-                    case "figure" -> addFigure(canvas, top, node);
+                    case "heading" -> {
+                        String text = requiredString(node, "text");
+                        addNode(canvas, font, StandardRoles.H1, text, text, null,
+                                usableWidth, bandBottom);
+                    }
+                    case "paragraph" -> {
+                        String text = requiredString(node, "text");
+                        addNode(canvas, font, StandardRoles.P, text, text, null,
+                                usableWidth, bandBottom);
+                    }
+                    case "formula" -> {
+                        String math = requiredString(node, "normalized_math");
+                        String spoken = requiredString(node, "spoken_math_alternative");
+                        addNode(canvas, font, StandardRoles.FORMULA, math, math, spoken,
+                                usableWidth, bandBottom);
+                    }
+                    case "figure" -> {
+                        String alternative = requiredString(node, "figure_alternative");
+                        String detailed = requiredString(node, "detailed_figure_description");
+                        addNode(canvas, font, StandardRoles.FIGURE,
+                                alternative + " " + detailed, detailed, alternative,
+                                usableWidth, bandBottom);
+                    }
                     default -> throw new IllegalArgumentException("unsupported semantic node: " + type);
                 }
-                top -= 1;
             }
         }
     }
 
-    private static void addInvisibleParagraph(
-            Canvas canvas, PdfFont font, float top, JsonObject node, String role) {
-        String text = requiredString(node, "text");
-        Paragraph paragraph = new Paragraph(text)
+    private static void addNode(
+            Canvas canvas, PdfFont font, String role,
+            String laidOutText, String actualText, String alternateDescription,
+            float width, float bottom) {
+        Paragraph paragraph = new Paragraph(laidOutText)
                 .setFont(font)
-                .setFontSize(1)
-                .setFixedPosition(0, top, 1)
-                .setOpacity(0f);
-        paragraph.getAccessibilityProperties().setRole(role);
-        paragraph.getAccessibilityProperties().setActualText(text);
+                .setFontSize(SEMANTIC_FONT_SIZE)
+                .setMargin(0)
+                .setMultipliedLeading(1f)
+                .setFixedPosition(PAGE_MARGIN, bottom, width);
+        paragraph.setProperty(Property.TEXT_RENDERING_MODE, TextRenderingMode.INVISIBLE);
+        paragraph.getAccessibilityProperties().setRole(role).setActualText(actualText);
+        if (alternateDescription != null) {
+            paragraph.getAccessibilityProperties().setAlternateDescription(alternateDescription);
+        }
         canvas.add(paragraph);
-    }
-
-    private static void addFormula(Canvas canvas, PdfFont font, float top, JsonObject node) {
-        Paragraph formula = new Paragraph(requiredString(node, "normalized_math"))
-                .setFont(font)
-                .setFontSize(1)
-                .setFixedPosition(0, top, 1)
-                .setOpacity(0f);
-        formula.getAccessibilityProperties()
-                .setRole(StandardRoles.FORMULA)
-                .setActualText(requiredString(node, "normalized_math"))
-                .setAlternateDescription(requiredString(node, "spoken_math_alternative"));
-        canvas.add(formula);
-    }
-
-    private static void addFigure(Canvas canvas, float top, JsonObject node) {
-        Div figure = new Div().setFixedPosition(0, top, 1).setHeight(1).setOpacity(0f);
-        figure.getAccessibilityProperties()
-                .setRole(StandardRoles.FIGURE)
-                .setAlternateDescription(requiredString(node, "figure_alternative"))
-                .setActualText(requiredString(node, "detailed_figure_description"));
-        canvas.add(figure);
     }
 
     private static JsonObject inspect(Path outputPath) throws IOException {
