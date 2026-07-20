@@ -83,8 +83,9 @@ The generated protected directory contains:
 
 - `source.pdf`: immutable copy of the Source PDF
 - `output.pdf`: PDF/UA-1 output
-- `review-record.json`: reconstructed Semantic Layer, Conversion Warnings, and reconstruction provenance
-- `review-report.html`: accessible presentation of the Review Record, including any Conversion Warnings
+- `review-record.yaml`: the human-editable Review Record — the reconstructed Semantic Layer, the retained recognition candidates, the Conversion Warnings with their resolution history, and reconstruction provenance. It validates against `schemas/review-record-1.0.schema.json`.
+- `review-baseline.json`: the last tool-committed snapshot of the Review Record, used to detect changed resolutions and preserve history; not meant for editing
+- `review-report.html`: WCAG 2.2 AA presentation of the Review Record, pairing source-region context with the generated interpretations, warnings, and resolutions
 - `page-semantics.json`: the reconstructed Semantic Layer and warnings the Review Record is built from
 - `recognition/page-1.json`: non-authoritative recognition candidates and existing PDF text evidence
 - `regions/page-1.png`: stable rendered source context for review
@@ -98,6 +99,40 @@ The generated protected directory contains:
 - `validation/internal.json`: semantic invariant results
 - `validation/visual.json`: explicit pixel-difference result and tolerance
 - `validation/verapdf.xml`: independent PDF/UA-1 validation report
+
+## Review and finalize
+
+When a conversion exits `2`, its Conversion Bundle is Review-Required: one or more
+Conversion Warnings remain unresolved. A Reviewer resolves them by hand-editing the
+YAML Review Record and finalizing without repeating OCR or provider calls. None of
+these commands touch the network; the launcher runs them with container networking
+disabled.
+
+Open `review-record.yaml` and, for each warning, set its `resolution` to exactly one
+of `corrected`, `accepted`, or `not_applicable`. A `not_applicable` resolution
+requires a `reason`. You may also correct the Semantic Layer text (heading,
+paragraph, Spoken Math Alternative, Figure Alternative, and Detailed Figure
+Description) directly; those edits are preserved.
+
+```sh
+# Check the record against the canonical schema and report finalizability.
+./accessibilizer validate --bundle electric-current.accessibilizer --json
+
+# Stamp the edited resolutions with your identifier, move any superseded
+# resolution into history, and regenerate the Review Report.
+./accessibilizer review --bundle electric-current.accessibilizer --reviewer jdoe
+
+# Rebuild the Accessible PDF deterministically from the corrected record.
+./accessibilizer finalize --bundle electric-current.accessibilizer --reviewer jdoe --json
+```
+
+Each resolution carries the Reviewer's non-secret identifier, taken from `--reviewer`
+or from a `[review]` table (`reviewer = "jdoe"`) in the user or project configuration.
+`finalize` verifies the immutable Source PDF hash, then refuses (`exit 2`) while any
+warning is unresolved. Once every warning is resolved it re-authors the PDF, re-runs
+the internal semantic checks, the visual comparison, and veraPDF's PDF/UA-1 profile,
+and exits `0` with an Accessible PDF. Superseded resolutions are retained in each
+warning's `history`, and the original recognition candidates are never discarded.
 
 ## Recognition evidence
 

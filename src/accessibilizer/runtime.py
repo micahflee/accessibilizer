@@ -79,3 +79,51 @@ def resolve_conversion_limits(args: argparse.Namespace) -> ConversionLimits:
         provider_retry_base_seconds=float(resolved["provider_retry_base_seconds"]),
         provider_retry_max_seconds=float(resolved["provider_retry_max_seconds"]),
     )
+
+
+def _load_reviewer_config(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        document: Any = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as error:
+        raise ValueError(f"invalid review configuration in {path}: {error}") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"invalid review configuration in {path}")
+    review = document.get("review", {})
+    if not isinstance(review, dict):
+        raise ValueError(f"[review] must be a table in {path}")
+    unknown = review.keys() - {"reviewer"}
+    if unknown:
+        raise ValueError(f"unknown review setting in {path}: {', '.join(sorted(unknown))}")
+    reviewer = review.get("reviewer")
+    if reviewer is None:
+        return None
+    if not isinstance(reviewer, str) or not reviewer.strip():
+        raise ValueError(f"review.reviewer must be a non-empty string in {path}")
+    return reviewer.strip()
+
+
+def resolve_reviewer(args: argparse.Namespace) -> str | None:
+    """Resolve the Reviewer's non-secret identifier from flags then configuration.
+
+    A ``--reviewer`` flag wins over project configuration, which wins over the
+    user default. Warning resolutions carry this identifier so semantic approvals
+    are attributable.
+    """
+    cli_value = getattr(args, "reviewer", None)
+    if cli_value is not None:
+        text = str(cli_value).strip()
+        if not text:
+            raise ValueError("--reviewer must not be empty")
+        return text
+    user_default = Path.home() / ".config" / "accessibilizer" / "config.toml"
+    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
+    project_path = config_path(
+        "ACCESSIBILIZER_PROJECT_CONFIG", Path.cwd() / "accessibilizer.toml"
+    )
+    resolved = _load_reviewer_config(user_path)
+    project_reviewer = _load_reviewer_config(project_path)
+    if project_reviewer is not None:
+        resolved = project_reviewer
+    return resolved

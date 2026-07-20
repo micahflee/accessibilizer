@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 
 def dependency_key(dependencies: object) -> str:
@@ -27,7 +27,7 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def atomic_write_json(path: Path, value: object) -> None:
+def _atomic_write(path: Path, write: Callable[[Any], None]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", dir=path.parent
@@ -35,8 +35,7 @@ def atomic_write_json(path: Path, value: object) -> None:
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
+            write(stream)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -48,6 +47,18 @@ def atomic_write_json(path: Path, value: object) -> None:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def atomic_write_json(path: Path, value: object) -> None:
+    def write(stream: Any) -> None:
+        json.dump(value, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+
+    _atomic_write(path, write)
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    _atomic_write(path, lambda stream: stream.write(text))
 
 
 class CheckpointStore:

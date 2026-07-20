@@ -22,8 +22,99 @@ operational_failure() {
     exit 1
 }
 
-if [ "${1:-}" != "convert" ]; then
-    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --bundle DIRECTORY [provider options] [runtime options] [--resume] [--replace] [--json]"
+command=${1:-}
+if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = "review" ]; then
+    shift
+    bundle_path=
+    reviewer=
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --bundle) [ "$#" -ge 2 ] || operational_failure "--bundle requires a value"; bundle_path=$2; shift 2 ;;
+            --reviewer) [ "$#" -ge 2 ] || operational_failure "--reviewer requires a value"; reviewer=$2; shift 2 ;;
+            --json) json_flag=--json; shift ;;
+            *) operational_failure "unknown argument" ;;
+        esac
+    done
+    if [ -z "$bundle_path" ]; then
+        operational_failure "--bundle is required"
+    fi
+    if [ ! -d "$bundle_path" ]; then
+        operational_failure "bundle must be an existing Conversion Bundle directory"
+    fi
+    if [ "$command" = "validate" ] && [ -n "$reviewer" ]; then
+        operational_failure "validate does not accept --reviewer"
+    fi
+
+    bundle_parent=$(cd "$(dirname "$bundle_path")" && pwd -P) || \
+        operational_failure "could not resolve the bundle directory"
+    bundle_name=$(basename "$bundle_path")
+    host_bundle_path="$bundle_parent/$bundle_name"
+
+    image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+    user_config_path=
+    if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        user_config_path=$XDG_CONFIG_HOME/accessibilizer/config.toml
+    elif [ -n "${HOME:-}" ]; then
+        user_config_path=$HOME/.config/accessibilizer/config.toml
+    fi
+    project_config_path=$(pwd)/accessibilizer.toml
+
+    cid_directory=$(mktemp -d "$bundle_parent/.${bundle_name}.container.XXXXXX") || \
+        operational_failure "could not prepare the container runtime"
+    cidfile="$cid_directory/id"
+    stop_bundle_container() {
+        if [ -f "$cidfile" ]; then
+            container_id=
+            IFS= read -r container_id < "$cidfile" || true
+            if [ -n "$container_id" ]; then
+                docker stop --time 1 "$container_id" >/dev/null 2>&1 || true
+            fi
+        fi
+        rm -f "$cidfile"
+        rmdir "$cid_directory" 2>/dev/null || true
+    }
+    trap 'stop_bundle_container; exit 143' HUP INT TERM
+
+    # finalize, validate, and review make no provider calls, so the container is
+    # denied network access to enforce that guarantee at the runtime boundary.
+    set -- --rm --network none \
+        --cidfile "$cidfile" \
+        --user "$(id -u):$(id -g)" \
+        --volume "$bundle_parent:/work/output" \
+        --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
+    if [ -n "$user_config_path" ] && [ -f "$user_config_path" ]; then
+        set -- "$@" --volume "$user_config_path:/work/user-config.toml:ro" --env ACCESSIBILIZER_USER_CONFIG=/work/user-config.toml
+    fi
+    if [ -f "$project_config_path" ]; then
+        set -- "$@" --volume "$project_config_path:/work/project-config.toml:ro" --env ACCESSIBILIZER_PROJECT_CONFIG=/work/project-config.toml
+    fi
+    if [ -t 0 ]; then set -- --interactive "$@"; fi
+    if [ -t 1 ]; then set -- --tty "$@"; fi
+    set -- "$@" "$image" \
+        python3 -m accessibilizer "$command" --bundle "/work/output/$bundle_name"
+    if [ -n "$reviewer" ]; then set -- "$@" --reviewer "$reviewer"; fi
+    if [ -n "$json_flag" ]; then set -- "$@" --json; fi
+
+    if docker run "$@"; then
+        result=0
+    else
+        result=$?
+    fi
+    trap - HUP INT TERM
+    rm -f "$cidfile"
+    rmdir "$cid_directory" 2>/dev/null || true
+    if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] && [ -n "$json_flag" ]; then
+        printf '{"error":"container runtime failed","status":"operational_failure"}\n'
+    fi
+    # Only finalize republishes the bundle; keep the immutable source copy read-only.
+    if [ "$command" = "finalize" ] && { [ "$result" -eq 0 ] || [ "$result" -eq 2 ]; }; then
+        chmod 400 "$bundle_path/source.pdf" 2>/dev/null || true
+    fi
+    exit "$result"
+fi
+
+if [ "$command" != "convert" ]; then
+    operational_failure "usage: accessibilizer {convert,review,validate,finalize} ... (see --help)"
 fi
 shift
 

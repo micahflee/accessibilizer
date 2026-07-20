@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import html
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -12,10 +12,11 @@ import sys
 import tempfile
 from typing import Any, TypedDict
 
-from accessibilizer import __version__, page, recognition
+from accessibilizer import __version__, page, recognition, review
 from accessibilizer.checkpoint import (
     CheckpointStore,
     atomic_write_json,
+    atomic_write_text,
     dependency_key,
     file_sha256,
 )
@@ -27,7 +28,13 @@ from accessibilizer.provider import (
     check_capabilities,
     resolve_provider,
 )
-from accessibilizer.runtime import ConversionLimits, resolve_conversion_limits
+from accessibilizer.runtime import (
+    ConversionLimits,
+    resolve_conversion_limits,
+    resolve_reviewer,
+)
+
+PDF_AUTHOR_JAR = "/opt/accessibilizer/pdf-author.jar"
 
 
 class VisualReport(TypedDict):
@@ -87,7 +94,9 @@ def _parser() -> argparse.ArgumentParser:
             "technology."
         ),
     )
-    subparsers = parser.add_subparsers(dest="command", required=True, metavar="{convert}")
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, metavar="{convert,review,validate,finalize}"
+    )
     convert = subparsers.add_parser(
         "convert",
         description=(
@@ -165,6 +174,58 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="print machine-readable JSON instead of human-readable text",
     )
+    validate = subparsers.add_parser(
+        "validate",
+        description=(
+            "Validate a Conversion Bundle's Review Record against the canonical "
+            "schema and report whether it is ready to finalize. Read-only."
+        ),
+    )
+    validate.add_argument(
+        "--bundle", type=Path, required=True, help="path to the Conversion Bundle to check"
+    )
+    validate.add_argument(
+        "--json", action="store_true", help="print machine-readable JSON instead of text"
+    )
+
+    review_parser = subparsers.add_parser(
+        "review",
+        description=(
+            "Record the resolutions a Reviewer edited into the YAML Review Record: "
+            "stamp them with the Reviewer identifier and timestamp, move superseded "
+            "resolutions into history, and regenerate the accessible Review Report."
+        ),
+    )
+    review_parser.add_argument(
+        "--bundle", type=Path, required=True, help="path to the Conversion Bundle to review"
+    )
+    review_parser.add_argument(
+        "--reviewer",
+        help="non-secret Reviewer identifier attached to resolutions (overrides config)",
+    )
+    review_parser.add_argument(
+        "--json", action="store_true", help="print machine-readable JSON instead of text"
+    )
+
+    finalize = subparsers.add_parser(
+        "finalize",
+        description=(
+            "Rebuild the Accessible PDF from the corrected Review Record without any "
+            "OCR or provider calls. Blocked while any Conversion Warning is unresolved; "
+            "verifies the immutable Source PDF hash and preserves reviewer edits."
+        ),
+    )
+    finalize.add_argument(
+        "--bundle", type=Path, required=True, help="path to the Conversion Bundle to finalize"
+    )
+    finalize.add_argument(
+        "--reviewer",
+        help="non-secret Reviewer identifier attached to resolutions (overrides config)",
+    )
+    finalize.add_argument(
+        "--json", action="store_true", help="print machine-readable JSON instead of text"
+    )
+
     provider_key_env = subparsers.add_parser("provider-key-env", help=argparse.SUPPRESS)
     _add_provider_arguments(provider_key_env)
     # argparse.SUPPRESS on add_parser() hides the description but not the
@@ -300,52 +361,12 @@ def _publish_bundle(staging: Path, bundle: Path, replace: bool) -> None:
     shutil.rmtree(backup, ignore_errors=True)
 
 
-def _review_report(semantics: dict[str, Any]) -> str:
-    items: list[str] = []
-    for node in semantics["semantic_layer"]:
-        node_type = html.escape(str(node["type"]).replace("_", " ").title())
-        values = [
-            f"<dt>{html.escape(str(key).replace('_', ' ').title())}</dt>"
-            f"<dd>{html.escape(str(value))}</dd>"
-            for key, value in node.items()
-            if key != "type"
-        ]
-        items.append(f"<li><h3>{node_type}</h3><dl>{''.join(values)}</dl></li>")
-    warnings = semantics.get("warnings", [])
-    if warnings:
-        rows = "".join(
-            "<li><h3>{code}</h3><p>{message}</p>"
-            "<p>Status: {status}</p></li>".format(
-                code=html.escape(str(warning.get("code", "warning"))),
-                message=html.escape(str(warning.get("message", ""))),
-                status=html.escape(str(warning.get("status", "unresolved"))),
-            )
-            for warning in warnings
-        )
-        warnings_section = (
-            '<section aria-labelledby="conversion-warnings">'
-            '<h2 id="conversion-warnings">Conversion Warnings</h2>'
-            f"<ol>{rows}</ol></section>"
-        )
-    else:
-        warnings_section = (
-            '<section aria-labelledby="conversion-warnings">'
-            '<h2 id="conversion-warnings">Conversion Warnings</h2>'
-            "<p>No Conversion Warnings remain.</p></section>"
-        )
-    return """<!doctype html>
-<html lang="{language}">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>{title} — Review Report</title></head>
-<body><main><h1>{title} — Review Report</h1>
-<section aria-labelledby="semantic-layer"><h2 id="semantic-layer">Semantic Layer</h2>
-<ol>{items}</ol></section>{warnings_section}</main></body></html>
-""".format(
-        language=html.escape(str(semantics["language"]), quote=True),
-        title=html.escape(str(semantics["title"])),
-        items="".join(items),
-        warnings_section=warnings_section,
-    )
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _host_bundle(bundle: Path) -> Path:
+    return Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
 
 
 def _read_ppm(path: Path) -> tuple[int, int, bytes]:
@@ -422,6 +443,68 @@ def _internal_checks(
     }
 
 
+def _author_pdf(
+    *,
+    source_pdf: Path,
+    output: Path,
+    authoring_contract: Path,
+    language: str,
+    page_number: int,
+    semantic_layer: list[dict[str, Any]],
+    title: str,
+) -> None:
+    """Author output.pdf from a Semantic Layer through the Java authoring boundary."""
+    atomic_write_json(authoring_contract, {
+        "language": language,
+        "page": page_number,
+        "schema_version": "1.0",
+        "semantic_layer": semantic_layer,
+        "title": title,
+    })
+    authored = _run([
+        "java", "-jar", PDF_AUTHOR_JAR,
+        str(authoring_contract), str(source_pdf), str(output),
+    ])
+    if authored.returncode:
+        raise RuntimeError(f"PDF authoring failed: {authored.stderr}")
+
+
+def _run_output_gates(
+    *,
+    workspace: Path,
+    source_pdf: Path,
+    output: Path,
+    page_number: int,
+    semantics: dict[str, Any],
+    internal_artifact: Path,
+    visual_artifact: Path,
+    verapdf_artifact: Path,
+) -> None:
+    """Run internal semantic checks, the visual comparison, and veraPDF PDF/UA-1.
+
+    Writes each report as a bundle artifact and raises if any gate fails.
+    """
+    inspected = _run(["java", "-jar", PDF_AUTHOR_JAR, "--inspect", str(output)])
+    if inspected.returncode:
+        raise RuntimeError(f"PDF semantic inspection failed: {inspected.stderr}")
+    try:
+        extracted_semantics: dict[str, Any] = json.loads(inspected.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
+    internal = _internal_checks(semantics, extracted_semantics)
+    atomic_write_json(internal_artifact, internal)
+    visual = _visual_report(source_pdf, output, page_number, workspace)
+    atomic_write_json(visual_artifact, visual)
+    for render in workspace.glob("*-render.ppm"):
+        render.unlink()
+    verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
+    atomic_write_text(verapdf_artifact, verapdf.stdout)
+    compliant = 'isCompliant="true"' in verapdf.stdout
+    visual_failed = visual["different_pixel_ratio"] > visual["tolerance"]
+    if not internal["passed"] or visual_failed or not compliant:
+        raise RuntimeError("conversion failed its accessibility or visual-preservation gates")
+
+
 def _convert(args: argparse.Namespace) -> int:
     source: Path = args.source
     bundle: Path = args.bundle
@@ -468,7 +551,7 @@ def _convert(args: argparse.Namespace) -> int:
     source_copy = workspace / "source.pdf"
     source_sha256 = file_sha256(source)
     source_key = dependency_key({
-        "pdf_author_sha256": file_sha256(Path("/opt/accessibilizer/pdf-author.jar")),
+        "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
         "preflight_contract_version": "1.0",
         "preflight_stage_version": "1.0",
         "source_sha256": source_sha256,
@@ -479,7 +562,7 @@ def _convert(args: argparse.Namespace) -> int:
         if file_sha256(source_copy) != source_sha256:
             raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
         preflight = _run([
-            "java", "-jar", "/opt/accessibilizer/pdf-author.jar", "--preflight",
+            "java", "-jar", PDF_AUTHOR_JAR, "--preflight",
             str(source_copy),
         ])
         if preflight.returncode:
@@ -609,38 +692,38 @@ def _convert(args: argparse.Namespace) -> int:
     page_key = dependency_key({
         "authoring_contract_version": "1.0",
         "page_semantics_stage": page_semantics_key,
-        "page_stage_version": "2.0",
-        "pdf_author_sha256": file_sha256(Path("/opt/accessibilizer/pdf-author.jar")),
+        "page_stage_version": "3.0",
+        "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
         "page": args.page,
-        "review_report_version": "1.1",
+        "review_record_schema_version": review.REVIEW_RECORD_SCHEMA_VERSION,
+        "review_report_version": review.REVIEW_REPORT_VERSION,
         "source_sha256": source_sha256,
     })
-    review_record = workspace / "review-record.json"
+    review_record = workspace / "review-record.yaml"
+    review_baseline = workspace / "review-baseline.json"
     review_report = workspace / "review-report.html"
     authoring_contract = workspace / "authoring.json"
     output = workspace / "output.pdf"
     page_stage = f"page-{args.page}"
     if not checkpoints.is_reusable(page_stage, page_key):
-        atomic_write_json(review_record, semantics)
-        review_report.write_text(_review_report(semantics), encoding="utf-8")
-        contract = {
-            "language": semantics["language"],
-            "page": args.page,
-            "schema_version": "1.0",
-            "semantic_layer": semantics["semantic_layer"],
-            "title": semantics["title"],
-        }
-        atomic_write_json(authoring_contract, contract)
-        authored = _run([
-            "java", "-jar", "/opt/accessibilizer/pdf-author.jar",
-            str(authoring_contract), str(source_copy), str(output),
-        ])
-        if authored.returncode:
-            raise RuntimeError(f"PDF authoring failed: {authored.stderr}")
+        record = review.build_review_record(page_semantics=semantics, candidates=candidates)
+        review.validate_review_record(record)
+        atomic_write_text(review_record, review.dump_yaml(record))
+        atomic_write_json(review_baseline, record)
+        atomic_write_text(review_report, review.render_review_report(record))
+        _author_pdf(
+            source_pdf=source_copy,
+            output=output,
+            authoring_contract=authoring_contract,
+            language=semantics["language"],
+            page_number=args.page,
+            semantic_layer=semantics["semantic_layer"],
+            title=semantics["title"],
+        )
         checkpoints.complete(
             page_stage,
             page_key,
-            [review_record, review_report, authoring_contract, output],
+            [review_record, review_baseline, review_report, authoring_contract, output],
         )
 
     validation_key = dependency_key({
@@ -656,28 +739,16 @@ def _convert(args: argparse.Namespace) -> int:
     visual_artifact = validation / "visual.json"
     verapdf_artifact = validation / "verapdf.xml"
     if not checkpoints.is_reusable("validation", validation_key):
-        inspected = _run([
-            "java", "-jar", "/opt/accessibilizer/pdf-author.jar", "--inspect", str(output),
-        ])
-        if inspected.returncode:
-            raise RuntimeError(f"PDF semantic inspection failed: {inspected.stderr}")
-        try:
-            extracted_semantics: dict[str, Any] = json.loads(inspected.stdout)
-        except json.JSONDecodeError as error:
-            raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
-        internal = _internal_checks(semantics, extracted_semantics)
-        atomic_write_json(internal_artifact, internal)
-        visual = _visual_report(source_copy, output, args.page, workspace)
-        atomic_write_json(visual_artifact, visual)
-        for render in workspace.glob("*-render.ppm"):
-            render.unlink()
-
-        verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
-        verapdf_artifact.write_text(verapdf.stdout, encoding="utf-8")
-        compliant = 'isCompliant="true"' in verapdf.stdout
-        visual_failed = visual["different_pixel_ratio"] > visual["tolerance"]
-        if not internal["passed"] or visual_failed or not compliant:
-            raise RuntimeError("conversion failed its accessibility or visual-preservation gates")
+        _run_output_gates(
+            workspace=workspace,
+            source_pdf=source_copy,
+            output=output,
+            page_number=args.page,
+            semantics=semantics,
+            internal_artifact=internal_artifact,
+            visual_artifact=visual_artifact,
+            verapdf_artifact=verapdf_artifact,
+        )
         checkpoints.complete(
             "validation",
             validation_key,
@@ -692,6 +763,7 @@ def _convert(args: argparse.Namespace) -> int:
         "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
         "region_prompt_version": page.REGION_PROMPT_VERSION,
         "region_schema_version": page.REGION_SCHEMA_VERSION,
+        "review_record_schema_version": review.REVIEW_RECORD_SCHEMA_VERSION,
         "recognition_backend": backend.name,
         "recognition_backend_version": backend.version,
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
@@ -707,7 +779,7 @@ def _convert(args: argparse.Namespace) -> int:
     })
     _publish_bundle(workspace, bundle, args.replace)
 
-    host_bundle = Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
+    host_bundle = _host_bundle(bundle)
     review_required = any(
         warning.get("status") == "unresolved" for warning in semantics.get("warnings", [])
     )
@@ -725,11 +797,216 @@ def _convert(args: argparse.Namespace) -> int:
     return 2 if review_required else 0
 
 
+def _load_bundle_record(bundle: Path) -> tuple[dict[str, Any], Path]:
+    if not bundle.is_dir():
+        raise RuntimeError(f"no Conversion Bundle found: {bundle}")
+    record_path = bundle / "review-record.yaml"
+    if not record_path.is_file():
+        raise RuntimeError(f"no Review Record found in bundle: {bundle}")
+    record = review.load_yaml(record_path.read_text(encoding="utf-8"))
+    return record, record_path
+
+
+def _load_baseline(bundle: Path) -> dict[str, Any] | None:
+    baseline_path = bundle / "review-baseline.json"
+    if not baseline_path.is_file():
+        return None
+    loaded: Any = json.loads(baseline_path.read_text(encoding="utf-8"))
+    return loaded if isinstance(loaded, dict) else None
+
+
+def _emit(args: argparse.Namespace, result: dict[str, Any], human_line: str) -> None:
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    else:
+        print(human_line)
+
+
+def _validate(args: argparse.Namespace) -> int:
+    record, _ = _load_bundle_record(args.bundle)
+    review.validate_review_record(record)
+    unresolved = review.unresolved_warnings(record)
+    finalizable = not unresolved
+    result = {
+        "bundle": str(_host_bundle(args.bundle)),
+        "finalizable": finalizable,
+        "status": "finalizable" if finalizable else "review_required",
+        "unresolved_warnings": len(unresolved),
+        "warnings": len(record.get("warnings", [])),
+    }
+    _emit(
+        args,
+        result,
+        f"Review Record is valid and ready to finalize: {result['bundle']}"
+        if finalizable
+        else f"Review Record is valid; {len(unresolved)} warning(s) still need resolution.",
+    )
+    return 0 if finalizable else 2
+
+
+def _persist_review(bundle: Path, record: dict[str, Any]) -> None:
+    atomic_write_text(bundle / "review-record.yaml", review.dump_yaml(record))
+    atomic_write_json(bundle / "review-baseline.json", record)
+    atomic_write_text(bundle / "review-report.html", review.render_review_report(record))
+
+
+def _review(args: argparse.Namespace) -> int:
+    reviewer = resolve_reviewer(args)
+    record, _ = _load_bundle_record(args.bundle)
+    committed = review.commit_resolutions(
+        record, baseline=_load_baseline(args.bundle), reviewer=reviewer, now=_iso_now()
+    )
+    review.validate_review_record(committed)
+    _persist_review(args.bundle, committed)
+    unresolved = review.unresolved_warnings(committed)
+    result = {
+        "bundle": str(_host_bundle(args.bundle)),
+        "report": str(_host_bundle(args.bundle) / "review-report.html"),
+        "status": "finalizable" if not unresolved else "review_required",
+        "unresolved_warnings": len(unresolved),
+    }
+    _emit(
+        args,
+        result,
+        f"Review Record updated; ready to finalize: {result['report']}"
+        if not unresolved
+        else f"Review Record updated; {len(unresolved)} warning(s) still need resolution.",
+    )
+    return 0 if not unresolved else 2
+
+
+def _rebuild_and_validate(workspace: Path, record: dict[str, Any]) -> None:
+    """Author and validate the PDF from a resolved record; no OCR or provider calls."""
+    source_copy = workspace / "source.pdf"
+    output = workspace / "output.pdf"
+    validation = workspace / "validation"
+    validation.mkdir(mode=0o700, exist_ok=True)
+    _author_pdf(
+        source_pdf=source_copy,
+        output=output,
+        authoring_contract=workspace / "authoring.json",
+        language=record["language"],
+        page_number=record["page"],
+        semantic_layer=record["semantic_layer"],
+        title=record["title"],
+    )
+    _run_output_gates(
+        workspace=workspace,
+        source_pdf=source_copy,
+        output=output,
+        page_number=record["page"],
+        semantics=record,
+        internal_artifact=validation / "internal.json",
+        visual_artifact=validation / "visual.json",
+        verapdf_artifact=validation / "verapdf.xml",
+    )
+
+
+def _finalize_provenance(
+    bundle: Path, record: dict[str, Any], reviewer: str | None, *, finalized: bool
+) -> dict[str, Any]:
+    provenance: dict[str, Any] = {}
+    original = bundle / "provenance.json"
+    if original.is_file():
+        loaded: Any = json.loads(original.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            provenance = loaded
+    resolutions: list[dict[str, Any]] = []
+    for warning in record.get("warnings", []):
+        resolution = warning.get("resolution") or {}
+        resolutions.append({
+            "reviewer": resolution.get("reviewer"),
+            "status": resolution.get("status"),
+            "warning": warning.get("id"),
+        })
+    provenance.update({
+        "accessibilizer_version": __version__,
+        "finalized": finalized,
+        "review_record_schema_version": record["schema_version"],
+        "reviewer": reviewer,
+        "resolutions": resolutions,
+    })
+    return provenance
+
+
+def _finalize(args: argparse.Namespace) -> int:
+    bundle: Path = args.bundle
+    reviewer = resolve_reviewer(args)
+    # Fail fast before touching the bundle: load, stamp, validate, verify source.
+    record, _ = _load_bundle_record(bundle)
+    committed = review.commit_resolutions(
+        record, baseline=_load_baseline(bundle), reviewer=reviewer, now=_iso_now()
+    )
+    review.validate_review_record(committed)
+    source_copy = bundle / "source.pdf"
+    if not source_copy.is_file():
+        raise RuntimeError("bundle is missing its immutable Source PDF copy")
+    if file_sha256(source_copy) != committed["source_sha256"]:
+        raise RuntimeError(
+            "the Source PDF copy does not match the Review Record; refusing to finalize"
+        )
+
+    host_bundle = _host_bundle(bundle)
+    unresolved = review.unresolved_warnings(committed)
+    if unresolved:
+        # Unresolved warnings block finalization: refuse without touching the
+        # bundle. The Reviewer resolves them and records them with `review`.
+        result = {
+            "bundle": str(host_bundle),
+            "output": str(host_bundle / "output.pdf"),
+            "status": "review_required",
+            "unresolved_warnings": len(unresolved),
+        }
+        _emit(
+            args,
+            result,
+            f"Finalization blocked; {len(unresolved)} warning(s) still need resolution.",
+        )
+        return 2
+
+    workspace = _prepare_workspace(bundle, replace=True, resume=False)
+    try:
+        # _prepare_workspace omits request-usage.json; finalize makes no provider
+        # calls, so carry the existing usage record forward unchanged.
+        usage = bundle / "request-usage.json"
+        if usage.is_file():
+            _atomic_copy(usage, workspace / "request-usage.json")
+        atomic_write_text(workspace / "review-record.yaml", review.dump_yaml(committed))
+        atomic_write_json(workspace / "review-baseline.json", committed)
+        atomic_write_text(
+            workspace / "review-report.html", review.render_review_report(committed)
+        )
+        _rebuild_and_validate(workspace, committed)
+        atomic_write_json(
+            workspace / "provenance.json",
+            _finalize_provenance(bundle, committed, reviewer, finalized=True),
+        )
+        _publish_bundle(workspace, bundle, True)
+    except Exception:
+        shutil.rmtree(workspace, ignore_errors=True)
+        raise
+
+    result = {
+        "bundle": str(host_bundle),
+        "output": str(host_bundle / "output.pdf"),
+        "status": "accessible",
+        "unresolved_warnings": 0,
+    }
+    _emit(args, result, f"Accessible PDF: {result['output']}")
+    return 0
+
+
 def main() -> int:
     args = _parser().parse_args()
     try:
         if args.command == "convert":
             return _convert(args)
+        if args.command == "validate":
+            return _validate(args)
+        if args.command == "review":
+            return _review(args)
+        if args.command == "finalize":
+            return _finalize(args)
         if args.command == "provider-key-env":
             provider = resolve_provider(args)
             if provider.api_key_env is not None:
