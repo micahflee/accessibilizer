@@ -207,15 +207,17 @@ public final class Author {
     // strings at full width rather than the clipped fragments produced by the
     // one-point-wide overlay that ADR 0026 rejected. Each node occupies its own
     // vertical band, top to bottom in Logical Reading Order, so no run overlaps
-    // another. Every string a reader must reach is drawn as a glyph run: the
-    // Formula draws its normalized math, and the Figure draws both its alternative
-    // and its detailed description rather than hiding either in an attribute the
-    // rejected overlay proved Preview ignores. ActualText and Alt remain on every
-    // structure element so the internal extraction and PDF/UA gates are
-    // unaffected, and the Figure is attached to a real glyph run instead of an
-    // empty container so Preview cannot drop it.
+    // another. The Formula draws its normalized math. Preview reads a Figure's
+    // /Alt and ignores that element's own glyphs and ActualText, so the Figure
+    // carries the short Alternative in /Alt while the Detailed Figure Description
+    // is authored as a sibling Caption whose glyphs Preview reads like any other
+    // text element. ActualText and Alt remain on every structure element so the
+    // internal extraction and PDF/UA gates are unaffected, and the Figure is
+    // attached to a real glyph run instead of an empty container so Preview
+    // cannot drop it.
     private static final float PAGE_MARGIN = 40f;
     private static final float SEMANTIC_FONT_SIZE = 10f;
+    private static final float FIGURE_CAPTION_GAP = 24f;
 
     private static void addSemanticLayer(
             com.itextpdf.kernel.pdf.PdfPage page, PdfFont font, JsonArray nodes) {
@@ -250,8 +252,11 @@ public final class Author {
                         String alternative = requiredString(node, "figure_alternative");
                         String detailed = requiredString(node, "detailed_figure_description");
                         addNode(canvas, font, StandardRoles.FIGURE,
-                                alternative + " " + detailed, detailed, alternative,
-                                usableWidth, bandBottom);
+                                alternative, detailed, alternative,
+                                usableWidth, bandBottom + FIGURE_CAPTION_GAP);
+                        addNode(canvas, font, StandardRoles.CAPTION,
+                                detailed, detailed, null,
+                                usableWidth, bandBottom - FIGURE_CAPTION_GAP);
                     }
                     default -> throw new IllegalArgumentException("unsupported semantic node: " + type);
                 }
