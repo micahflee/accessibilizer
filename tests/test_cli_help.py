@@ -50,7 +50,6 @@ class ConvertHelpTest(unittest.TestCase):
         for flag in (
             "source",
             "--page",
-            "--semantic-input",
             "--bundle",
             "--provider-base-url",
             "--provider-model",
@@ -66,14 +65,6 @@ class ConvertHelpTest(unittest.TestCase):
             "--json",
         ):
             self.assertIn(flag, result.stdout)
-
-    def test_convert_help_explains_semantic_input_is_a_temporary_scaffold(self) -> None:
-        result = run_cli("convert", "--help")
-
-        stdout = unwrapped(result.stdout)
-        self.assertIn("schema_version 1.0", stdout)
-        self.assertIn("temporary scaffold", stdout)
-        self.assertIn("issue #1", stdout)
 
     def test_convert_help_explains_page_is_a_single_page_scaffold(self) -> None:
         result = run_cli("convert", "--help")

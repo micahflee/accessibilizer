@@ -12,7 +12,7 @@ import sys
 import tempfile
 from typing import Any, TypedDict
 
-from accessibilizer import __version__, recognition
+from accessibilizer import __version__, page, recognition
 from accessibilizer.checkpoint import (
     CheckpointStore,
     atomic_write_json,
@@ -30,14 +30,6 @@ from accessibilizer.provider import (
 from accessibilizer.runtime import ConversionLimits, resolve_conversion_limits
 
 
-REQUIRED_NODE_FIELDS = {
-    "heading": {"level", "text"},
-    "paragraph": {"text"},
-    "formula": {"normalized_math", "spoken_math_alternative"},
-    "figure": {"figure_alternative", "detailed_figure_description"},
-}
-
-
 class VisualReport(TypedDict):
     different_pixel_ratio: float
     output_height: int
@@ -50,13 +42,13 @@ class VisualReport(TypedDict):
 CONVERT_EPILOG = """\
 examples:
   accessibilizer convert source.pdf --page 1 \\
-      --semantic-input semantic.json --bundle output.accessibilizer \\
+      --bundle output.accessibilizer \\
       --provider-base-url http://localhost:11434/v1 \\
       --provider-model exact-model-identifier \\
       --provider-data-location local --json
 
   accessibilizer convert source.pdf --page 1 \\
-      --semantic-input semantic.json --bundle output.accessibilizer \\
+      --bundle output.accessibilizer \\
       --provider-base-url http://localhost:11434/v1 \\
       --provider-model exact-model-identifier \\
       --provider-data-location local --resume
@@ -114,16 +106,6 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "single, required page number (1-indexed) to convert; whole-document "
             "conversion is tracked by issue #1"
-        ),
-    )
-    convert.add_argument(
-        "--semantic-input",
-        type=Path,
-        required=True,
-        help=(
-            "path to a JSON Semantic Layer contract (schema_version 1.0) that becomes "
-            "the output PDF's structure; this is a temporary scaffold until a future "
-            "release generates it from the Source PDF (tracked by issue #1)"
         ),
     )
     convert.add_argument(
@@ -191,42 +173,6 @@ def _parser() -> argparse.ArgumentParser:
         action for action in subparsers._choices_actions if action.dest != "provider-key-env"
     ]
     return parser
-
-
-def _load_semantics(path: Path) -> dict[str, Any]:
-    data: Any = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or data.get("schema_version") != "1.0":
-        raise ValueError("semantic input must use schema_version 1.0")
-    if not isinstance(data.get("title"), str) or not data["title"].strip():
-        raise ValueError("semantic input requires a non-empty title")
-    if not isinstance(data.get("language"), str) or not data["language"].strip():
-        raise ValueError("semantic input requires title and language")
-    nodes = data.get("semantic_layer")
-    if not isinstance(nodes, list) or not nodes:
-        raise ValueError("semantic_layer must be a non-empty array")
-    for node in nodes:
-        if not isinstance(node, dict) or node.get("type") not in REQUIRED_NODE_FIELDS:
-            raise ValueError("semantic_layer contains an unsupported node")
-        missing = REQUIRED_NODE_FIELDS[str(node["type"])] - node.keys()
-        if missing:
-            raise ValueError(f"{node['type']} is missing {', '.join(sorted(missing))}")
-        for field in REQUIRED_NODE_FIELDS[str(node["type"])]:
-            if field == "level":
-                if node[field] != 1:
-                    raise ValueError("representative heading must use level 1")
-            elif not isinstance(node[field], str) or not node[field].strip():
-                raise ValueError(f"{node['type']}.{field} must be a non-empty string")
-    if [node["type"] for node in nodes] != ["heading", "paragraph", "formula", "figure"]:
-        raise ValueError("semantic_layer is not in the required Logical Reading Order")
-    warnings = data.get("warnings", [])
-    if not isinstance(warnings, list):
-        raise ValueError("warnings must be an array")
-    for warning in warnings:
-        if not isinstance(warning, dict) or warning.get("status") not in {
-            "unresolved", "corrected", "accepted", "not_applicable",
-        }:
-            raise ValueError("each warning requires a valid status")
-    return data
 
 
 def _atomic_copy(source: Path, destination: Path, mode: int | None = None) -> None:
@@ -365,17 +311,40 @@ def _review_report(semantics: dict[str, Any]) -> str:
             if key != "type"
         ]
         items.append(f"<li><h3>{node_type}</h3><dl>{''.join(values)}</dl></li>")
+    warnings = semantics.get("warnings", [])
+    if warnings:
+        rows = "".join(
+            "<li><h3>{code}</h3><p>{message}</p>"
+            "<p>Status: {status}</p></li>".format(
+                code=html.escape(str(warning.get("code", "warning"))),
+                message=html.escape(str(warning.get("message", ""))),
+                status=html.escape(str(warning.get("status", "unresolved"))),
+            )
+            for warning in warnings
+        )
+        warnings_section = (
+            '<section aria-labelledby="conversion-warnings">'
+            '<h2 id="conversion-warnings">Conversion Warnings</h2>'
+            f"<ol>{rows}</ol></section>"
+        )
+    else:
+        warnings_section = (
+            '<section aria-labelledby="conversion-warnings">'
+            '<h2 id="conversion-warnings">Conversion Warnings</h2>'
+            "<p>No Conversion Warnings remain.</p></section>"
+        )
     return """<!doctype html>
 <html lang="{language}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>{title} — Review Report</title></head>
 <body><main><h1>{title} — Review Report</h1>
 <section aria-labelledby="semantic-layer"><h2 id="semantic-layer">Semantic Layer</h2>
-<ol>{items}</ol></section></main></body></html>
+<ol>{items}</ol></section>{warnings_section}</main></body></html>
 """.format(
         language=html.escape(str(semantics["language"]), quote=True),
         title=html.escape(str(semantics["title"])),
         items="".join(items),
+        warnings_section=warnings_section,
     )
 
 
@@ -475,15 +444,10 @@ def _convert(args: argparse.Namespace) -> int:
         "model": provider.model,
     })
     capability_reusable = checkpoints.is_reusable("provider-capability", capability_key)
-    estimated_requests = 0 if capability_reusable else 1
+    capability_estimate = 0 if capability_reusable else 1
     budget = _request_budget(
-        workspace, limits, estimated_requests=estimated_requests
+        workspace, limits, estimated_requests=capability_estimate
     )
-    if not args.json:
-        print(
-            f"Estimated provider requests: {budget.estimated_requests} "
-            f"(ceiling: {budget.ceiling})"
-        )
     if not capability_reusable:
         if budget.actual_requests + 1 > budget.ceiling:
             raise RequestCeilingExceeded(
@@ -499,7 +463,6 @@ def _convert(args: argparse.Namespace) -> int:
         )
         checkpoints.complete("provider-capability", capability_key, [])
 
-    semantics = _load_semantics(args.semantic_input)
     validation = workspace / "validation"
     validation.mkdir(mode=0o700, exist_ok=True)
     source_copy = workspace / "source.pdf"
@@ -590,14 +553,66 @@ def _convert(args: argparse.Namespace) -> int:
         )
         checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
 
-    semantic_input_sha256 = file_sha256(args.semantic_input)
+    recognition_document: dict[str, Any] = json.loads(
+        (recognition_directory / f"page-{args.page}.json").read_text(encoding="utf-8")
+    )
+    candidates = recognition_document["candidates"]
+    pdf_words = recognition_document["pdf_text_evidence"]["words"]
+
+    page_semantics_path = workspace / "page-semantics.json"
+    page_semantics_key = dependency_key({
+        "base_url": provider.base_url,
+        "model": provider.model,
+        "page": args.page,
+        "page_prompt_version": page.PAGE_PROMPT_VERSION,
+        "page_schema_version": page.PAGE_SCHEMA_VERSION,
+        "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
+        "recognition_stage": recognition_key,
+        "region_prompt_version": page.REGION_PROMPT_VERSION,
+        "region_schema_version": page.REGION_SCHEMA_VERSION,
+        "source_sha256": source_sha256,
+    })
+    page_semantics_stage = f"page-semantics-page-{args.page}"
+    page_semantics_reusable = checkpoints.is_reusable(page_semantics_stage, page_semantics_key)
+    page_requests = 0 if page_semantics_reusable else page.expected_request_count(candidates)
+    budget.update_estimate(capability_estimate + page_requests)
+    if not args.json:
+        print(
+            f"Estimated provider requests: {budget.estimated_requests} "
+            f"(ceiling: {budget.ceiling})"
+        )
+    if not page_semantics_reusable:
+        if budget.actual_requests + page_requests > budget.ceiling:
+            raise RequestCeilingExceeded(
+                f"conversion paused before exceeding request ceiling {budget.ceiling}; "
+                "resume with a higher --max-requests value"
+            )
+        semantics_document = page.reconstruct_page(
+            provider,
+            page=args.page,
+            source_sha256=source_sha256,
+            page_image=crop_artifact,
+            regions_dir=regions,
+            candidates=candidates,
+            pdf_words=pdf_words,
+            budget=budget,
+            max_retries=limits.provider_max_retries,
+            retry_base_seconds=limits.provider_retry_base_seconds,
+            retry_max_seconds=limits.provider_retry_max_seconds,
+        )
+        atomic_write_json(page_semantics_path, semantics_document)
+        checkpoints.complete(page_semantics_stage, page_semantics_key, [page_semantics_path])
+
+    semantics: dict[str, Any] = json.loads(
+        page_semantics_path.read_text(encoding="utf-8")
+    )
     page_key = dependency_key({
         "authoring_contract_version": "1.0",
-        "page_stage_version": "1.0",
+        "page_semantics_stage": page_semantics_key,
+        "page_stage_version": "2.0",
         "pdf_author_sha256": file_sha256(Path("/opt/accessibilizer/pdf-author.jar")),
         "page": args.page,
-        "review_report_version": "1.0",
-        "semantic_input_sha256": semantic_input_sha256,
+        "review_report_version": "1.1",
         "source_sha256": source_sha256,
     })
     review_record = workspace / "review-record.json"
@@ -672,6 +687,11 @@ def _convert(args: argparse.Namespace) -> int:
     atomic_write_json(workspace / "provenance.json", {
         "accessibilizer_version": __version__,
         "authoring_contract_version": "1.0",
+        "page_prompt_version": page.PAGE_PROMPT_VERSION,
+        "page_schema_version": page.PAGE_SCHEMA_VERSION,
+        "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
+        "region_prompt_version": page.REGION_PROMPT_VERSION,
+        "region_schema_version": page.REGION_SCHEMA_VERSION,
         "recognition_backend": backend.name,
         "recognition_backend_version": backend.version,
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,

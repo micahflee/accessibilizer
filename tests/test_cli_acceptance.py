@@ -14,7 +14,6 @@ from tests.test_provider_acceptance import FakeProvider
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
-SEMANTIC_INPUT = ROOT / "testdata" / "one-page-semantic.json"
 EMPTY_PASSWORD_ENCRYPTED_PDF = (
     "JVBERi0xLjcKJb/3ov4KMSAwIG9iago8PCAvRXh0ZW5zaW9ucyA8PCAvQURCRSA8PCAvQmFz"
     "ZVZlcnNpb24gLzEuNyAvRXh0ZW5zaW9uTGV2ZWwgOCA+PiA+PiAvUGFnZXMgMiAwIFIgL1R5"
@@ -96,7 +95,7 @@ class OnePageConversionTest(unittest.TestCase):
         page: int = 1,
         replace: bool = False,
         resume: bool = False,
-        semantic_input: Path = SEMANTIC_INPUT,
+        base_url: str | None = None,
     ) -> list[str]:
         replacement_arguments = ["--replace"] if replace else []
         resume_arguments = ["--resume"] if resume else []
@@ -106,12 +105,10 @@ class OnePageConversionTest(unittest.TestCase):
             str(source),
             "--page",
             str(page),
-            "--semantic-input",
-            str(semantic_input),
             "--bundle",
             str(bundle),
             "--provider-base-url",
-            self.provider.base_url,
+            base_url or self.provider.base_url,
             "--provider-model",
             "acceptance-model-2026-07-19",
             "--provider-data-location",
@@ -123,10 +120,13 @@ class OnePageConversionTest(unittest.TestCase):
 
     @staticmethod
     def conversion_environment() -> dict[str, str]:
+        # Point XDG_CONFIG_HOME at a directory with no config so a developer's
+        # personal ~/.config/accessibilizer/config.toml cannot leak into the run.
         return {
             **os.environ,
             "ACCESSIBILIZER_IMAGE": "accessibilizer:test",
             "ACCESSIBILIZER_RECOGNITION_BACKEND": "fake",
+            "XDG_CONFIG_HOME": str(ROOT / ".no-user-config"),
         }
 
     def run_conversion(
@@ -137,7 +137,7 @@ class OnePageConversionTest(unittest.TestCase):
         page: int = 1,
         replace: bool = False,
         resume: bool = False,
-        semantic_input: Path = SEMANTIC_INPUT,
+        base_url: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             self.conversion_command(
@@ -146,7 +146,7 @@ class OnePageConversionTest(unittest.TestCase):
                 page=page,
                 replace=replace,
                 resume=resume,
-                semantic_input=semantic_input,
+                base_url=base_url,
             ),
             cwd=ROOT,
             text=True,
@@ -164,27 +164,21 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 json.loads(result.stdout),
                 {
-                    "error": "source and semantic input must be files",
+                    "error": "source must be a file",
                     "status": "operational_failure",
                 },
             )
 
-    def test_public_cli_returns_review_required_status_and_exit_two(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_directory:
+    def test_reconstruction_warnings_yield_review_required_status_and_exit_two(self) -> None:
+        # A page the model reports as ambiguous produces a non-bypassable warning.
+        with (
+            FakeProvider(page_overrides={"reading_order_is_unambiguous": False}) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
             temporary = Path(temporary_directory)
-            semantic_input = temporary / "warning-semantic.json"
-            semantics = json.loads(SEMANTIC_INPUT.read_text())
-            semantics["warnings"] = [
-                {
-                    "code": "ambiguous-reading-order",
-                    "message": "Two reading orders remain plausible.",
-                    "status": "unresolved",
-                }
-            ]
-            semantic_input.write_text(json.dumps(semantics))
             bundle = temporary / "review-required.accessibilizer"
 
-            result = self.run_conversion(SOURCE, bundle, semantic_input=semantic_input)
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
 
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertEqual(
@@ -197,6 +191,15 @@ class OnePageConversionTest(unittest.TestCase):
             )
             self.assertTrue((bundle / "output.pdf").is_file())
             self.assertEqual(stat.S_IMODE((bundle / "source.pdf").stat().st_mode), 0o400)
+            review_record = json.loads((bundle / "review-record.json").read_text())
+            warning_codes = {warning["code"] for warning in review_record["warnings"]}
+            self.assertIn("ambiguous-reading-order", warning_codes)
+            self.assertTrue(
+                all(warning["status"] == "unresolved" for warning in review_record["warnings"])
+            )
+            self.assertIn(
+                "Conversion Warnings", (bundle / "review-report.html").read_text()
+            )
 
     def test_public_cli_requires_authorization_to_replace_a_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -222,7 +225,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(replaced.returncode, 0, replaced.stderr + replaced.stdout)
             self.assertNotEqual((bundle / "review-record.json").read_text(), reviewer_edit)
 
-    def test_replacement_reuses_unaffected_provider_and_region_stages(self) -> None:
+    def test_replacement_reuses_all_valid_stages_without_new_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
             bundle = temporary / "cached.accessibilizer"
@@ -231,23 +234,15 @@ class OnePageConversionTest(unittest.TestCase):
             provider_requests = len(self.provider.requests)
             crop = bundle / "regions" / "page-1.png"
             os.utime(crop, ns=(1_000_000_000, 1_000_000_000))
-            changed_semantics = temporary / "changed-semantic.json"
-            semantics = json.loads(SEMANTIC_INPUT.read_text())
-            semantics["title"] = "Changed title"
-            changed_semantics.write_text(json.dumps(semantics))
 
-            replaced = self.run_conversion(
-                SOURCE,
-                bundle,
-                replace=True,
-                semantic_input=changed_semantics,
-            )
+            replaced = self.run_conversion(SOURCE, bundle, replace=True)
 
             self.assertEqual(replaced.returncode, 0, replaced.stderr + replaced.stdout)
+            # Every stage's dependency key and artifact hashes are still valid, so
+            # the replacement reuses the recognition, page-semantics, and page
+            # stages and makes no new provider calls.
             self.assertEqual(len(self.provider.requests), provider_requests)
             self.assertEqual(crop.stat().st_mtime_ns, 1_000_000_000)
-            review_record = json.loads((bundle / "review-record.json").read_text())
-            self.assertEqual(review_record["title"], "Changed title")
             provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 0)
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 0)
@@ -380,24 +375,7 @@ class OnePageConversionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             bundle = Path(temporary_directory) / "electric-current.accessibilizer"
             result = subprocess.run(
-                [
-                    str(ROOT / "accessibilizer"),
-                    "convert",
-                    str(SOURCE),
-                    "--page",
-                    "1",
-                    "--semantic-input",
-                    str(SEMANTIC_INPUT),
-                    "--bundle",
-                    str(bundle),
-                    "--provider-base-url",
-                    self.provider.base_url,
-                    "--provider-model",
-                    "acceptance-model-2026-07-19",
-                    "--provider-data-location",
-                    "local",
-                    "--json",
-                ],
+                self.conversion_command(SOURCE, bundle),
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
@@ -420,12 +398,14 @@ class OnePageConversionTest(unittest.TestCase):
             expected_files = {
                 "authoring.json",
                 "checkpoints/page-1.json",
+                "checkpoints/page-semantics-page-1.json",
                 "checkpoints/provider-capability.json",
                 "checkpoints/recognition-page-1.json",
                 "checkpoints/region-page-1.json",
                 "checkpoints/source.json",
                 "checkpoints/validation.json",
                 "output.pdf",
+                "page-semantics.json",
                 "provenance.json",
                 "recognition/page-1.json",
                 "regions/page-1.png",
@@ -471,6 +451,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(recognition_provenance["recognition_backend"], "fake")
             self.assertEqual(recognition_provenance["recognition_dpi"], 300)
 
+            # The Semantic Layer is reconstructed by the provider, not supplied.
             review_record = json.loads((bundle / "review-record.json").read_text())
             self.assertEqual(review_record["schema_version"], "1.0")
             self.assertEqual(
@@ -480,6 +461,16 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn("spoken_math_alternative", review_record["semantic_layer"][2])
             self.assertIn("figure_alternative", review_record["semantic_layer"][3])
             self.assertIn("detailed_figure_description", review_record["semantic_layer"][3])
+            self.assertEqual(review_record["warnings"], [])
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.0")
+            self.assertEqual(
+                review_record["reconstruction"]["provider_model"],
+                "acceptance-model-2026-07-19",
+            )
+            self.assertEqual(len(review_record["reconstruction"]["verified_regions"]), 3)
+
+            page_semantics = json.loads((bundle / "page-semantics.json").read_text())
+            self.assertEqual(page_semantics, review_record)
 
             provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertTrue(provenance["source_copy_verified"])
@@ -487,8 +478,11 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
-            self.assertEqual(provenance["provider_usage"]["actual_requests"], 1)
-            self.assertEqual(provenance["provider_usage"]["estimated_requests"], 1)
+            self.assertEqual(provenance["page_prompt_version"], "1.0")
+            self.assertEqual(provenance["page_schema_version"], "1.0")
+            # capability check plus one page call and one call per crop region.
+            self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
+            self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["request_ceiling"], 100)
             self.assertIn('<html lang="en-US">', (bundle / "review-report.html").read_text())
 
@@ -529,14 +523,14 @@ class LauncherHelpTest(unittest.TestCase):
         result = self.run_launcher("convert", "--help")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--semantic-input", result.stdout)
+        self.assertIn("--bundle", result.stdout)
         self.assertIn("examples:", result.stdout)
 
     def test_help_anywhere_in_the_arguments_still_shows_help(self) -> None:
         result = self.run_launcher("convert", "some.pdf", "--page", "1", "--help")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--semantic-input", result.stdout)
+        self.assertIn("--bundle", result.stdout)
 
     def test_unknown_command_without_help_keeps_the_short_usage_failure(self) -> None:
         result = self.run_launcher("bogus")

@@ -2,9 +2,11 @@
 
 Accessibilizer turns visually readable Source PDFs into documents whose Visual Layer is preserved and whose Semantic Layer can be consumed by assistive technology.
 
-The current implementation accepts a deterministic semantic contract, imports one native source page as artifact content, adds representative heading, paragraph, Formula, and Informative Figure semantics, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. It also resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins.
+The current implementation reconstructs the page's Semantic Layer from the Source PDF itself, imports one native source page as artifact content, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. It also resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins.
 
-It additionally produces reproducible, source-linked recognition evidence for the page: a pinned CPU-only PaddleOCR pass detects text or handwriting, Formula, table, figure, and Document Structure candidates, and the existing PDF text layer is retained with its geometry only as non-authoritative evidence. Every candidate receives a stable identifier and a source-region crop so it can be reconciled and reviewed later. Reconciling this evidence into the authored Semantic Layer is a later slice.
+It additionally produces reproducible, source-linked recognition evidence for the page: a pinned CPU-only PaddleOCR pass detects text or handwriting, Formula, table, figure, and Document Structure candidates, and the existing PDF text layer is retained with its geometry only as non-authoritative evidence. Every candidate receives a stable identifier and a source-region crop.
+
+A single strict, versioned page-level vision call then reconstructs the page's meaning — its title, language, and the ordered heading, paragraph, Formula, and Informative Figure Semantic Layer in Logical Reading Order — and required high-resolution crop calls verify the Formula, table, and Figure regions. The PDF text layer and the PaddleOCR candidates are reconciled against that reconstruction without silently replacing it: disagreement, ambiguity, unsupported static inputs, suspected source errors, and suspected prompt injection each raise a non-bypassable Conversion Warning. Source document content is treated as untrusted data — requests never expose tools, the reply is constrained to a strict JSON Schema, and no field of the source is interpreted as a control instruction.
 
 Two [macOS Preview and VoiceOver validation](docs/validation/2026-07-19-macos-preview-voiceover.md) sessions ([second session](docs/validation/2026-07-19-macos-preview-voiceover-2.md)) found clipped text and missing Figure Alternative and Detailed Figure Description content even though the Visual Layer and automated PDF/UA checks passed, because Preview derived accessibility text from the glyphs laid out inside the one-point-wide, zero-opacity overlay. ADR 0026 rejected that overlay. The Semantic Layer is now authored as full-size text drawn with text rendering mode 3, which produces no marks on screen or in the print path (ADR 0027), so the glyphs Preview reads spell the complete heading, paragraph, and Formula strings in Logical Reading Order; the Figure carries its Alternative in the image alternate text and its Detailed Figure Description on a sibling caption. A [recorded macOS Preview and VoiceOver session](docs/validation/2026-07-20-macos-preview-voiceover-3.md) confirmed VoiceOver reads all four nodes — heading, paragraph, Formula, and Figure with both its Alternative and Detailed Figure Description — in the intended Logical Reading Order, satisfying the acceptance gate for issue #3.
 
@@ -22,7 +24,6 @@ Run the public host launcher:
 ./accessibilizer convert \
   "testdata/Chapter 20_ Electric Current Resistance and Ohms Law.pdf" \
   --page 1 \
-  --semantic-input testdata/one-page-semantic.json \
   --bundle electric-current.accessibilizer \
   --provider-base-url http://localhost:11434/v1 \
   --provider-model exact-model-identifier \
@@ -34,7 +35,7 @@ The launcher supports macOS and Linux paths and keeps Docker as an implementatio
 Pass `--replace` to explicitly authorize replacement. Accessibilizer builds the replacement in a protected staging directory and leaves the existing bundle, including Reviewer edits, untouched if conversion fails.
 
 Interrupted or paused work remains in a protected sibling directory named `.BUNDLE.in-progress`.
-Repeat the same command with `--resume` to continue it. Completed source, region, recognition, page, and validation stages are reused only when their dependency key and artifact hashes remain valid. Changing semantics invalidates authoring and validation without repeating an unaffected source-region render; changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it.
+Repeat the same command with `--resume` to continue it. Completed source, region, recognition, page-semantics, page, and validation stages are reused only when their dependency key and artifact hashes remain valid. Changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it; changing the provider model or a prompt or schema version re-runs page-semantics reconstruction and everything downstream.
 
 Before conversion, Accessibilizer rejects encrypted or digitally signed Source PDFs and PDFs containing forms, JavaScript, embedded files or media, links, or other interactive actions that this version cannot preserve safely.
 
@@ -74,7 +75,7 @@ For the initial hosted OpenAI quality baseline, use `gpt-5.6-sol`, the official 
 
 After authorization, Accessibilizer sends a small base64 capability image to `POST /chat/completions` beneath the configured base URL and requires a strict JSON-Schema answer derived from its visible content. A provider that cannot use the image and satisfy the response schema fails before the Source PDF is copied, rendered, inspected, or converted. Conversion Provenance records the resolved base URL, exact model, and data location, but not credentials, environment-variable names, request dumps, or hidden reasoning.
 
-Transient timeouts, connection failures, rate limits, and server errors receive bounded exponential-backoff retries. The current capability-check-only pipeline estimates one provider request when that check is needed and zero when a valid checkpoint can be reused, then enforces `max_requests` before every attempt, including retries. Use `--max-requests`, `--provider-max-retries`, `--provider-retry-base-seconds`, and `--provider-retry-max-seconds` to override the layered settings. Reaching the request ceiling pauses the Conversion Bundle instead of exceeding it; raise the ceiling and pass `--resume` to continue. Conversion Provenance retains estimated and actual request counts and any prompt, completion, and total token usage reported by the provider. Accessibilizer does not estimate dollar cost.
+Transient timeouts, connection failures, rate limits, and server errors receive bounded exponential-backoff retries. The pipeline estimates the provider requests it will make — the capability check when needed, plus one page-level reconstruction call and one call per verified Formula, table, and Figure crop — counting zero for any stage whose checkpoint can be reused, then enforces `max_requests` before every attempt, including retries. Use `--max-requests`, `--provider-max-retries`, `--provider-retry-base-seconds`, and `--provider-retry-max-seconds` to override the layered settings. Reaching the request ceiling pauses the Conversion Bundle instead of exceeding it; raise the ceiling and pass `--resume` to continue. Conversion Provenance retains estimated and actual request counts and any prompt, completion, and total token usage reported by the provider. Accessibilizer does not estimate dollar cost.
 
 ## Conversion Bundle
 
@@ -82,8 +83,9 @@ The generated protected directory contains:
 
 - `source.pdf`: immutable copy of the Source PDF
 - `output.pdf`: PDF/UA-1 output
-- `review-record.json`: representative Semantic Layer in Logical Reading Order
-- `review-report.html`: accessible presentation of the Review Record
+- `review-record.json`: reconstructed Semantic Layer, Conversion Warnings, and reconstruction provenance
+- `review-report.html`: accessible presentation of the Review Record, including any Conversion Warnings
+- `page-semantics.json`: the reconstructed Semantic Layer and warnings the Review Record is built from
 - `recognition/page-1.json`: non-authoritative recognition candidates and existing PDF text evidence
 - `regions/page-1.png`: stable rendered source context for review
 - `regions/page-1-recognition.png`: full-page render used for recognition

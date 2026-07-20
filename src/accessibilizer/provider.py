@@ -68,6 +68,13 @@ class RequestBudget:
                 self.reported_token_usage[name] = int(value)
         self._on_change = on_change
 
+    def update_estimate(self, estimated_requests: int) -> None:
+        if estimated_requests < 0:
+            raise ValueError("estimated request count must not be negative")
+        if estimated_requests != self.estimated_requests:
+            self.estimated_requests = estimated_requests
+            self._changed()
+
     def reserve(self) -> None:
         if self.actual_requests >= self.ceiling:
             raise RequestCeilingExceeded(
@@ -215,6 +222,87 @@ def _capability_base_url(config: ProviderConfig) -> str:
     return config.base_url
 
 
+def json_schema_response_format(name: str, schema: dict[str, Any]) -> dict[str, Any]:
+    """Build a strict OpenAI ``response_format`` that constrains the reply.
+
+    The strict JSON Schema is the only shape the provider may return, so a Source
+    PDF cannot smuggle tool calls or control instructions through the response.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {"name": name, "strict": True, "schema": schema},
+    }
+
+
+def request_chat_completion(
+    config: ProviderConfig,
+    payload: dict[str, Any],
+    *,
+    failure_message: str,
+    budget: RequestBudget | None = None,
+    max_retries: int = 3,
+    retry_base_seconds: float = 0.5,
+    retry_max_seconds: float = 8.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """POST one chat completion with bounded retries and request accounting.
+
+    ``payload`` must never carry a ``tools`` or ``functions`` key: Source PDF
+    content is untrusted data and is never allowed to reach a tool surface.
+    """
+    if max_retries < 0:
+        raise ValueError("provider max retries must not be negative")
+    if retry_base_seconds < 0 or retry_max_seconds < 0:
+        raise ValueError("provider retry delays must not be negative")
+    if "tools" in payload or "functions" in payload:
+        raise ValueError("provider requests must not expose tools to source content")
+    headers = {"Content-Type": "application/json"}
+    api_key = _api_key(config)
+    if api_key is not None:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = Request(
+        f"{_capability_base_url(config)}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    result: Any = None
+    for attempt in range(max_retries + 1):
+        if budget is not None:
+            budget.reserve()
+        try:
+            with urlopen(request, timeout=60) as response:
+                result = json.loads(response.read())
+            if budget is not None:
+                budget.record_reported_usage(result)
+            break
+        except HTTPError as error:
+            transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
+            error.close()
+            if not transient or attempt == max_retries:
+                raise RuntimeError(failure_message) from error
+        except (URLError, TimeoutError) as error:
+            if attempt == max_retries:
+                raise RuntimeError(failure_message) from error
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"{failure_message}; provider returned invalid JSON") from error
+        delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
+        if delay:
+            sleep(delay)
+    if not isinstance(result, dict):
+        raise RuntimeError(f"{failure_message}; provider returned an invalid response")
+    return result
+
+
+def parse_schema_content(response: dict[str, Any], failure_message: str) -> Any:
+    """Return the JSON object the provider produced under a strict schema."""
+    try:
+        content = response["choices"][0]["message"]["content"]
+        return json.loads(content)
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError(failure_message) from error
+
+
 def check_capabilities(
     config: ProviderConfig,
     *,
@@ -224,10 +312,6 @@ def check_capabilities(
     retry_max_seconds: float = 8.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    if max_retries < 0:
-        raise ValueError("provider max retries must not be negative")
-    if retry_base_seconds < 0 or retry_max_seconds < 0:
-        raise ValueError("provider retry delays must not be negative")
     schema = {
         "type": "object",
         "properties": {
@@ -253,60 +337,26 @@ def check_capabilities(
                 ],
             }
         ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "accessibilizer_capability_check", "strict": True, "schema": schema},
-        },
+        "response_format": json_schema_response_format("accessibilizer_capability_check", schema),
         "max_completion_tokens": 256,
     }
-    headers = {"Content-Type": "application/json"}
-    api_key = _api_key(config)
-    if api_key is not None:
-        headers["Authorization"] = f"Bearer {api_key}"
-    request = Request(
-        f"{_capability_base_url(config)}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
+    failure = (
+        "provider capability check failed; base64 vision input and "
+        "JSON-Schema responses are required"
     )
-    result: Any = None
-    for attempt in range(max_retries + 1):
-        if budget is not None:
-            budget.reserve()
-        try:
-            with urlopen(request, timeout=15) as response:
-                result = json.loads(response.read())
-            if budget is not None:
-                budget.record_reported_usage(result)
-            break
-        except HTTPError as error:
-            transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
-            error.close()
-            if not transient or attempt == max_retries:
-                raise RuntimeError(
-                    "provider capability check failed; base64 vision input and "
-                    "JSON-Schema responses are required"
-                ) from error
-        except (URLError, TimeoutError) as error:
-            if attempt == max_retries:
-                raise RuntimeError(
-                    "provider capability check failed; base64 vision input and "
-                    "JSON-Schema responses are required"
-                ) from error
-        except json.JSONDecodeError as error:
-            raise RuntimeError(
-                "provider capability check failed; provider returned invalid JSON"
-            ) from error
-        delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
-        if delay:
-            sleep(delay)
-    try:
-        content = result["choices"][0]["message"]["content"]
-        checked: Any = json.loads(content)
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-        raise RuntimeError(
-            "provider capability check failed; provider returned an invalid schema response"
-        ) from error
+    result = request_chat_completion(
+        config,
+        payload,
+        failure_message=failure,
+        budget=budget,
+        max_retries=max_retries,
+        retry_base_seconds=retry_base_seconds,
+        retry_max_seconds=retry_max_seconds,
+        sleep=sleep,
+    )
+    checked = parse_schema_content(
+        result, "provider capability check failed; provider returned an invalid schema response"
+    )
     if checked != {"blue_square_count": 3}:
         raise RuntimeError(
             "provider capability check failed; provider did not satisfy the required schema"
