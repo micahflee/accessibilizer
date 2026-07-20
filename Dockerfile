@@ -18,14 +18,36 @@ RUN wget --quiet --output-document=/tmp/verapdf.zip \
       /tmp/verapdf-install.xml
 
 FROM eclipse-temurin:21-jre-jammy@sha256:d63bd8d9b171999cbed8576f2c76e874dd4856791a358536e5c4d407e77edc13
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
-      fonts-dejavu-core poppler-utils python3 python3-tomli \
+      fonts-dejavu-core poppler-utils python3 python3-pip python3-tomli \
+      libgomp1 libglib2.0-0 libgl1 libsm6 libxext6 libxrender1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Pinned, CPU-only specialized recognition (PaddleOCR). The CPU paddlepaddle
+# wheel keeps recognition GPU-free, and the weights are baked at build time so
+# no model artifacts are downloaded at runtime. HOME is fixed so the container's
+# arbitrary runtime uid resolves the same world-readable weight cache.
+ENV HOME="/opt/accessibilizer"
+ARG PADDLEPADDLE_VERSION=2.6.2
+ARG PADDLEOCR_VERSION=2.7.3
+# numpy is pinned below 2 because the pinned paddlepaddle and opencv wheels are
+# built against the NumPy 1 ABI ("_ARRAY_API not found" otherwise).
+RUN python3 -m pip install --no-cache-dir \
+      "numpy==1.26.4" \
+      "paddlepaddle==${PADDLEPADDLE_VERSION}" \
+      "paddleocr==${PADDLEOCR_VERSION}"
+COPY docker/paddle-warmup.py /tmp/paddle-warmup.py
+RUN python3 /tmp/paddle-warmup.py \
+    && rm -f /tmp/paddle-warmup.py \
+    && chmod -R a+rX /opt/accessibilizer
+
 COPY --from=author-build /build/target/pdf-author.jar /opt/accessibilizer/pdf-author.jar
 COPY --from=verapdf-install /opt/verapdf /opt/verapdf
 COPY src /opt/accessibilizer/src
 ENV PATH="/opt/verapdf:${PATH}" \
     ACCESSIBILIZER_CONTAINERIZED="1" \
-    PYTHONPATH="/opt/accessibilizer/src"
+    PYTHONPATH="/opt/accessibilizer/src" \
+    ACCESSIBILIZER_PADDLE_WEIGHTS_VERSION="paddleocr-2.7.3-ppstructure-default"
 WORKDIR /work

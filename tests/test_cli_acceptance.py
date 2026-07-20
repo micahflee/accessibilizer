@@ -123,7 +123,11 @@ class OnePageConversionTest(unittest.TestCase):
 
     @staticmethod
     def conversion_environment() -> dict[str, str]:
-        return {**os.environ, "ACCESSIBILIZER_IMAGE": "accessibilizer:test"}
+        return {
+            **os.environ,
+            "ACCESSIBILIZER_IMAGE": "accessibilizer:test",
+            "ACCESSIBILIZER_RECOGNITION_BACKEND": "fake",
+        }
 
     def run_conversion(
         self,
@@ -398,7 +402,7 @@ class OnePageConversionTest(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
-                env={**os.environ, "ACCESSIBILIZER_IMAGE": "accessibilizer:test"},
+                env=self.conversion_environment(),
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -417,12 +421,15 @@ class OnePageConversionTest(unittest.TestCase):
                 "authoring.json",
                 "checkpoints/page-1.json",
                 "checkpoints/provider-capability.json",
+                "checkpoints/recognition-page-1.json",
                 "checkpoints/region-page-1.json",
                 "checkpoints/source.json",
                 "checkpoints/validation.json",
                 "output.pdf",
                 "provenance.json",
+                "recognition/page-1.json",
                 "regions/page-1.png",
+                "regions/page-1-recognition.png",
                 "request-usage.json",
                 "review-record.json",
                 "review-report.html",
@@ -436,6 +443,33 @@ class OnePageConversionTest(unittest.TestCase):
                 str(path.relative_to(bundle)) for path in bundle.rglob("*") if path.is_file()
             }
             self.assertTrue(expected_files.issubset(actual_files))
+
+            recognition = json.loads((bundle / "recognition/page-1.json").read_text())
+            self.assertEqual(recognition["schema_version"], "1.0")
+            self.assertEqual(recognition["page"], 1)
+            self.assertEqual(recognition["recognition"]["backend"], "fake")
+            self.assertEqual(recognition["rendering"]["dpi"], 300)
+            candidate_types = {candidate["type"] for candidate in recognition["candidates"]}
+            self.assertEqual(
+                candidate_types,
+                {
+                    "text",
+                    "handwriting",
+                    "formula",
+                    "table",
+                    "figure",
+                    "document_structure",
+                },
+            )
+            for candidate in recognition["candidates"]:
+                crop = bundle / candidate["crop"]
+                self.assertTrue(crop.is_file(), candidate["crop"])
+                self.assertEqual(candidate["crop"], f"regions/{candidate['id']}.png")
+            self.assertFalse(recognition["pdf_text_evidence"]["authoritative"])
+
+            recognition_provenance = json.loads((bundle / "provenance.json").read_text())
+            self.assertEqual(recognition_provenance["recognition_backend"], "fake")
+            self.assertEqual(recognition_provenance["recognition_dpi"], 300)
 
             review_record = json.loads((bundle / "review-record.json").read_text())
             self.assertEqual(review_record["schema_version"], "1.0")
@@ -471,6 +505,97 @@ class OnePageConversionTest(unittest.TestCase):
 
             verapdf_report = (bundle / "validation/verapdf.xml").read_text()
             self.assertIn('isCompliant="true"', verapdf_report)
+
+
+REAL_OCR_PROBE = """
+import json
+import subprocess
+from pathlib import Path
+
+from accessibilizer import recognition
+from accessibilizer.recognition import (
+    recognize_page,
+    select_backend,
+    validate_recognition_document,
+)
+
+source = Path("/probe/source.pdf")
+info = subprocess.run(
+    ["pdfinfo", str(source)], text=True, capture_output=True, check=True
+)
+pages = next(
+    int(line.split(":", 1)[1]) for line in info.stdout.splitlines()
+    if line.startswith("Pages:")
+)
+backend = select_backend({})
+regions = Path("/probe/out/regions")
+recognition_directory = Path("/probe/out/recognition")
+regions.mkdir(parents=True, exist_ok=True)
+recognition_directory.mkdir(parents=True, exist_ok=True)
+
+types: set[str] = set()
+validated = 0
+for page in range(1, pages + 1):
+    result = recognize_page(
+        source_pdf=source,
+        page=page,
+        dpi=recognition.RECOGNITION_DPI,
+        regions_dir=regions,
+        recognition_dir=recognition_directory,
+        backend=backend,
+        source_sha256="0" * 64,
+        renderer_version="probe",
+        extractor_version="probe",
+    )
+    document = json.loads(result.document_path.read_text())
+    validate_recognition_document(document)
+    types.update(candidate["type"] for candidate in document["candidates"])
+    validated += 1
+
+print(json.dumps({"pages": pages, "validated": validated, "types": sorted(types)}))
+"""
+
+
+class RealPaddleOcrRecognitionTest(unittest.TestCase):
+    """Opt-in check that pinned PaddleOCR produces evidence for the whole sample.
+
+    Enable with ``ACCESSIBILIZER_RUN_REAL_OCR=1``. It runs inside the canonical
+    image with networking disabled so any attempt to download model artifacts at
+    runtime would fail, proving the weights are baked in and CPU-only.
+    """
+
+    @unittest.skipUnless(
+        os.environ.get("ACCESSIBILIZER_RUN_REAL_OCR") == "1",
+        "set ACCESSIBILIZER_RUN_REAL_OCR=1 to run the pinned PaddleOCR sample check",
+    )
+    def test_pinned_paddleocr_produces_schema_valid_candidates_offline(self) -> None:
+        image = os.environ.get("ACCESSIBILIZER_IMAGE", "accessibilizer:test")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            probe = Path(temporary_directory) / "probe.py"
+            probe.write_text(REAL_OCR_PROBE)
+
+            result = subprocess.run(
+                [
+                    "docker", "run", "--rm", "--network", "none",
+                    "--volume", f"{probe}:/probe/probe.py:ro",
+                    "--volume", f"{SOURCE}:/probe/source.pdf:ro",
+                    image, "python3", "/probe/probe.py",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            summary = json.loads(result.stdout.strip().splitlines()[-1])
+            self.assertEqual(summary["pages"], 11)
+            self.assertEqual(summary["validated"], 11)
+            # Criterion 2: the sample yields candidates for text (or handwriting),
+            # Formulas, tables, figures, and Document Structure.
+            self.assertLessEqual(
+                {"text", "formula", "table", "figure", "document_structure"},
+                set(summary["types"]),
+            )
 
 
 if __name__ == "__main__":
