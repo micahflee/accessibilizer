@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+for argument in "$@"; do
+    if [ "$argument" = "-h" ] || [ "$argument" = "--help" ]; then
+        image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+        exec docker run --rm "$image" python3 -m accessibilizer "$@"
+    fi
+done
+
 json_flag=
 for argument in "$@"; do
     if [ "$argument" = "--json" ]; then json_flag=--json; fi

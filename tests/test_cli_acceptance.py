@@ -507,6 +507,44 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn('isCompliant="true"', verapdf_report)
 
 
+class LauncherHelpTest(unittest.TestCase):
+    @staticmethod
+    def run_launcher(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(ROOT / "accessibilizer"), *arguments],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env={**os.environ, "ACCESSIBILIZER_IMAGE": "accessibilizer:test"},
+        )
+
+    def test_top_level_help_delegates_to_the_argparse_parser(self) -> None:
+        result = self.run_launcher("--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("assistive technology", " ".join(result.stdout.split()))
+
+    def test_convert_help_delegates_to_the_argparse_parser(self) -> None:
+        result = self.run_launcher("convert", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--semantic-input", result.stdout)
+        self.assertIn("examples:", result.stdout)
+
+    def test_help_anywhere_in_the_arguments_still_shows_help(self) -> None:
+        result = self.run_launcher("convert", "some.pdf", "--page", "1", "--help")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--semantic-input", result.stdout)
+
+    def test_unknown_command_without_help_keeps_the_short_usage_failure(self) -> None:
+        result = self.run_launcher("bogus")
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("usage: accessibilizer convert", result.stderr)
+
+
 REAL_OCR_PROBE = """
 import json
 import subprocess
