@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/page-semantics-1.0.schema.json",
+  "title": "Accessibilizer reconstructed page semantics 1.0",
+  "description": "The ordered Semantic Layer a page-level vision call reconstructs from the source page, plus the non-bypassable Conversion Warnings produced by reconciling it against the existing PDF text and specialized-recognition candidates. The reconstruction is never silently overwritten; disagreement, ambiguity, unsupported input, suspected source errors, and suspected prompt injection surface as warnings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "language",
+    "page",
+    "reconstruction",
+    "schema_version",
+    "semantic_layer",
+    "source_sha256",
+    "title",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "page": {"type": "integer", "minimum": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "title": {"type": "string", "minLength": 1},
+    "language": {"type": "string", "minLength": 1},
+    "semantic_layer": {
+      "type": "array",
+      "prefixItems": [
+        {"$ref": "#/$defs/heading"},
+        {"$ref": "#/$defs/paragraph"},
+        {"$ref": "#/$defs/formula"},
+        {"$ref": "#/$defs/figure"}
+      ],
+      "items": false
+    },
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
+    "reconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_class",
+        "page_prompt_version",
+        "page_schema_version",
+        "primary_language_is_english",
+        "provider_endpoint",
+        "provider_model",
+        "reading_order",
+        "reading_order_is_unambiguous",
+        "region_prompt_version",
+        "region_schema_version",
+        "verified_regions"
+      ],
+      "properties": {
+        "document_class": {"enum": ["stem_instructional", "other"]},
+        "page_prompt_version": {"type": "string", "minLength": 1},
+        "page_schema_version": {"type": "string", "minLength": 1},
+        "primary_language_is_english": {"type": "boolean"},
+        "provider_endpoint": {"type": "string", "minLength": 1},
+        "provider_model": {"type": "string", "minLength": 1},
+        "reading_order": {
+          "type": "array",
+          "items": {"enum": ["heading", "paragraph", "formula", "figure"]}
+        },
+        "reading_order_is_unambiguous": {"type": "boolean"},
+        "region_prompt_version": {"type": "string", "minLength": 1},
+        "region_schema_version": {"type": "string", "minLength": 1},
+        "verified_regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["agrees_with_page", "id", "type"],
+            "properties": {
+              "agrees_with_page": {"type": "boolean"},
+              "id": {"type": "string", "pattern": "^page-[0-9]+-r[0-9]{4,}$"},
+              "type": {"enum": ["formula", "table", "figure"]}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "text", "type"],
+      "properties": {
+        "level": {"const": 1},
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "heading"}
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "type"],
+      "properties": {
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "paragraph"}
+      }
+    },
+    "formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized_math", "spoken_math_alternative", "type"],
+      "properties": {
+        "normalized_math": {"type": "string", "minLength": 1},
+        "spoken_math_alternative": {"type": "string", "minLength": 1},
+        "type": {"const": "formula"}
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detailed_figure_description", "figure_alternative", "type"],
+      "properties": {
+        "detailed_figure_description": {"type": "string", "minLength": 1},
+        "figure_alternative": {"type": "string", "minLength": 1},
+        "type": {"const": "figure"}
+      }
+    },
+    "warning": {
+      "type": "object",
+      "required": ["code", "message", "status"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "status": {"enum": ["unresolved", "corrected", "accepted", "not_applicable"]}
+      }
+    }
+  }
+}

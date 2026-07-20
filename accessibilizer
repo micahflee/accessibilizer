@@ -23,7 +23,7 @@ operational_failure() {
 }
 
 if [ "${1:-}" != "convert" ]; then
-    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --semantic-input FILE --bundle DIRECTORY [provider options] [runtime options] [--resume] [--replace] [--json]"
+    operational_failure "usage: accessibilizer convert SOURCE --page NUMBER --bundle DIRECTORY [provider options] [runtime options] [--resume] [--replace] [--json]"
 fi
 shift
 
@@ -34,7 +34,6 @@ fi
 shift
 
 page=
-semantic_path=
 bundle_path=
 replace_flag=
 provider_base_url=
@@ -50,7 +49,6 @@ resume_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --page) [ "$#" -ge 2 ] || operational_failure "--page requires a value"; page=$2; shift 2 ;;
-        --semantic-input) [ "$#" -ge 2 ] || operational_failure "--semantic-input requires a value"; semantic_path=$2; shift 2 ;;
         --bundle) [ "$#" -ge 2 ] || operational_failure "--bundle requires a value"; bundle_path=$2; shift 2 ;;
         --provider-base-url) [ "$#" -ge 2 ] || operational_failure "--provider-base-url requires a value"; provider_base_url=$2; shift 2 ;;
         --provider-model) [ "$#" -ge 2 ] || operational_failure "--provider-model requires a value"; provider_model=$2; shift 2 ;;
@@ -68,11 +66,11 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ -z "$page" ] || [ -z "$semantic_path" ] || [ -z "$bundle_path" ]; then
-    operational_failure "--page, --semantic-input, and --bundle are required"
+if [ -z "$page" ] || [ -z "$bundle_path" ]; then
+    operational_failure "--page and --bundle are required"
 fi
-if [ ! -f "$source_path" ] || [ ! -f "$semantic_path" ]; then
-    operational_failure "source and semantic input must be files"
+if [ ! -f "$source_path" ]; then
+    operational_failure "source must be a file"
 fi
 
 absolute_file() {
@@ -82,7 +80,6 @@ absolute_file() {
 }
 
 source_path=$(absolute_file "$source_path")
-semantic_path=$(absolute_file "$semantic_path")
 bundle_parent=$(dirname "$bundle_path")
 bundle_name=$(basename "$bundle_path")
 mkdir -p "$bundle_parent" || operational_failure "could not create the bundle parent directory"
@@ -141,7 +138,6 @@ set -- --rm \
     --user "$(id -u):$(id -g)" \
     --add-host "host.docker.internal:host-gateway" \
     --volume "$source_path:/work/source.pdf:ro" \
-    --volume "$semantic_path:/work/semantic.json:ro" \
     --volume "$bundle_parent:/work/output" \
     --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
 if [ -n "${ACCESSIBILIZER_RECOGNITION_BACKEND:-}" ]; then
@@ -162,7 +158,6 @@ if [ -t 1 ]; then set -- --tty "$@"; fi
 set -- "$@" "$image" \
     python3 -m accessibilizer convert /work/source.pdf \
     --page "$page" \
-    --semantic-input /work/semantic.json \
     --bundle "/work/output/$bundle_name"
 if [ -n "$provider_base_url" ]; then set -- "$@" --provider-base-url "$provider_base_url"; fi
 if [ -n "$provider_model" ]; then set -- "$@" --provider-model "$provider_model"; fi

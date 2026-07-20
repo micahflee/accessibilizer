@@ -15,7 +15,44 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
-SEMANTIC_INPUT = ROOT / "testdata" / "one-page-semantic.json"
+
+CAPABILITY_IMAGE_SHA256 = "8640b42788b7bf45cc580582ac9b6b77f05b55512fc290f48040259ee8f03c9e"
+
+# A reconstruction consistent with the fake recognition backend, so the clean
+# path produces no Conversion Warnings. Tests inject warnings via page_overrides.
+BASE_PAGE_CONTENT: dict[str, Any] = {
+    "title": "Electric Current, Resistance, and Ohm's Law",
+    "language": "en-US",
+    "primary_language_is_english": True,
+    "document_class": "stem_instructional",
+    "reading_order": ["heading", "paragraph", "formula", "figure"],
+    "reading_order_is_unambiguous": True,
+    "heading": {"level": 1, "text": "Electric Current, Resistance, and Ohm's Law"},
+    "paragraph": {"text": "Electric current is the rate at which charge flows."},
+    "formula": {
+        "normalized_math": "I = Q / delta t",
+        "spoken_math_alternative": "I equals Q divided by delta t.",
+    },
+    "figure": {
+        "figure_alternative": "A wire carrying electric current.",
+        "detailed_figure_description": (
+            "A wire passes through a surface; positive charge moves along it in the "
+            "direction of conventional current."
+        ),
+    },
+    "suspected_source_errors": [],
+    "suspected_prompt_injection": False,
+}
+
+
+def _find_image_url(request: dict[str, Any]) -> str:
+    for message in request.get("messages", []):
+        content = message.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return str(part["image_url"]["url"])
+    raise KeyError("no image_url in request")
 
 
 class FakeProvider:
@@ -25,10 +62,14 @@ class FakeProvider:
         compatible: bool = True,
         transient_failures: int = 0,
         usage: dict[str, int] | None = None,
+        page_overrides: dict[str, Any] | None = None,
+        region_agrees: bool = True,
     ) -> None:
         self.compatible = compatible
         self.transient_failures = transient_failures
         self.usage = usage
+        self.page_overrides = page_overrides or {}
+        self.region_agrees = region_agrees
         self.requests: list[dict[str, Any]] = []
         self.authorizations: list[str | None] = []
         provider = self
@@ -42,24 +83,31 @@ class FakeProvider:
                     return
                 provider.requests.append(request)
                 provider.authorizations.append(self.headers.get("Authorization"))
+                # Source content is untrusted: a compliant request never exposes tools.
+                if "tools" in request or "functions" in request:
+                    self.send_error(400)
+                    return
                 try:
-                    content = request["messages"][0]["content"]
-                    image_url = content[1]["image_url"]["url"]
-                    image = base64.b64decode(image_url.removeprefix("data:image/png;base64,"), validate=True)
                     response_format = request["response_format"]
-                    schema = response_format["json_schema"]["schema"]
+                    name = response_format["json_schema"]["name"]
+                    image_url = _find_image_url(request)
+                    image = base64.b64decode(
+                        image_url.removeprefix("data:image/png;base64,"), validate=True
+                    )
                     valid_contract = (
                         image_url.startswith("data:image/png;base64,")
-                        and hashlib.sha256(image).hexdigest()
-                        == "8640b42788b7bf45cc580582ac9b6b77f05b55512fc290f48040259ee8f03c9e"
                         and response_format["type"] == "json_schema"
                         and response_format["json_schema"]["strict"] is True
-                        and schema["properties"]["blue_square_count"]["type"] == "integer"
-                        and request["max_completion_tokens"] == 256
+                        and isinstance(request["max_completion_tokens"], int)
                         and "max_tokens" not in request
                     )
+                    if name == "accessibilizer_capability_check":
+                        valid_contract = valid_contract and (
+                            hashlib.sha256(image).hexdigest() == CAPABILITY_IMAGE_SHA256
+                        )
                 except (KeyError, IndexError, TypeError, ValueError):
                     valid_contract = False
+                    name = ""
                 if not valid_contract:
                     self.send_error(400)
                     return
@@ -74,9 +122,21 @@ class FakeProvider:
                     self.end_headers()
                     self.wfile.write(b'{"error":{"message":"response_format unsupported"}}')
                     return
-                content = json.dumps({"blue_square_count": 3})
+                if name == "accessibilizer_capability_check":
+                    body: Any = {"blue_square_count": 3}
+                elif name == "accessibilizer_page_semantics":
+                    body = {**BASE_PAGE_CONTENT, **provider.page_overrides}
+                elif name == "accessibilizer_region_check":
+                    body = {
+                        "transcription": "I = Q / delta t",
+                        "agrees_with_page": provider.region_agrees,
+                        "suspected_prompt_injection": False,
+                    }
+                else:
+                    self.send_error(400)
+                    return
                 response: dict[str, Any] = {
-                    "choices": [{"message": {"content": content}}]
+                    "choices": [{"message": {"content": json.dumps(body)}}]
                 }
                 if provider.usage is not None:
                     response["usage"] = provider.usage
@@ -127,8 +187,6 @@ class ProviderConfigurationTest(unittest.TestCase):
                 str(SOURCE),
                 "--page",
                 "1",
-                "--semantic-input",
-                str(SEMANTIC_INPUT),
                 "--bundle",
                 str(bundle),
                 *extra_arguments,
@@ -141,6 +199,10 @@ class ProviderConfigurationTest(unittest.TestCase):
             env={
                 **os.environ,
                 "ACCESSIBILIZER_IMAGE": "accessibilizer:test",
+                "ACCESSIBILIZER_RECOGNITION_BACKEND": "fake",
+                # Isolate from any personal ~/.config/accessibilizer/config.toml;
+                # tests that exercise configuration override XDG_CONFIG_HOME.
+                "XDG_CONFIG_HOME": str(project / "no-user-config"),
                 **(environment or {}),
             },
         )
@@ -182,14 +244,25 @@ class ProviderConfigurationTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            self.assertEqual(len(provider.requests), 1)
-            request = provider.requests[0]
-            self.assertEqual(request["model"], "cli-model-2026-07-19")
-            self.assertEqual(request["response_format"]["type"], "json_schema")
-            self.assertNotIn("const", json.dumps(request["response_format"]))
-            image = request["messages"][0]["content"][1]["image_url"]["url"]
+            # capability check, one page-level call, and one call per crop region.
+            self.assertEqual(len(provider.requests), 5)
+            schema_names = [
+                request["response_format"]["json_schema"]["name"]
+                for request in provider.requests
+            ]
+            self.assertEqual(schema_names[0], "accessibilizer_capability_check")
+            self.assertEqual(schema_names[1], "accessibilizer_page_semantics")
+            self.assertEqual(
+                schema_names[2:], ["accessibilizer_region_check"] * 3
+            )
+            for request in provider.requests:
+                self.assertEqual(request["model"], "cli-model-2026-07-19")
+                self.assertEqual(request["response_format"]["type"], "json_schema")
+                self.assertNotIn("tools", request)
+                self.assertNotIn("functions", request)
+            image = provider.requests[0]["messages"][0]["content"][1]["image_url"]["url"]
             self.assertTrue(image.startswith("data:image/png;base64,"))
-            self.assertEqual(provider.authorizations, ["Bearer correct-secret"])
+            self.assertEqual(provider.authorizations, ["Bearer correct-secret"] * 5)
 
             provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertEqual(provenance["provider_endpoint"], provider.base_url)
@@ -267,14 +340,14 @@ class ProviderConfigurationTest(unittest.TestCase):
             self.assertEqual(provider.requests, [])
             self.assertFalse(bundle.exists())
 
-    def test_transient_failure_pauses_at_ceiling_then_resumes_with_usage(self) -> None:
+    def test_page_stage_pauses_at_ceiling_then_resumes_reusing_the_capability(self) -> None:
         usage = {
             "prompt_tokens": 11,
             "completion_tokens": 4,
             "total_tokens": 15,
         }
         with (
-            FakeProvider(transient_failures=1, usage=usage) as provider,
+            FakeProvider(usage=usage) as provider,
             tempfile.TemporaryDirectory() as directory,
         ):
             temporary = Path(directory)
@@ -286,12 +359,12 @@ class ProviderConfigurationTest(unittest.TestCase):
                 "exact-model",
                 "--provider-data-location",
                 "local",
-                "--provider-max-retries",
-                "2",
                 "--provider-retry-base-seconds",
                 "0",
             )
 
+            # The ceiling of 1 admits the capability check but pauses the page stage,
+            # which needs one page call plus a call per crop region.
             paused = self.run_conversion(
                 temporary,
                 bundle,
@@ -310,21 +383,27 @@ class ProviderConfigurationTest(unittest.TestCase):
                 extra_arguments=(
                     *provider_arguments,
                     "--max-requests",
-                    "2",
+                    "10",
                     "--resume",
                 ),
             )
 
             self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
-            self.assertEqual(len(provider.requests), 2)
+            # The completed capability checkpoint is reused; only the page stage's
+            # four calls are made on resume.
+            self.assertEqual(len(provider.requests), 5)
             provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertEqual(
                 provenance["provider_usage"],
                 {
-                    "actual_requests": 2,
-                    "estimated_requests": 1,
-                    "reported_token_usage": usage,
-                    "request_ceiling": 2,
+                    "actual_requests": 5,
+                    "estimated_requests": 4,
+                    "reported_token_usage": {
+                        "prompt_tokens": 55,
+                        "completion_tokens": 20,
+                        "total_tokens": 75,
+                    },
+                    "request_ceiling": 10,
                 },
             )
 
