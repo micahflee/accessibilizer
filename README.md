@@ -2,7 +2,9 @@
 
 Accessibilizer turns visually readable Source PDFs into documents whose Visual Layer is preserved and whose Semantic Layer can be consumed by assistive technology.
 
-The current implementation accepts a deterministic semantic contract, imports one native source page as artifact content, adds representative heading, paragraph, Formula, and Informative Figure semantics, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. It also resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins. Recognition calls are intentionally outside this slice.
+The current implementation accepts a deterministic semantic contract, imports one native source page as artifact content, adds representative heading, paragraph, Formula, and Informative Figure semantics, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. It also resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins.
+
+It additionally produces reproducible, source-linked recognition evidence for the page: a pinned CPU-only PaddleOCR pass detects text or handwriting, Formula, table, figure, and Document Structure candidates, and the existing PDF text layer is retained with its geometry only as non-authoritative evidence. Every candidate receives a stable identifier and a source-region crop so it can be reconciled and reviewed later. Reconciling this evidence into the authored Semantic Layer is a later slice.
 
 Two [macOS Preview and VoiceOver validation](docs/validation/2026-07-19-macos-preview-voiceover.md) sessions ([second session](docs/validation/2026-07-19-macos-preview-voiceover-2.md)) found clipped text and missing Figure Alternative and Detailed Figure Description content even though the Visual Layer and automated PDF/UA checks passed, because Preview derived accessibility text from the glyphs laid out inside the one-point-wide, zero-opacity overlay. ADR 0026 rejected that overlay. The Semantic Layer is now authored as full-size text drawn with text rendering mode 3, which produces no marks on screen or in the print path (ADR 0027), so the glyphs Preview reads spell the complete heading, paragraph, and Formula strings in Logical Reading Order; the Figure carries its Alternative in the image alternate text and its Detailed Figure Description on a sibling caption. A [recorded macOS Preview and VoiceOver session](docs/validation/2026-07-20-macos-preview-voiceover-3.md) confirmed VoiceOver reads all four nodes — heading, paragraph, Formula, and Figure with both its Alternative and Detailed Figure Description — in the intended Logical Reading Order, satisfying the acceptance gate for issue #3.
 
@@ -32,7 +34,7 @@ The launcher supports macOS and Linux paths and keeps Docker as an implementatio
 Pass `--replace` to explicitly authorize replacement. Accessibilizer builds the replacement in a protected staging directory and leaves the existing bundle, including Reviewer edits, untouched if conversion fails.
 
 Interrupted or paused work remains in a protected sibling directory named `.BUNDLE.in-progress`.
-Repeat the same command with `--resume` to continue it. Completed source, page, region, and validation stages are reused only when their dependency key and artifact hashes remain valid. Changing semantics invalidates authoring and validation without repeating an unaffected source-region render; changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it.
+Repeat the same command with `--resume` to continue it. Completed source, region, recognition, page, and validation stages are reused only when their dependency key and artifact hashes remain valid. Changing semantics invalidates authoring and validation without repeating an unaffected source-region render; changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it.
 
 Before conversion, Accessibilizer rejects encrypted or digitally signed Source PDFs and PDFs containing forms, JavaScript, embedded files or media, links, or other interactive actions that this version cannot preserve safely.
 
@@ -82,7 +84,10 @@ The generated protected directory contains:
 - `output.pdf`: PDF/UA-1 output
 - `review-record.json`: representative Semantic Layer in Logical Reading Order
 - `review-report.html`: accessible presentation of the Review Record
+- `recognition/page-1.json`: non-authoritative recognition candidates and existing PDF text evidence
 - `regions/page-1.png`: stable rendered source context for review
+- `regions/page-1-recognition.png`: full-page render used for recognition
+- `regions/page-1-rNNNN.png`: stable per-candidate source-region crops
 - `authoring.json`: versioned Python-to-Java contract
 - `provenance.json`: source hash, authoring versions, and resolved provider identity
 - `request-usage.json`: resumable request ceiling, count, estimate, and reported token totals
@@ -92,6 +97,26 @@ The generated protected directory contains:
 - `validation/visual.json`: explicit pixel-difference result and tolerance
 - `validation/verapdf.xml`: independent PDF/UA-1 validation report
 
+## Recognition evidence
+
+For each converted page, Accessibilizer renders the source at a deterministic
+recognition resolution and runs a pinned, CPU-only PaddleOCR pass. It records
+text or handwriting, Formula, table, figure, and Document Structure candidates,
+each with a stable identifier (`page-N-rNNNN`), a bounding box, a confidence
+value used only as evidence, and a source-region crop under `regions/`. The
+existing Source PDF text layer is extracted with its geometry and stored as
+`pdf_text_evidence` marked `"authoritative": false`, so it can inform later
+reconciliation without ever contaminating the Semantic Layer. Recognition is a
+checkpointed stage: it is reused when its source, tool versions, resolution,
+backend, and weights are unchanged. The candidate contract is documented by
+`schemas/recognition-1.0.schema.json`.
+
+PaddleOCR code and weights are pinned in the canonical image, so recognition
+runs offline with no runtime model downloads. Set
+`ACCESSIBILIZER_RECOGNITION_BACKEND=fake` to select a deterministic backend that
+fabricates one candidate per type without running OCR; this is intended for
+fast, credential-free tests, never for a real conversion.
+
 ## Verify
 
 ```sh
@@ -100,5 +125,9 @@ make typecheck
 ```
 
 The acceptance test invokes the public launcher and therefore requires Docker.
+The fast suite selects the deterministic `fake` recognition backend. Set
+`ACCESSIBILIZER_RUN_REAL_OCR=1` to additionally run the opt-in check that pinned
+PaddleOCR produces schema-valid candidates for all 11 sample pages offline.
 
-The authoring boundary is documented by `schemas/authoring-1.0.schema.json`.
+The authoring boundary is documented by `schemas/authoring-1.0.schema.json`, and
+the recognition-evidence contract by `schemas/recognition-1.0.schema.json`.

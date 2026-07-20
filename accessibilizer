@@ -137,6 +137,12 @@ set -- --rm \
     --volume "$semantic_path:/work/semantic.json:ro" \
     --volume "$bundle_parent:/work/output" \
     --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
+if [ -n "${ACCESSIBILIZER_RECOGNITION_BACKEND:-}" ]; then
+    set -- "$@" --env "ACCESSIBILIZER_RECOGNITION_BACKEND=$ACCESSIBILIZER_RECOGNITION_BACKEND"
+fi
+if [ -n "${ACCESSIBILIZER_PADDLE_WEIGHTS_VERSION:-}" ]; then
+    set -- "$@" --env "ACCESSIBILIZER_PADDLE_WEIGHTS_VERSION=$ACCESSIBILIZER_PADDLE_WEIGHTS_VERSION"
+fi
 if [ -n "$user_config_path" ] && [ -f "$user_config_path" ]; then
     set -- "$@" --volume "$user_config_path:/work/user-config.toml:ro" --env ACCESSIBILIZER_USER_CONFIG=/work/user-config.toml
 fi

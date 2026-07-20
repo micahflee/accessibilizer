@@ -8,18 +8,18 @@ import os
 from pathlib import Path
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 from typing import Any, TypedDict
 
-from accessibilizer import __version__
+from accessibilizer import __version__, recognition
 from accessibilizer.checkpoint import (
     CheckpointStore,
     atomic_write_json,
     dependency_key,
     file_sha256,
 )
+from accessibilizer.process import run as _run, tool_version as _tool_version
 from accessibilizer.provider import (
     RequestBudget,
     RequestCeilingExceeded,
@@ -262,18 +262,6 @@ def _review_report(semantics: dict[str, Any]) -> str:
     )
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, text=True, capture_output=True, check=False)
-
-
-def _tool_version(command: list[str]) -> str:
-    result = _run(command)
-    version = (result.stdout + result.stderr).strip()
-    if result.returncode or not version:
-        raise RuntimeError(f"could not determine tool version: {command[0]}")
-    return version
-
-
 def _read_ppm(path: Path) -> tuple[int, int, bytes]:
     data = path.read_bytes()
     position = 0
@@ -452,6 +440,39 @@ def _convert(args: argparse.Namespace) -> int:
             f"region-page-{args.page}", region_key, [crop_artifact]
         )
 
+    recognition_directory = workspace / "recognition"
+    recognition_directory.mkdir(mode=0o700, exist_ok=True)
+    backend = recognition.select_backend(os.environ)
+    pdftoppm_version = _tool_version(["pdftoppm", "-v"])
+    pdftotext_version = _tool_version(["pdftotext", "-v"])
+    recognition_key = dependency_key({
+        "backend": backend.name,
+        "backend_version": backend.version,
+        "page": args.page,
+        "pdf_text_extractor": "pdftotext",
+        "pdf_text_extractor_version": pdftotext_version,
+        "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
+        "recognition_dpi": recognition.RECOGNITION_DPI,
+        "renderer": "pdftoppm",
+        "renderer_version": pdftoppm_version,
+        "source_sha256": source_sha256,
+        "weights_version": backend.weights_version,
+    })
+    recognition_stage = f"recognition-page-{args.page}"
+    if not checkpoints.is_reusable(recognition_stage, recognition_key):
+        recognized = recognition.recognize_page(
+            source_pdf=source_copy,
+            page=args.page,
+            dpi=recognition.RECOGNITION_DPI,
+            regions_dir=regions,
+            recognition_dir=recognition_directory,
+            backend=backend,
+            source_sha256=source_sha256,
+            renderer_version=pdftoppm_version,
+            extractor_version=pdftotext_version,
+        )
+        checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
+
     semantic_input_sha256 = file_sha256(args.semantic_input)
     page_key = dependency_key({
         "authoring_contract_version": "1.0",
@@ -534,6 +555,11 @@ def _convert(args: argparse.Namespace) -> int:
     atomic_write_json(workspace / "provenance.json", {
         "accessibilizer_version": __version__,
         "authoring_contract_version": "1.0",
+        "recognition_backend": backend.name,
+        "recognition_backend_version": backend.version,
+        "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
+        "recognition_dpi": recognition.RECOGNITION_DPI,
+        "recognition_weights_version": backend.weights_version,
         "source_copy_verified": True,
         "source_sha256": source_sha256,
         "source_page": args.page,
