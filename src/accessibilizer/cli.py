@@ -47,32 +47,149 @@ class VisualReport(TypedDict):
     tolerance: float
 
 
+CONVERT_EPILOG = """\
+examples:
+  accessibilizer convert source.pdf --page 1 \\
+      --semantic-input semantic.json --bundle output.accessibilizer \\
+      --provider-base-url http://localhost:11434/v1 \\
+      --provider-model exact-model-identifier \\
+      --provider-data-location local --json
+
+  accessibilizer convert source.pdf --page 1 \\
+      --semantic-input semantic.json --bundle output.accessibilizer \\
+      --provider-base-url http://localhost:11434/v1 \\
+      --provider-model exact-model-identifier \\
+      --provider-data-location local --resume
+"""
+
+
 def _add_provider_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--provider-base-url")
-    parser.add_argument("--provider-model")
-    parser.add_argument("--provider-api-key-env")
-    parser.add_argument("--provider-data-location", choices=("local", "remote"))
+    parser.add_argument(
+        "--provider-base-url",
+        help="base URL of the OpenAI-compatible vision provider (e.g. http://localhost:11434/v1)",
+    )
+    parser.add_argument(
+        "--provider-model",
+        help="exact model identifier to use with the provider (aliases like 'latest' are rejected)",
+    )
+    parser.add_argument(
+        "--provider-api-key-env",
+        help="name of the environment variable holding the provider API key",
+    )
+    parser.add_argument(
+        "--provider-data-location",
+        choices=("local", "remote"),
+        help=(
+            "whether the provider processes data locally or remotely; defaults to "
+            "'local' for localhost providers and 'remote' otherwise"
+        ),
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="accessibilizer")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    convert = subparsers.add_parser("convert")
-    convert.add_argument("source", type=Path)
-    convert.add_argument("--page", type=int, required=True)
-    convert.add_argument("--semantic-input", type=Path, required=True)
-    convert.add_argument("--bundle", type=Path, required=True)
+    parser = argparse.ArgumentParser(
+        prog="accessibilizer",
+        description=(
+            "Turn a visually readable Source PDF into a Conversion Bundle whose Visual "
+            "Layer is preserved and whose Semantic Layer can be consumed by assistive "
+            "technology."
+        ),
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True, metavar="{convert}")
+    convert = subparsers.add_parser(
+        "convert",
+        description=(
+            "Convert a single page of a Source PDF into an accessible Conversion "
+            "Bundle, gated on internal checks, visual comparison, and veraPDF's "
+            "PDF/UA-1 profile."
+        ),
+        epilog=CONVERT_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    convert.add_argument("source", type=Path, help="path to the Source PDF to convert")
+    convert.add_argument(
+        "--page",
+        type=int,
+        required=True,
+        help=(
+            "single, required page number (1-indexed) to convert; whole-document "
+            "conversion is tracked by issue #1"
+        ),
+    )
+    convert.add_argument(
+        "--semantic-input",
+        type=Path,
+        required=True,
+        help=(
+            "path to a JSON Semantic Layer contract (schema_version 1.0) that becomes "
+            "the output PDF's structure; this is a temporary scaffold until a future "
+            "release generates it from the Source PDF (tracked by issue #1)"
+        ),
+    )
+    convert.add_argument(
+        "--bundle",
+        type=Path,
+        required=True,
+        help="path to the Conversion Bundle directory to create or update",
+    )
     _add_provider_arguments(convert)
-    convert.add_argument("--allow-remote", action="store_true")
-    convert.add_argument("--max-requests", type=int)
-    convert.add_argument("--provider-max-retries", type=int)
-    convert.add_argument("--provider-retry-base-seconds", type=float)
-    convert.add_argument("--provider-retry-max-seconds", type=float)
-    convert.add_argument("--replace", action="store_true")
-    convert.add_argument("--resume", action="store_true")
-    convert.add_argument("--json", action="store_true")
+    convert.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help=(
+            "authorize sending data to a remote or uncertain provider without an "
+            "interactive confirmation prompt"
+        ),
+    )
+    convert.add_argument(
+        "--max-requests",
+        type=int,
+        help="maximum provider requests to allow before pausing the conversion (default: 100)",
+    )
+    convert.add_argument(
+        "--provider-max-retries",
+        type=int,
+        help="maximum retries for a failed provider request (default: 3)",
+    )
+    convert.add_argument(
+        "--provider-retry-base-seconds",
+        type=float,
+        help="base delay in seconds before the first provider retry (default: 0.5)",
+    )
+    convert.add_argument(
+        "--provider-retry-max-seconds",
+        type=float,
+        help="maximum delay in seconds between provider retries (default: 8.0)",
+    )
+    convert.add_argument(
+        "--replace",
+        action="store_true",
+        help=(
+            "replace an existing Conversion Bundle; Accessibilizer builds the "
+            "replacement in a protected staging directory and leaves the existing "
+            "bundle untouched if conversion fails"
+        ),
+    )
+    convert.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "resume an interrupted or paused conversion, reusing stages whose "
+            "dependency key and artifact hashes are still valid"
+        ),
+    )
+    convert.add_argument(
+        "--json",
+        action="store_true",
+        help="print machine-readable JSON instead of human-readable text",
+    )
     provider_key_env = subparsers.add_parser("provider-key-env", help=argparse.SUPPRESS)
     _add_provider_arguments(provider_key_env)
+    # argparse.SUPPRESS on add_parser() hides the description but not the
+    # subcommand's own list entry; drop its pseudo-action to hide it fully.
+    subparsers._choices_actions[:] = [
+        action for action in subparsers._choices_actions if action.dest != "provider-key-env"
+    ]
     return parser
 
 
