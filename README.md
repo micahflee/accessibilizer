@@ -2,9 +2,9 @@
 
 Accessibilizer turns visually readable Source PDFs into documents whose Visual Layer is preserved and whose Semantic Layer can be consumed by assistive technology.
 
-The current implementation reconstructs the page's Semantic Layer from the Source PDF itself, imports one native source page as artifact content, then gates the result on internal checks, visual comparison, and veraPDF's PDF/UA-1 profile. It also resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins.
+The current implementation converts a whole Source PDF one page at a time, reconstructs each page's Semantic Layer from the Source PDF itself, imports every native source page as artifact content into one PDF/UA-1 document, then gates the result on internal semantic checks, full-page visual comparison across every page, and veraPDF's PDF/UA-1 profile. It resolves and verifies an exact OpenAI-compatible vision provider before Source PDF work begins. By default the whole document is converted; pass `--page` to convert a subset.
 
-It additionally produces reproducible, source-linked recognition evidence for the page: a pinned CPU-only PaddleOCR pass detects text or handwriting, Formula, table, figure, and Document Structure candidates, and the existing PDF text layer is retained with its geometry only as non-authoritative evidence. Every candidate receives a stable identifier and a source-region crop.
+The output carries a document title and language, a heading hierarchy (H1–H6), a bookmark outline built from that hierarchy, the ordered Semantic Layer in document Logical Reading Order, and PDF/UA representations for reconstructable links. It additionally produces reproducible, source-linked recognition evidence for each page: a pinned CPU-only PaddleOCR pass detects text or handwriting, Formula, table, figure, and Document Structure candidates, and the existing PDF text layer is retained with its geometry only as non-authoritative evidence. Every candidate receives a stable identifier and a source-region crop.
 
 A single strict, versioned page-level vision call then reconstructs the page's meaning — its title, language, and the ordered heading, paragraph, Formula, Informative Figure, and Semantic Table Semantic Layer in Logical Reading Order — and required high-resolution crop calls verify the Formula, table, and Figure regions. The PDF text layer and the PaddleOCR candidates are reconciled against that reconstruction without silently replacing it: disagreement, ambiguity, unsupported static inputs, suspected source errors, and suspected prompt injection each raise a non-bypassable Conversion Warning. Source document content is treated as untrusted data — requests never expose tools, the reply is constrained to a strict JSON Schema, and no field of the source is interpreted as a control instruction.
 
@@ -25,7 +25,6 @@ Run the public host launcher:
 ```sh
 ./accessibilizer convert \
   "testdata/Chapter 20_ Electric Current Resistance and Ohms Law.pdf" \
-  --page 1 \
   --bundle electric-current.accessibilizer \
   --provider-base-url http://localhost:11434/v1 \
   --provider-model exact-model-identifier \
@@ -33,11 +32,13 @@ Run the public host launcher:
   --json
 ```
 
+The whole document is converted by default. Pass `--page` to convert a subset: a single page (`--page 3`), a range (`--page 1-11`), or a comma list (`--page 1,3,5`).
+
 The launcher supports macOS and Linux paths and keeps Docker as an implementation detail. It refuses to overwrite an existing Conversion Bundle.
 Pass `--replace` to explicitly authorize replacement. Accessibilizer builds the replacement in a protected staging directory and leaves the existing bundle, including Reviewer edits, untouched if conversion fails.
 
 Interrupted or paused work remains in a protected sibling directory named `.BUNDLE.in-progress`.
-Repeat the same command with `--resume` to continue it. Completed source, region, recognition, page-semantics, page, and validation stages are reused only when their dependency key and artifact hashes remain valid. Changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it; changing the provider model or a prompt or schema version re-runs page-semantics reconstruction and everything downstream.
+Repeat the same command with `--resume` to continue it. Completed source, per-page region, recognition, and page-semantics stages, and the whole-document authoring and validation stages, are reused only when their dependency key and artifact hashes remain valid. Changing a Source PDF, tool version, schema, prompt, model, or relevant rendering setting invalidates the stages that depend on it; changing the provider model or a prompt or schema version re-runs page-semantics reconstruction and everything downstream.
 
 Before conversion, Accessibilizer rejects encrypted or digitally signed Source PDFs and PDFs containing forms, JavaScript, embedded files or media, links, or other interactive actions that this version cannot preserve safely.
 
@@ -84,22 +85,22 @@ Transient timeouts, connection failures, rate limits, and server errors receive 
 The generated protected directory contains:
 
 - `source.pdf`: immutable copy of the Source PDF
-- `output.pdf`: PDF/UA-1 output
-- `review-record.yaml`: the human-editable Review Record — the reconstructed Semantic Layer, the retained recognition candidates, the Conversion Warnings with their resolution history, and reconstruction provenance. It validates against `schemas/review-record-1.0.schema.json`.
+- `output.pdf`: whole-document PDF/UA-1 output
+- `review-record.yaml`: the human-editable, whole-document Review Record — the flat Semantic Layer (each node tagged with its source page), the retained recognition candidates, the Conversion Warnings (each carrying its page) with their resolution history, and reconstruction provenance. It validates against `schemas/review-record-2.0.schema.json`.
 - `review-baseline.json`: the last tool-committed snapshot of the Review Record, used to detect changed resolutions and preserve history; not meant for editing
 - `review-report.html`: WCAG 2.2 AA presentation of the Review Record, pairing source-region context with the generated interpretations, warnings, and resolutions
-- `page-semantics.json`: the reconstructed Semantic Layer and warnings the Review Record is built from
-- `recognition/page-1.json`: non-authoritative recognition candidates and existing PDF text evidence
-- `regions/page-1.png`: stable rendered source context for review
-- `regions/page-1-recognition.png`: full-page render used for recognition
-- `regions/page-1-rNNNN.png`: stable per-candidate source-region crops
-- `authoring.json`: versioned Python-to-Java contract
-- `provenance.json`: source hash, authoring versions, and resolved provider identity
+- `page-semantics/page-N.json`: each page's reconstructed Semantic Layer and warnings the Review Record is built from
+- `recognition/page-N.json`: per-page non-authoritative recognition candidates and existing PDF text evidence
+- `regions/page-N.png`: stable rendered source context for review
+- `regions/page-N-recognition.png`: full-page render used for recognition
+- `regions/page-N-rNNNN.png`: stable per-candidate source-region crops
+- `authoring.json`: versioned Python-to-Java contract (`schemas/authoring-2.0.schema.json`)
+- `provenance.json`: source hash, converted pages, authoring versions, and resolved provider identity
 - `request-usage.json`: resumable request ceiling, count, estimate, and reported token totals
 - `checkpoints/*.json`: atomic dependency keys and hashes for completed stages
 - `validation/preflight.json`: Source PDF preflight result
-- `validation/internal.json`: semantic invariant results
-- `validation/visual.json`: explicit pixel-difference result and tolerance
+- `validation/internal.json`: internal semantic-check categories (source-region coverage, alternatives, table relationships, reading order, recognition agreement, and Review Record consistency)
+- `validation/visual.json`: full-page pixel-difference result per page and tolerance
 - `validation/verapdf.xml`: independent PDF/UA-1 validation report
 
 ## Review and finalize
@@ -168,5 +169,5 @@ The fast suite selects the deterministic `fake` recognition backend. Set
 `ACCESSIBILIZER_RUN_REAL_OCR=1` to additionally run the opt-in check that pinned
 PaddleOCR produces schema-valid candidates for all 11 sample pages offline.
 
-The authoring boundary is documented by `schemas/authoring-1.0.schema.json`, and
+The authoring boundary is documented by `schemas/authoring-2.0.schema.json`, and
 the recognition-evidence contract by `schemas/recognition-1.0.schema.json`.

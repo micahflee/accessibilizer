@@ -172,7 +172,9 @@ def page_response_schema() -> dict[str, Any]:
                 "additionalProperties": False,
                 "required": ["level", "text"],
                 "properties": {
-                    "level": {"const": 1},
+                    # Heading hierarchy: H1 through H6 so a page can contribute a
+                    # section level to the whole-document outline.
+                    "level": {"type": "integer", "minimum": 1, "maximum": 6},
                     "text": {"type": "string", "minLength": 1},
                 },
             },
@@ -442,7 +444,13 @@ def validate_page_response(response: object) -> None:
         response, "reading_order_is_unambiguous", "reading_order_is_unambiguous must be boolean"
     )
     heading = response.get("heading")
-    _require(isinstance(heading, dict) and heading.get("level") == 1, "heading.level must be 1")
+    _require(
+        isinstance(heading, dict)
+        and isinstance(heading.get("level"), int)
+        and not isinstance(heading.get("level"), bool)
+        and 1 <= heading["level"] <= 6,
+        "heading.level must be an integer from 1 to 6",
+    )
     assert isinstance(heading, dict)
     _require_str(heading, "text", "heading.text must be a non-empty string")
     paragraph = response.get("paragraph")
@@ -822,7 +830,7 @@ def reconcile_page(
     if figure["complexity"] == "complex":
         figure_node["detailed_figure_description"] = figure["detailed_figure_description"]
     semantic_layer: list[dict[str, Any]] = [
-        {"type": "heading", "level": 1, "text": heading["text"]},
+        {"type": "heading", "level": heading["level"], "text": heading["text"]},
         {"type": "paragraph", "text": paragraph["text"]},
         {
             "type": "formula",

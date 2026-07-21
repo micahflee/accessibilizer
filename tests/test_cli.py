@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import copy
+import unittest
+from typing import Any
+
+from accessibilizer import review
+from accessibilizer.cli import (
+    _authoring_contract,
+    _internal_checks,
+    _parse_page_selection,
+)
+
+
+def page_document(page: int) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "page": page,
+        "source_sha256": "a" * 64,
+        "title": "Electric Current",
+        "language": "en-US",
+        "semantic_layer": [
+            {"type": "heading", "level": 1, "text": "Electric Current"},
+            {"type": "paragraph", "text": "Electric current is the rate charge flows."},
+            {
+                "type": "formula",
+                "normalized_math": "I = Q / delta t",
+                "spoken_math_alternative": "I equals Q divided by delta t.",
+            },
+            {
+                "type": "figure",
+                "complexity": "complex",
+                "figure_alternative": "A wire carrying current.",
+                "detailed_figure_description": "A wire passes through a surface.",
+            },
+            {
+                "type": "table",
+                "caption": "Resistivity",
+                "rows": [
+                    {"cells": [
+                        {"kind": "header", "text": "Material", "scope": "col",
+                         "row_span": 1, "col_span": 1},
+                    ]},
+                ],
+            },
+        ],
+        "warnings": [],
+        "candidates": [
+            {"id": f"page-{page}-r0003", "type": "formula", "text": None,
+             "crop": f"regions/page-{page}-r0003.png"},
+        ],
+        "reconstruction": {
+            "document_class": "stem_instructional",
+            "page_prompt_version": "1.0",
+            "page_schema_version": "1.0",
+            "primary_language_is_english": True,
+            "provider_endpoint": "http://localhost:11434/v1",
+            "provider_model": "exact-model",
+            "reading_order": ["heading", "paragraph", "formula", "figure", "table"],
+            "reading_order_is_unambiguous": True,
+            "region_prompt_version": "1.0",
+            "region_schema_version": "1.0",
+            "verified_regions": [
+                {"agrees_with_page": True, "id": f"page-{page}-r0003", "type": "formula"},
+                {"agrees_with_page": True, "id": f"page-{page}-r0004", "type": "figure"},
+                {"agrees_with_page": True, "id": f"page-{page}-r0005", "type": "table"},
+            ],
+        },
+    }
+
+
+def record_for(pages: list[int]) -> dict[str, Any]:
+    return review.build_review_record(
+        source_sha256="a" * 64,
+        title="Electric Current",
+        language="en-US",
+        provider_endpoint="http://localhost:11434/v1",
+        provider_model="exact-model",
+        page_prompt_version="1.0",
+        page_schema_version="1.0",
+        region_prompt_version="1.0",
+        region_schema_version="1.0",
+        pages=[page_document(p) for p in pages],
+    )
+
+
+class PageSelectionTest(unittest.TestCase):
+    def test_default_selects_the_whole_document(self) -> None:
+        self.assertEqual(_parse_page_selection(None, 11), list(range(1, 12)))
+
+    def test_single_page(self) -> None:
+        self.assertEqual(_parse_page_selection("3", 11), [3])
+
+    def test_range(self) -> None:
+        self.assertEqual(_parse_page_selection("2-4", 11), [2, 3, 4])
+
+    def test_comma_list_is_sorted_and_deduplicated(self) -> None:
+        self.assertEqual(_parse_page_selection("5,1,5,3", 11), [1, 3, 5])
+
+    def test_mixed_ranges_and_singletons(self) -> None:
+        self.assertEqual(_parse_page_selection("1,3-4,7", 11), [1, 3, 4, 7])
+
+    def test_page_beyond_the_document_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_page_selection("12", 11)
+
+    def test_reversed_range_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_page_selection("4-2", 11)
+
+    def test_non_numeric_spec_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_page_selection("all", 11)
+
+
+class AuthoringContractTest(unittest.TestCase):
+    def test_groups_flat_layer_by_page_and_strips_the_page_tag(self) -> None:
+        contract = _authoring_contract(record_for([1, 2]))
+        self.assertEqual(contract["schema_version"], "2.0")
+        self.assertEqual([p["source_page"] for p in contract["pages"]], [1, 2])
+        for grouped in contract["pages"]:
+            self.assertEqual(len(grouped["semantic_layer"]), 5)
+            self.assertTrue(all("page" not in node for node in grouped["semantic_layer"]))
+        self.assertEqual(contract["pages"][0]["semantic_layer"][0]["type"], "heading")
+
+
+class InternalChecksTest(unittest.TestCase):
+    def extracted(self, record: dict[str, Any]) -> dict[str, Any]:
+        # The authored structure tree that a faithful author + inspect returns:
+        # pages in authored order, each with its semantic layer (no source page).
+        return {
+            "pages": [
+                {"semantic_layer": page["semantic_layer"]}
+                for page in _authoring_contract(record)["pages"]
+            ]
+        }
+
+    def test_a_faithful_output_passes_every_category(self) -> None:
+        record = record_for([1, 2])
+        result = _internal_checks(record, self.extracted(record))
+        self.assertTrue(result["passed"], result["checks"])
+        self.assertTrue(all(result["categories"].values()))
+        self.assertEqual(
+            set(result["categories"]),
+            {
+                "review-record-consistency",
+                "reading-order",
+                "source-region-coverage",
+                "alternatives",
+                "table-relationships",
+                "recognition-agreement",
+            },
+        )
+
+    def test_a_reordered_structure_tree_fails_reading_order(self) -> None:
+        record = record_for([1])
+        extracted = self.extracted(record)
+        extracted["pages"][0]["semantic_layer"].reverse()
+        result = _internal_checks(record, extracted)
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["categories"]["reading-order"])
+
+    def test_a_missing_figure_alternative_fails_alternatives(self) -> None:
+        record = record_for([1])
+        figure = next(n for n in record["semantic_layer"] if n["type"] == "figure")
+        figure["figure_alternative"] = ""
+        result = _internal_checks(record, self.extracted(record))
+        self.assertFalse(result["categories"]["alternatives"])
+
+    def test_a_header_without_scope_fails_table_relationships(self) -> None:
+        record = record_for([1])
+        table = next(n for n in record["semantic_layer"] if n["type"] == "table")
+        table["rows"][0]["cells"][0]["scope"] = "none"
+        result = _internal_checks(record, self.extracted(record))
+        self.assertFalse(result["categories"]["table-relationships"])
+
+    def test_an_unverified_region_fails_recognition_agreement(self) -> None:
+        record = record_for([1])
+        record["reconstruction"]["pages"][0]["verified_regions"] = []
+        result = _internal_checks(record, self.extracted(record))
+        self.assertFalse(result["categories"]["recognition-agreement"])
+
+    def test_a_warning_region_without_a_candidate_fails_coverage(self) -> None:
+        record = record_for([1])
+        record["warnings"].append({
+            "id": "w0001", "code": "recognition-disagreement", "message": "x",
+            "page": 1, "region": "page-1-r9999", "resolution": None, "history": [],
+        })
+        result = _internal_checks(record, self.extracted(record))
+        self.assertFalse(result["categories"]["source-region-coverage"])
+
+
+if __name__ == "__main__":
+    unittest.main()

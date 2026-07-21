@@ -1,11 +1,13 @@
 """The human-editable Review Record, its accessible report, and finalize gating.
 
-A Review Record is the durable, editable account of one page's reconstructed
-Semantic Layer, the original recognition candidates, the Conversion Warnings, and
-their resolution history. It is serialized as human-editable YAML, validated
-against the canonical versioned JSON Schema in
-``schemas/review-record-1.0.schema.json`` (mirrored by :func:`review_record_schema`),
-and finalized only once every warning is resolved.
+A Review Record is the durable, editable account of a whole document's
+reconstructed Semantic Layer, the original recognition candidates, the Conversion
+Warnings, and their resolution history. It spans every converted page: the
+Semantic Layer is a single flat list in document Logical Reading Order whose nodes
+each carry their source ``page``, and every warning carries the page it concerns.
+It is serialized as human-editable YAML, validated against the canonical versioned
+JSON Schema in ``schemas/review-record-2.0.schema.json`` (mirrored by
+:func:`review_record_schema`), and finalized only once every warning is resolved.
 
 A warning is resolved exactly one of three ways — ``corrected``, ``accepted``, or
 ``not_applicable`` (which requires a reason) — and every resolution carries the
@@ -23,8 +25,8 @@ import yaml
 from jsonschema import Draft202012Validator
 
 
-REVIEW_RECORD_SCHEMA_VERSION = "1.0"
-REVIEW_REPORT_VERSION = "2.0"
+REVIEW_RECORD_SCHEMA_VERSION = "2.0"
+REVIEW_REPORT_VERSION = "3.0"
 
 RESOLUTION_STATUSES: tuple[str, ...] = ("corrected", "accepted", "not_applicable")
 _STATUS_LABELS = {
@@ -49,14 +51,21 @@ class ReviewRecordError(Exception):
 # --- semantic-layer node sub-schemas (shared with page semantics) ------------
 
 
+# A node's source page is required on every Semantic Layer node so a whole-document
+# record stays flat while remaining unambiguous about where each node belongs.
+_PAGE_PROPERTY = {"type": "integer", "minimum": 1}
+
+
 def _semantic_layer_defs() -> dict[str, Any]:
     return {
         "heading": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["level", "text", "type"],
+            "required": ["level", "page", "text", "type"],
             "properties": {
-                "level": {"const": 1},
+                # Heading hierarchy: H1 through H6 so section structure survives.
+                "level": {"type": "integer", "minimum": 1, "maximum": 6},
+                "page": _PAGE_PROPERTY,
                 "text": {"type": "string", "minLength": 1},
                 "type": {"const": "heading"},
             },
@@ -64,8 +73,9 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "paragraph": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["text", "type"],
+            "required": ["page", "text", "type"],
             "properties": {
+                "page": _PAGE_PROPERTY,
                 "text": {"type": "string", "minLength": 1},
                 "type": {"const": "paragraph"},
             },
@@ -73,9 +83,10 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "formula": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["normalized_math", "spoken_math_alternative", "type"],
+            "required": ["normalized_math", "page", "spoken_math_alternative", "type"],
             "properties": {
                 "normalized_math": {"type": "string", "minLength": 1},
+                "page": _PAGE_PROPERTY,
                 "spoken_math_alternative": {"type": "string", "minLength": 1},
                 "type": {"const": "formula"},
             },
@@ -83,11 +94,12 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "figure": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["complexity", "figure_alternative", "type"],
+            "required": ["complexity", "figure_alternative", "page", "type"],
             "properties": {
                 "complexity": {"enum": ["simple", "complex"]},
                 "detailed_figure_description": {"type": "string", "minLength": 1},
                 "figure_alternative": {"type": "string", "minLength": 1},
+                "page": _PAGE_PROPERTY,
                 "type": {"const": "figure"},
             },
             # A complex Informative Figure carries a Detailed Figure Description; a
@@ -96,13 +108,27 @@ def _semantic_layer_defs() -> dict[str, Any]:
             "then": {"required": ["detailed_figure_description"]},
             "else": {"not": {"required": ["detailed_figure_description"]}},
         },
+        "link": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["href", "page", "text", "type"],
+            "properties": {
+                # A reconstructable link exposes its announced text and its
+                # destination so assistive technology can follow it.
+                "href": {"type": "string", "minLength": 1},
+                "page": _PAGE_PROPERTY,
+                "text": {"type": "string", "minLength": 1},
+                "type": {"const": "link"},
+            },
+        },
         "table": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["rows", "type"],
+            "required": ["page", "rows", "type"],
             "properties": {
                 # Present only when the table has a caption.
                 "caption": {"type": "string", "minLength": 1},
+                "page": _PAGE_PROPERTY,
                 "rows": {
                     "type": "array",
                     "minItems": 1,
@@ -142,37 +168,28 @@ def _semantic_layer_defs() -> dict[str, Any]:
     }
 
 
-def _reconstruction_schema() -> dict[str, Any]:
+def _page_reconstruction_schema() -> dict[str, Any]:
+    """One page's reconstruction provenance within a whole-document record."""
     return {
         "type": "object",
         "additionalProperties": False,
         "required": [
             "document_class",
-            "page_prompt_version",
-            "page_schema_version",
+            "page",
             "primary_language_is_english",
-            "provider_endpoint",
-            "provider_model",
             "reading_order",
             "reading_order_is_unambiguous",
-            "region_prompt_version",
-            "region_schema_version",
             "verified_regions",
         ],
         "properties": {
             "document_class": {"enum": ["stem_instructional", "other"]},
-            "page_prompt_version": {"type": "string", "minLength": 1},
-            "page_schema_version": {"type": "string", "minLength": 1},
+            "page": _PAGE_PROPERTY,
             "primary_language_is_english": {"type": "boolean"},
-            "provider_endpoint": {"type": "string", "minLength": 1},
-            "provider_model": {"type": "string", "minLength": 1},
             "reading_order": {
                 "type": "array",
                 "items": {"enum": ["heading", "paragraph", "formula", "figure", "table"]},
             },
             "reading_order_is_unambiguous": {"type": "boolean"},
-            "region_prompt_version": {"type": "string", "minLength": 1},
-            "region_schema_version": {"type": "string", "minLength": 1},
             "verified_regions": {
                 "type": "array",
                 "items": {
@@ -190,6 +207,36 @@ def _reconstruction_schema() -> dict[str, Any]:
     }
 
 
+def _reconstruction_schema() -> dict[str, Any]:
+    """Document-level reconstruction provenance shared across every page."""
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "page_prompt_version",
+            "page_schema_version",
+            "pages",
+            "provider_endpoint",
+            "provider_model",
+            "region_prompt_version",
+            "region_schema_version",
+        ],
+        "properties": {
+            "page_prompt_version": {"type": "string", "minLength": 1},
+            "page_schema_version": {"type": "string", "minLength": 1},
+            "provider_endpoint": {"type": "string", "minLength": 1},
+            "provider_model": {"type": "string", "minLength": 1},
+            "region_prompt_version": {"type": "string", "minLength": 1},
+            "region_schema_version": {"type": "string", "minLength": 1},
+            "pages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/page_reconstruction"},
+            },
+        },
+    }
+
+
 def review_record_schema() -> dict[str, Any]:
     """Return the canonical Review Record JSON Schema as a dict.
 
@@ -198,21 +245,24 @@ def review_record_schema() -> dict[str, Any]:
     """
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://accessibilizer.org/schemas/review-record-1.0.schema.json",
-        "title": "Accessibilizer Review Record 1.0",
+        "$id": "https://accessibilizer.org/schemas/review-record-2.0.schema.json",
+        "title": "Accessibilizer Review Record 2.0",
         "description": (
-            "The human-editable, durable account of one page's reconstructed Semantic "
-            "Layer, the original recognition candidates, and the Conversion Warnings "
-            "with their resolution history. A warning is resolved only as corrected, "
-            "accepted, or not_applicable (with a reason), attributed to a Reviewer. "
-            "Finalization is blocked while any warning is unresolved."
+            "The human-editable, durable account of a whole document's reconstructed "
+            "Semantic Layer, the original recognition candidates, and the Conversion "
+            "Warnings with their resolution history. The Semantic Layer is a single "
+            "flat list in document Logical Reading Order whose nodes each carry their "
+            "source page, and every warning carries the page it concerns. A warning is "
+            "resolved only as corrected, accepted, or not_applicable (with a reason), "
+            "attributed to a Reviewer. Finalization is blocked while any warning is "
+            "unresolved."
         ),
         "type": "object",
         "additionalProperties": False,
         "required": [
             "candidates",
             "language",
-            "page",
+            "pages",
             "reconstruction",
             "schema_version",
             "semantic_layer",
@@ -221,21 +271,27 @@ def review_record_schema() -> dict[str, Any]:
             "warnings",
         ],
         "properties": {
-            "schema_version": {"const": "1.0"},
-            "page": {"type": "integer", "minimum": 1},
+            "schema_version": {"const": "2.0"},
+            "pages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "integer", "minimum": 1},
+            },
             "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "title": {"type": "string", "minLength": 1},
             "language": {"type": "string", "minLength": 1},
             "semantic_layer": {
                 "type": "array",
-                "prefixItems": [
-                    {"$ref": "#/$defs/heading"},
-                    {"$ref": "#/$defs/paragraph"},
-                    {"$ref": "#/$defs/formula"},
-                    {"$ref": "#/$defs/figure"},
-                    {"$ref": "#/$defs/table"},
-                ],
-                "items": False,
+                "items": {
+                    "oneOf": [
+                        {"$ref": "#/$defs/heading"},
+                        {"$ref": "#/$defs/paragraph"},
+                        {"$ref": "#/$defs/formula"},
+                        {"$ref": "#/$defs/figure"},
+                        {"$ref": "#/$defs/link"},
+                        {"$ref": "#/$defs/table"},
+                    ]
+                },
             },
             "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
             "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
@@ -243,6 +299,7 @@ def review_record_schema() -> dict[str, Any]:
         },
         "$defs": {
             **_semantic_layer_defs(),
+            "page_reconstruction": _page_reconstruction_schema(),
             "reconstruction": _reconstruction_schema(),
             "candidate": {
                 "type": "object",
@@ -274,11 +331,14 @@ def review_record_schema() -> dict[str, Any]:
             "warning": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["code", "history", "id", "message", "region", "resolution"],
+                "required": [
+                    "code", "history", "id", "message", "page", "region", "resolution"
+                ],
                 "properties": {
                     "id": {"type": "string", "pattern": "^w[0-9]{4,}$"},
                     "code": {"type": "string", "minLength": 1},
                     "message": {"type": "string", "minLength": 1},
+                    "page": {"type": ["integer", "null"], "minimum": 1},
                     "region": {"type": ["string", "null"]},
                     "resolution": {
                         "oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]
@@ -297,46 +357,97 @@ _VALIDATOR = Draft202012Validator(review_record_schema())
 
 
 def build_review_record(
-    *, page_semantics: dict[str, Any], candidates: Sequence[dict[str, Any]]
+    *,
+    source_sha256: str,
+    title: str,
+    language: str,
+    provider_endpoint: str,
+    provider_model: str,
+    page_prompt_version: str,
+    page_schema_version: str,
+    region_prompt_version: str,
+    region_schema_version: str,
+    pages: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Assemble a Review Record from the generation output and its candidates.
+    """Assemble a whole-document Review Record from per-page reconstructions.
 
-    The reconstructed Semantic Layer and the immutable reconstruction provenance
-    come straight from ``page_semantics``. Every Conversion Warning gets a stable
-    identifier, starts ``unresolved`` with an empty history, and the original
-    recognition candidates are retained so each warning can be checked against the
-    exact source region.
+    ``pages`` is an ordered sequence of per-page reconstruction documents (as
+    produced by :func:`accessibilizer.page.build_page_semantics_document`), each
+    already carrying its own Semantic Layer, warnings, candidates, and page-level
+    reconstruction provenance. This flattens them into one document-scoped record:
+    the Semantic Layer is concatenated in page order with each node tagged with its
+    source page, every Conversion Warning gets a document-stable identifier and its
+    page, and the original recognition candidates are retained so each warning can
+    be checked against the exact source region. Warnings start ``unresolved`` with
+    an empty history.
     """
+    semantic_layer: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    for index, warning in enumerate(page_semantics.get("warnings", []), start=1):
-        warnings.append(
+    page_reconstructions: list[dict[str, Any]] = []
+    page_numbers: list[int] = []
+    warning_index = 0
+    for page_document in pages:
+        page_number = page_document["page"]
+        page_numbers.append(page_number)
+        for node in page_document["semantic_layer"]:
+            tagged = {"page": page_number, **copy.deepcopy(node)}
+            semantic_layer.append(tagged)
+        for candidate in page_document.get("candidates", []):
+            candidates.append(
+                {
+                    "id": candidate["id"],
+                    "type": candidate["type"],
+                    "text": candidate.get("text"),
+                    "crop": candidate["crop"],
+                }
+            )
+        for warning in page_document.get("warnings", []):
+            warning_index += 1
+            warnings.append(
+                {
+                    "id": f"w{warning_index:04d}",
+                    "code": warning["code"],
+                    "message": warning["message"],
+                    "page": page_number,
+                    "region": warning.get("region"),
+                    "resolution": None,
+                    "history": [],
+                }
+            )
+        reconstruction = page_document["reconstruction"]
+        page_reconstructions.append(
             {
-                "id": f"w{index:04d}",
-                "code": warning["code"],
-                "message": warning["message"],
-                "region": warning.get("region"),
-                "resolution": None,
-                "history": [],
+                "document_class": reconstruction["document_class"],
+                "page": page_number,
+                "primary_language_is_english": reconstruction[
+                    "primary_language_is_english"
+                ],
+                "reading_order": copy.deepcopy(reconstruction["reading_order"]),
+                "reading_order_is_unambiguous": reconstruction[
+                    "reading_order_is_unambiguous"
+                ],
+                "verified_regions": copy.deepcopy(reconstruction["verified_regions"]),
             }
         )
     return {
         "schema_version": REVIEW_RECORD_SCHEMA_VERSION,
-        "page": page_semantics["page"],
-        "source_sha256": page_semantics["source_sha256"],
-        "title": page_semantics["title"],
-        "language": page_semantics["language"],
-        "semantic_layer": copy.deepcopy(page_semantics["semantic_layer"]),
-        "candidates": [
-            {
-                "id": candidate["id"],
-                "type": candidate["type"],
-                "text": candidate.get("text"),
-                "crop": candidate["crop"],
-            }
-            for candidate in candidates
-        ],
+        "pages": page_numbers,
+        "source_sha256": source_sha256,
+        "title": title,
+        "language": language,
+        "semantic_layer": semantic_layer,
+        "candidates": candidates,
         "warnings": warnings,
-        "reconstruction": copy.deepcopy(page_semantics["reconstruction"]),
+        "reconstruction": {
+            "page_prompt_version": page_prompt_version,
+            "page_schema_version": page_schema_version,
+            "provider_endpoint": provider_endpoint,
+            "provider_model": provider_model,
+            "region_prompt_version": region_prompt_version,
+            "region_schema_version": region_schema_version,
+            "pages": page_reconstructions,
+        },
     }
 
 
@@ -504,6 +615,8 @@ def _warning_row(warning: dict[str, Any], crops: dict[str, dict[str, Any]]) -> s
     identifier = html.escape(str(warning.get("id", "")))
     code = html.escape(str(warning.get("code", "")))
     message = html.escape(str(warning.get("message", "")))
+    page = warning.get("page")
+    page_cell = f"Page {html.escape(str(page))}" if page is not None else "Document"
     region = warning.get("region")
     if region and region in crops:
         crop = crops[region]
@@ -536,6 +649,7 @@ def _warning_row(warning: dict[str, Any], crops: dict[str, dict[str, Any]]) -> s
         resolution_cell = f"By {reviewer} on {timestamp}.{detail}"
     return (
         f'<tr><th scope="row">{identifier}: {code}</th>'
+        f"<td>{page_cell}</td>"
         f"<td>{message}</td><td>{region_cell}</td>"
         f"<td>Status: {_status_label(resolution)}</td>"
         f"<td>{resolution_cell}</td></tr>"
@@ -564,7 +678,8 @@ def render_review_report(record: dict[str, Any]) -> str:
             f"<p>{len(warnings)} Conversion Warning(s); {unresolved} not yet resolved.</p>"
             "<table><caption>Conversion Warnings and their resolutions</caption>"
             "<thead><tr>"
-            '<th scope="col">Warning</th><th scope="col">Concern</th>'
+            '<th scope="col">Warning</th><th scope="col">Page</th>'
+            '<th scope="col">Concern</th>'
             '<th scope="col">Source region</th><th scope="col">Status</th>'
             '<th scope="col">Resolution</th>'
             f"</tr></thead><tbody>{rows}</tbody></table>"
@@ -578,7 +693,7 @@ def render_review_report(record: dict[str, Any]) -> str:
 <body><main>
 <h1>{title} — Review Report</h1>
 <section aria-labelledby="document-identity"><h2 id="document-identity">Document</h2>
-<dl><dt>Page</dt><dd>{html.escape(str(record.get("page", "")))}</dd>
+<dl><dt>Pages</dt><dd>{html.escape(", ".join(str(page) for page in record.get("pages", [])))}</dd>
 <dt>Language</dt><dd>{language}</dd>
 <dt>Source SHA-256</dt>\
 <dd><code>{html.escape(str(record.get("source_sha256", "")))}</code></dd></dl></section>

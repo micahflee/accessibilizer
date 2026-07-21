@@ -41,6 +41,7 @@ SIMPLE_FIGURE = {
     "complexity": "simple",
     "figure_alternative": "A wire carrying current.",
 }
+LINK = {"type": "link", "text": "Ohm's Law", "href": "https://example.org/ohm"}
 TABLE: dict[str, Any] = {
     "type": "table",
     "caption": "Resistivity of common materials",
@@ -60,14 +61,14 @@ TABLE: dict[str, Any] = {
     ],
 }
 
-RECONSTRUCTION = {
+PAGE_RECONSTRUCTION = {
     "document_class": "stem_instructional",
     "page_prompt_version": "1.0",
     "page_schema_version": "1.0",
     "primary_language_is_english": True,
     "provider_endpoint": "http://localhost:11434/v1",
     "provider_model": "exact-model",
-    "reading_order": ["heading", "paragraph", "formula", "figure"],
+    "reading_order": ["heading", "paragraph", "formula", "figure", "table"],
     "reading_order_is_unambiguous": True,
     "region_prompt_version": "1.0",
     "region_schema_version": "1.0",
@@ -75,25 +76,14 @@ RECONSTRUCTION = {
 }
 
 
-def page_semantics(**overrides: Any) -> dict[str, Any]:
-    document: dict[str, Any] = {
-        "schema_version": "1.0",
-        "page": 1,
-        "source_sha256": "a" * 64,
-        "title": "Electric Current",
-        "language": "en-US",
-        "semantic_layer": [HEADING, PARAGRAPH, FORMULA, FIGURE, TABLE],
-        "warnings": [],
-        "reconstruction": RECONSTRUCTION,
-    }
-    document.update(overrides)
-    return copy.deepcopy(document)
+def candidates_for(page: int) -> list[dict[str, Any]]:
+    return [
+        {"id": f"page-{page}-r0001", "type": "text", "text": "current",
+         "crop": f"regions/page-{page}-r0001.png"},
+        {"id": f"page-{page}-r0003", "type": "formula", "text": None,
+         "crop": f"regions/page-{page}-r0003.png"},
+    ]
 
-
-CANDIDATES: list[dict[str, Any]] = [
-    {"id": "page-1-r0001", "type": "text", "text": "current", "crop": "regions/page-1-r0001.png"},
-    {"id": "page-1-r0003", "type": "formula", "text": None, "crop": "regions/page-1-r0003.png"},
-]
 
 WARNINGS: list[dict[str, Any]] = [
     {
@@ -110,11 +100,39 @@ WARNINGS: list[dict[str, Any]] = [
 ]
 
 
-def built_record(**overrides: Any) -> dict[str, Any]:
-    record = build_review_record(
-        page_semantics=page_semantics(warnings=copy.deepcopy(WARNINGS)),
-        candidates=copy.deepcopy(CANDIDATES),
+def page_document(page: int = 1, **overrides: Any) -> dict[str, Any]:
+    document: dict[str, Any] = {
+        "schema_version": "1.0",
+        "page": page,
+        "source_sha256": "a" * 64,
+        "title": "Electric Current",
+        "language": "en-US",
+        "semantic_layer": [HEADING, PARAGRAPH, FORMULA, FIGURE, TABLE],
+        "warnings": [],
+        "candidates": candidates_for(page),
+        "reconstruction": PAGE_RECONSTRUCTION,
+    }
+    document.update(overrides)
+    return copy.deepcopy(document)
+
+
+def build(pages: list[dict[str, Any]]) -> dict[str, Any]:
+    return build_review_record(
+        source_sha256="a" * 64,
+        title="Electric Current",
+        language="en-US",
+        provider_endpoint="http://localhost:11434/v1",
+        provider_model="exact-model",
+        page_prompt_version="1.0",
+        page_schema_version="1.0",
+        region_prompt_version="1.0",
+        region_schema_version="1.0",
+        pages=pages,
     )
+
+
+def built_record(**overrides: Any) -> dict[str, Any]:
+    record = build([page_document(1, warnings=copy.deepcopy(WARNINGS))])
     record.update(overrides)
     return record
 
@@ -129,20 +147,43 @@ class BuildRecordTest(unittest.TestCase):
     def test_record_carries_identity_layer_candidates_and_provenance(self) -> None:
         record = built_record()
         self.assertEqual(record["schema_version"], REVIEW_RECORD_SCHEMA_VERSION)
-        self.assertEqual(record["page"], 1)
+        self.assertEqual(record["pages"], [1])
         self.assertEqual(record["source_sha256"], "a" * 64)
         self.assertEqual([node["type"] for node in record["semantic_layer"]],
                          ["heading", "paragraph", "formula", "figure", "table"])
-        self.assertEqual(record["candidates"], CANDIDATES)
-        self.assertEqual(record["reconstruction"], RECONSTRUCTION)
+        # Every node is tagged with the source page it came from.
+        self.assertTrue(all(node["page"] == 1 for node in record["semantic_layer"]))
+        self.assertEqual(record["candidates"], candidates_for(1))
+        self.assertEqual(record["reconstruction"]["provider_model"], "exact-model")
+        self.assertEqual(record["reconstruction"]["pages"][0]["page"], 1)
+        self.assertEqual(
+            record["reconstruction"]["pages"][0]["document_class"], "stem_instructional"
+        )
 
     def test_warnings_get_stable_ids_and_start_unresolved_with_empty_history(self) -> None:
         record = built_record()
         self.assertEqual([w["id"] for w in record["warnings"]], ["w0001", "w0002"])
         self.assertTrue(all(w["resolution"] is None for w in record["warnings"]))
         self.assertTrue(all(w["history"] == [] for w in record["warnings"]))
+        self.assertTrue(all(w["page"] == 1 for w in record["warnings"]))
         self.assertIsNone(record["warnings"][0]["region"])
         self.assertEqual(record["warnings"][1]["region"], "page-1-r0003")
+
+    def test_multiple_pages_flatten_into_one_ordered_document(self) -> None:
+        record = build([
+            page_document(1, warnings=[copy.deepcopy(WARNINGS[0])]),
+            page_document(2, warnings=[copy.deepcopy(WARNINGS[1])]),
+        ])
+        self.assertEqual(record["pages"], [1, 2])
+        pages_seen = [node["page"] for node in record["semantic_layer"]]
+        self.assertEqual(pages_seen, [1] * 5 + [2] * 5)
+        # Warnings are renumbered across the whole document and keep their page.
+        self.assertEqual([w["id"] for w in record["warnings"]], ["w0001", "w0002"])
+        self.assertEqual([w["page"] for w in record["warnings"]], [1, 2])
+        # Candidates from both pages are retained.
+        self.assertEqual(len(record["candidates"]), 4)
+        self.assertEqual([p["page"] for p in record["reconstruction"]["pages"]], [1, 2])
+        validate_review_record(record)
 
 
 class SchemaValidationTest(unittest.TestCase):
@@ -150,11 +191,38 @@ class SchemaValidationTest(unittest.TestCase):
         validate_review_record(built_record())
 
     def test_schema_is_versioned(self) -> None:
-        self.assertEqual(review_record_schema()["properties"]["schema_version"]["const"], "1.0")
+        self.assertEqual(review_record_schema()["properties"]["schema_version"]["const"], "2.0")
+
+    def test_a_heading_hierarchy_of_levels_one_through_six_validates(self) -> None:
+        record = built_record()
+        for level in range(1, 7):
+            node = {"type": "heading", "level": level, "text": f"Level {level}", "page": 1}
+            record["semantic_layer"].append(node)
+        validate_review_record(record)
+
+    def test_a_heading_level_outside_one_through_six_is_rejected(self) -> None:
+        record = built_record()
+        record["semantic_layer"][0] = {"type": "heading", "level": 7, "text": "x", "page": 1}
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_link_node_validates_and_requires_text_and_href(self) -> None:
+        record = built_record()
+        record["semantic_layer"].append({**copy.deepcopy(LINK), "page": 1})
+        validate_review_record(record)
+        record["semantic_layer"][-1].pop("href")
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_node_without_a_page_is_rejected(self) -> None:
+        record = built_record()
+        record["semantic_layer"][0].pop("page")
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
 
     def test_a_simple_figure_without_a_detailed_description_validates(self) -> None:
         record = built_record()
-        record["semantic_layer"][3] = copy.deepcopy(SIMPLE_FIGURE)
+        record["semantic_layer"][3] = {**copy.deepcopy(SIMPLE_FIGURE), "page": 1}
         validate_review_record(record)
 
     def test_a_simple_figure_carrying_a_detailed_description_is_rejected(self) -> None:
@@ -162,6 +230,7 @@ class SchemaValidationTest(unittest.TestCase):
         record["semantic_layer"][3] = {
             **copy.deepcopy(SIMPLE_FIGURE),
             "detailed_figure_description": "A simple figure should not carry this.",
+            "page": 1,
         }
         with self.assertRaises(ReviewRecordError):
             validate_review_record(record)
@@ -179,14 +248,14 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_captionless_table_validates(self) -> None:
         record = built_record()
-        table = copy.deepcopy(TABLE)
+        table = {**copy.deepcopy(TABLE), "page": 1}
         del table["caption"]
         record["semantic_layer"][4] = table
         validate_review_record(record)
 
     def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
         record = built_record()
-        table = copy.deepcopy(TABLE)
+        table = {**copy.deepcopy(TABLE), "page": 1}
         table["rows"][1]["cells"][1]["scope"] = "col"
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -194,7 +263,7 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
         record = built_record()
-        table = copy.deepcopy(TABLE)
+        table = {**copy.deepcopy(TABLE), "page": 1}
         table["rows"][0]["cells"][0]["scope"] = "none"
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -202,7 +271,7 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_table_without_rows_is_rejected(self) -> None:
         record = built_record()
-        table = copy.deepcopy(TABLE)
+        table = {**copy.deepcopy(TABLE), "page": 1}
         table["rows"] = []
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -338,6 +407,11 @@ class ReviewReportTest(unittest.TestCase):
         self.assertEqual(html.count("<h1"), 1)
         self.assertIn("<main", html)
 
+    def test_report_lists_the_converted_pages(self) -> None:
+        record = build([page_document(1), page_document(2)])
+        html = self.report(record)
+        self.assertIn("1, 2", html)
+
     def test_warning_state_is_conveyed_with_text_not_color_alone(self) -> None:
         html = self.report(built_record())
         self.assertIn("Unresolved", html)
@@ -349,6 +423,10 @@ class ReviewReportTest(unittest.TestCase):
         self.assertIn("<table", html)
         self.assertIn('scope="col"', html)
         self.assertIn('scope="row"', html)
+
+    def test_warnings_show_the_page_they_concern(self) -> None:
+        html = self.report(built_record())
+        self.assertIn("Page 1", html)
 
     def test_source_region_warnings_show_a_labelled_crop(self) -> None:
         html = self.report(built_record())
@@ -385,7 +463,7 @@ class ReviewReportTest(unittest.TestCase):
 class SchemaDriftTest(unittest.TestCase):
     def test_in_code_schema_matches_the_published_json_schema(self) -> None:
         published = json.loads(
-            (ROOT / "schemas" / "review-record-1.0.schema.json").read_text(encoding="utf-8")
+            (ROOT / "schemas" / "review-record-2.0.schema.json").read_text(encoding="utf-8")
         )
         self.assertEqual(published, review_record_schema())
 

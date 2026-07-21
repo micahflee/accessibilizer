@@ -85,7 +85,7 @@
       "additionalProperties": false,
       "required": ["level", "text", "type"],
       "properties": {
-        "level": {"const": 1},
+        "level": {"type": "integer", "minimum": 1, "maximum": 6},
         "text": {"type": "string", "minLength": 1},
         "type": {"const": "heading"}
       }
