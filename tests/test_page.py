@@ -49,11 +49,84 @@ def valid_page_response(**overrides: Any) -> dict[str, Any]:
             "figure_alternative": "A wire carrying electric current.",
             "detailed_figure_description": None,
         },
+        "table": valid_table(),
         "suspected_source_errors": [],
         "suspected_prompt_injection": False,
     }
     response.update(overrides)
     return response
+
+
+def _cell(
+    kind: str, text: str, scope: str = "none", row_span: int = 1, col_span: int = 1
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "text": text,
+        "scope": scope,
+        "row_span": row_span,
+        "col_span": col_span,
+    }
+
+
+def valid_table(**overrides: Any) -> dict[str, Any]:
+    """A clean two-by-two Semantic Table with column and row headers.
+
+    No merged cells and neither uncertainty flag set, so the clean reconciliation
+    path raises no table warning.
+    """
+    table: dict[str, Any] = {
+        "caption": "Resistivity of common materials at 20 degrees Celsius",
+        "boundaries_are_uncertain": False,
+        "headers_are_uncertain": False,
+        "rows": [
+            {
+                "cells": [
+                    _cell("header", "Material", scope="col"),
+                    _cell("header", "Resistivity (ohm-metre)", scope="col"),
+                ]
+            },
+            {
+                "cells": [
+                    _cell("header", "Copper", scope="row"),
+                    _cell("data", "1.68e-8"),
+                ]
+            },
+        ],
+    }
+    table.update(overrides)
+    return table
+
+
+def merged_table(**overrides: Any) -> dict[str, Any]:
+    """A Semantic Table whose header spans two columns (a merged cell)."""
+    table = valid_table(
+        rows=[
+            {"cells": [_cell("header", "Electrical properties", scope="col", col_span=2)]},
+            {
+                "cells": [
+                    _cell("header", "Material", scope="col"),
+                    _cell("header", "Resistivity", scope="col"),
+                ]
+            },
+            {
+                "cells": [
+                    _cell("header", "Copper", scope="row"),
+                    _cell("data", "1.68e-8"),
+                ]
+            },
+        ]
+    )
+    table.update(overrides)
+    return table
+
+
+# A verified crop-level interpretation of a table region, as produced by the
+# region-verification path, so a Semantic Table has independent grounding.
+TABLE_REGION = (
+    {"id": "page-1-r0005", "type": "table"},
+    {"transcription": "", "agrees_with_page": True, "suspected_prompt_injection": False},
+)
 
 
 def complex_figure(**overrides: Any) -> dict[str, Any]:
@@ -98,6 +171,18 @@ class SchemaShapeTest(unittest.TestCase):
         # still required, so strict structured output names every property.
         self.assertIn("null", figure["properties"]["detailed_figure_description"]["type"])
         self.assertEqual(set(figure["required"]), set(figure["properties"]))
+
+    def test_table_schema_is_strict_and_carries_cells_with_scope_and_spans(self) -> None:
+        table = page_response_schema()["properties"]["table"]
+        self.assertFalse(table["additionalProperties"])
+        self.assertEqual(set(table["required"]), set(table["properties"]))
+        # A caption may be absent (null) yet is still a named, required property.
+        self.assertIn("null", table["properties"]["caption"]["type"])
+        cell = table["properties"]["rows"]["items"]["properties"]["cells"]["items"]
+        self.assertFalse(cell["additionalProperties"])
+        self.assertEqual(set(cell["required"]), set(cell["properties"]))
+        self.assertEqual(cell["properties"]["kind"]["enum"], ["header", "data"])
+        self.assertEqual(cell["properties"]["scope"]["enum"], ["col", "row", "both", "none"])
 
 
 class RequestConstructionTest(unittest.TestCase):
@@ -201,6 +286,56 @@ class ResponseValidationTest(unittest.TestCase):
                 }
             )
         )
+
+    def test_a_valid_table_response_passes(self) -> None:
+        validate_page_response(valid_page_response(table=valid_table()))
+
+    def test_a_captionless_table_is_valid(self) -> None:
+        validate_page_response(valid_page_response(table=valid_table(caption=None)))
+
+    def test_an_empty_caption_is_rejected(self) -> None:
+        # An empty caption would pass here yet fail the Review Record's non-empty
+        # caption rule at finalization; a table with no caption must use null.
+        with self.assertRaises(ValueError):
+            validate_page_response(valid_page_response(table=valid_table(caption="   ")))
+
+    def test_a_merged_cell_table_is_schema_valid(self) -> None:
+        validate_page_response(valid_page_response(table=merged_table()))
+
+    def test_a_table_without_rows_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_page_response(valid_page_response(table=valid_table(rows=[])))
+
+    def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
+        # Only header cells associate through a scope; a data cell must be "none".
+        with self.assertRaises(ValueError):
+            validate_page_response(
+                valid_page_response(
+                    table=valid_table(
+                        rows=[{"cells": [_cell("data", "1.68e-8", scope="col")]}]
+                    )
+                )
+            )
+
+    def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_page_response(
+                valid_page_response(
+                    table=valid_table(
+                        rows=[{"cells": [_cell("header", "Material", scope="none")]}]
+                    )
+                )
+            )
+
+    def test_a_zero_span_cell_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_page_response(
+                valid_page_response(
+                    table=valid_table(
+                        rows=[{"cells": [_cell("data", "x", col_span=0)]}]
+                    )
+                )
+            )
 
     def test_region_response_requires_the_agreement_boolean(self) -> None:
         with self.assertRaises(ValueError):
@@ -551,6 +686,95 @@ class FigureReconciliationTest(unittest.TestCase):
         self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
 
 
+class TableReconciliationTest(unittest.TestCase):
+    """A Semantic Table preserves its caption, headers, cells, and header
+    associations; uncertain boundaries, merged cells, or ambiguous headers each
+    raise a non-bypassable Conversion Warning."""
+
+    def reconcile(self, **kwargs: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        defaults: dict[str, Any] = {
+            "page_response": valid_page_response(),
+            "region_verifications": [],
+            "candidates": [],
+            "pdf_words": [],
+        }
+        defaults.update(kwargs)
+        return reconcile_page(**defaults)
+
+    def codes(self, warnings: list[dict[str, Any]]) -> list[str]:
+        return [warning["code"] for warning in warnings]
+
+    def test_a_clean_table_preserves_caption_headers_cells_and_associations(self) -> None:
+        layer, warnings = self.reconcile()
+        table = layer[4]
+        self.assertEqual(table["type"], "table")
+        self.assertEqual(table["caption"], valid_table()["caption"])
+        # The header associations (scope) and cell text survive into the layer.
+        self.assertEqual(table["rows"][0]["cells"][0]["scope"], "col")
+        self.assertEqual(table["rows"][1]["cells"][0]["scope"], "row")
+        self.assertEqual(table["rows"][1]["cells"][1]["text"], "1.68e-8")
+        self.assertNotIn("table-merged-cells", self.codes(warnings))
+        self.assertNotIn("table-ambiguous-headers", self.codes(warnings))
+        self.assertNotIn("table-uncertain-boundaries", self.codes(warnings))
+
+    def test_a_captionless_table_omits_the_caption_from_the_layer(self) -> None:
+        layer, _ = self.reconcile(
+            page_response=valid_page_response(table=valid_table(caption=None))
+        )
+        self.assertNotIn("caption", layer[4])
+
+    def test_merged_cells_raise_a_warning(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(table=merged_table())
+        )
+        self.assertIn("table-merged-cells", self.codes(warnings))
+
+    def test_uncertain_boundaries_raise_a_warning(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(
+                table=valid_table(boundaries_are_uncertain=True)
+            )
+        )
+        self.assertIn("table-uncertain-boundaries", self.codes(warnings))
+
+    def test_flagged_ambiguous_headers_raise_a_warning(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(table=valid_table(headers_are_uncertain=True))
+        )
+        self.assertIn("table-ambiguous-headers", self.codes(warnings))
+
+    def test_a_table_with_no_header_cells_raises_ambiguous_headers(self) -> None:
+        headerless = valid_table(
+            rows=[
+                {"cells": [_cell("data", "Copper"), _cell("data", "1.68e-8")]},
+                {"cells": [_cell("data", "Silver"), _cell("data", "1.59e-8")]},
+            ]
+        )
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(table=headerless)
+        )
+        self.assertIn("table-ambiguous-headers", self.codes(warnings))
+
+    def test_a_disagreeing_table_crop_still_warns_of_recognition_disagreement(self) -> None:
+        _, warnings = self.reconcile(
+            region_verifications=[
+                (
+                    {"id": "page-1-r0005", "type": "table"},
+                    {"transcription": "", "agrees_with_page": False,
+                     "suspected_prompt_injection": False},
+                )
+            ]
+        )
+        self.assertIn("recognition-disagreement", self.codes(warnings))
+
+    def test_table_warnings_are_unresolved_and_non_bypassable(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(table=merged_table(boundaries_are_uncertain=True))
+        )
+        self.assertTrue(warnings)
+        self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
+
+
 class FormulaNotationSurvivesTest(unittest.TestCase):
     """Fractions, superscripts, subscripts, symbols, and units must survive the
     reconstruction and page-semantics document verbatim (Source Fidelity)."""
@@ -636,7 +860,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.0")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.2")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.3")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"

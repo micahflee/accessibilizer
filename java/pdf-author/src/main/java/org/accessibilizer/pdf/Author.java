@@ -25,11 +25,16 @@ import com.itextpdf.kernel.pdf.canvas.CanvasArtifact;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvasConstants.TextRenderingMode;
 import com.itextpdf.kernel.pdf.navigation.PdfExplicitDestination;
+import com.itextpdf.kernel.pdf.tagging.PdfStructureAttributes;
 import com.itextpdf.kernel.pdf.tagging.StandardRoles;
 import com.itextpdf.kernel.pdf.tagging.IStructureNode;
 import com.itextpdf.kernel.pdf.tagging.PdfStructElem;
 import com.itextpdf.layout.Canvas;
+import com.itextpdf.layout.borders.Border;
+import com.itextpdf.layout.element.Cell;
+import com.itextpdf.layout.element.Div;
 import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.layout.element.Table;
 import com.itextpdf.layout.properties.Property;
 import com.itextpdf.pdfua.PdfUAConfig;
 import com.itextpdf.pdfua.PdfUADocument;
@@ -38,6 +43,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -216,7 +222,9 @@ public final class Author {
     // ActualText and Alt remain on every structure element so the
     // internal extraction and PDF/UA gates are unaffected, and the Figure is
     // attached to a real glyph run instead of an empty container so Preview
-    // cannot drop it.
+    // cannot drop it. A Semantic Table is the other exception: rather than a single
+    // band it is authored as a real PDF/UA Table (see addTable) so its caption,
+    // headers, cells, header associations, and merged-cell spans reach the structure.
     private static final float PAGE_MARGIN = 40f;
     private static final float SEMANTIC_FONT_SIZE = 10f;
     private static final float FIGURE_CAPTION_GAP = 24f;
@@ -271,6 +279,7 @@ public final class Author {
                                     usableWidth, bandBottom);
                         }
                     }
+                    case "table" -> addTable(canvas, font, node, usableWidth, bandBottom);
                     default -> throw new IllegalArgumentException("unsupported semantic node: " + type);
                 }
             }
@@ -293,6 +302,87 @@ public final class Author {
             paragraph.getAccessibilityProperties().setAlternateDescription(alternateDescription);
         }
         canvas.add(paragraph);
+    }
+
+    // A Semantic Table is authored as a real PDF/UA Table so its caption, row and
+    // column headers, cells, merged-cell spans, and header associations reach the
+    // structure tree: the Table's optional Caption carries the caption; each cell is
+    // a TH or TD whose ActualText holds the cell text; a header cell adds a Scope
+    // attribute (Row, Column, or Both) that associates the cells it labels; and a
+    // merged cell keeps its RowSpan and ColSpan. Like every other node the glyphs are
+    // drawn with text rendering mode 3 and no cell borders, so the table adds no marks
+    // to the Visual Layer while the tagged structure remains fully conformant.
+    private static void addTable(
+            Canvas canvas, PdfFont font, JsonObject node, float width, float bottom) {
+        JsonArray rows = node.getAsJsonArray("rows");
+        int columnCount = 0;
+        for (JsonElement rowElement : rows) {
+            int columns = 0;
+            for (JsonElement cellElement : rowElement.getAsJsonObject().getAsJsonArray("cells")) {
+                columns += cellElement.getAsJsonObject().get("col_span").getAsInt();
+            }
+            columnCount = Math.max(columnCount, columns);
+        }
+
+        Table table = new Table(columnCount);
+        table.setFont(font).setFontSize(SEMANTIC_FONT_SIZE).setBorder(Border.NO_BORDER);
+        table.setProperty(Property.TEXT_RENDERING_MODE, TextRenderingMode.INVISIBLE);
+        table.setFixedPosition(PAGE_MARGIN, bottom, width);
+
+        JsonElement caption = node.get("caption");
+        if (caption != null && caption.isJsonPrimitive()) {
+            String captionText = caption.getAsString();
+            Div captionDiv = new Div().add(tableParagraph(font, captionText));
+            captionDiv.getAccessibilityProperties()
+                    .setRole(StandardRoles.CAPTION)
+                    .setActualText(captionText);
+            table.setCaption(captionDiv);
+        }
+
+        for (JsonElement rowElement : rows) {
+            for (JsonElement cellElement : rowElement.getAsJsonObject().getAsJsonArray("cells")) {
+                JsonObject cellNode = cellElement.getAsJsonObject();
+                String kind = requiredString(cellNode, "kind");
+                String text = requiredString(cellNode, "text");
+                Cell cell = new Cell(cellNode.get("row_span").getAsInt(), cellNode.get("col_span").getAsInt());
+                cell.setBorder(Border.NO_BORDER).setMargin(0).setPadding(0);
+                cell.add(tableParagraph(font, text));
+                boolean isHeader = kind.equals("header");
+                cell.getAccessibilityProperties()
+                        .setRole(isHeader ? StandardRoles.TH : StandardRoles.TD)
+                        .setActualText(text);
+                if (isHeader) {
+                    // Scope associates a header cell with the cells it labels; without
+                    // it a PDF/UA table cell would have no header relationship.
+                    cell.getAccessibilityProperties().addAttributes(
+                            new PdfStructureAttributes("Table")
+                                    .addEnumAttribute("Scope", scopePdfValue(requiredString(cellNode, "scope"))));
+                }
+                table.addCell(cell);
+            }
+        }
+        canvas.add(table);
+    }
+
+    private static Paragraph tableParagraph(PdfFont font, String text) {
+        Paragraph paragraph = new Paragraph(sanitizeForFont(font, text))
+                .setFont(font)
+                .setFontSize(SEMANTIC_FONT_SIZE)
+                .setMargin(0)
+                .setMultipliedLeading(1f);
+        // Text rendering mode is not inherited from the Table, so each cell's glyph
+        // run is made invisible here — it adds no marks to the Visual Layer.
+        paragraph.setProperty(Property.TEXT_RENDERING_MODE, TextRenderingMode.INVISIBLE);
+        return paragraph;
+    }
+
+    private static String scopePdfValue(String scope) {
+        return switch (scope) {
+            case "col" -> "Column";
+            case "row" -> "Row";
+            case "both" -> "Both";
+            default -> throw new IllegalArgumentException("invalid header scope: " + scope);
+        };
     }
 
     // The meaning of a node is carried by its ActualText and Alt, which are PDF
@@ -343,12 +433,17 @@ public final class Author {
                 case StandardRoles.P -> textNode("paragraph", element);
                 case StandardRoles.FORMULA -> formula(element);
                 case StandardRoles.FIGURE -> figure(element);
+                case StandardRoles.TABLE -> table(element);
                 default -> null;
             };
             if (extracted != null) {
+                // A semantic node owns its whole subtree (a Table's rows and cells, a
+                // node's laid-out glyph run), so recursion stops here; only structural
+                // containers are traversed to reach the flat Semantic Layer beneath.
                 result.add(extracted);
+            } else {
+                collectSemanticNodes(element.getKids(), result);
             }
-            collectSemanticNodes(element.getKids(), result);
         }
     }
 
@@ -389,6 +484,106 @@ public final class Author {
             node.addProperty("complexity", "simple");
         }
         return node;
+    }
+
+    private static JsonObject table(PdfStructElem element) {
+        JsonObject node = new JsonObject();
+        node.addProperty("type", "table");
+        String caption = tableCaption(element);
+        if (caption != null) {
+            node.addProperty("caption", caption);
+        }
+        JsonArray rows = new JsonArray();
+        List<PdfStructElem> rowElements = new ArrayList<>();
+        collectTableRows(element.getKids(), rowElements);
+        for (PdfStructElem rowElement : rowElements) {
+            JsonArray cells = new JsonArray();
+            for (IStructureNode kid : rowElement.getKids()) {
+                if (!(kid instanceof PdfStructElem cellElement)) {
+                    continue;
+                }
+                String role = cellElement.getRole().getValue();
+                if (role.equals(StandardRoles.TH) || role.equals(StandardRoles.TD)) {
+                    cells.add(tableCell(cellElement, role.equals(StandardRoles.TH)));
+                }
+            }
+            JsonObject row = new JsonObject();
+            row.add("cells", cells);
+            rows.add(row);
+        }
+        node.add("rows", rows);
+        return node;
+    }
+
+    // Rows may sit directly under the Table or be grouped under a THead, TBody, or
+    // TFoot; either way they are collected top to bottom in document order.
+    private static void collectTableRows(List<IStructureNode> kids, List<PdfStructElem> rows) {
+        for (IStructureNode kid : kids) {
+            if (!(kid instanceof PdfStructElem element)) {
+                continue;
+            }
+            String role = element.getRole().getValue();
+            if (role.equals(StandardRoles.TR)) {
+                rows.add(element);
+            } else if (role.equals(StandardRoles.THEAD)
+                    || role.equals(StandardRoles.TBODY)
+                    || role.equals(StandardRoles.TFOOT)) {
+                collectTableRows(element.getKids(), rows);
+            }
+        }
+    }
+
+    private static JsonObject tableCell(PdfStructElem element, boolean isHeader) {
+        JsonObject cell = new JsonObject();
+        cell.addProperty("kind", isHeader ? "header" : "data");
+        cell.addProperty("text", structureString(element, PdfName.ActualText));
+        cell.addProperty("scope", isHeader ? scopeFromPdf(tableAttributeEnum(element, "Scope")) : "none");
+        cell.addProperty("row_span", tableAttributeInt(element, "RowSpan"));
+        cell.addProperty("col_span", tableAttributeInt(element, "ColSpan"));
+        return cell;
+    }
+
+    private static String tableCaption(PdfStructElem element) {
+        for (IStructureNode kid : element.getKids()) {
+            if (kid instanceof PdfStructElem child
+                    && child.getRole().getValue().equals(StandardRoles.CAPTION)) {
+                return structureString(child, PdfName.ActualText);
+            }
+        }
+        return null;
+    }
+
+    private static String scopeFromPdf(String value) {
+        if (value == null) {
+            return "none";
+        }
+        return switch (value) {
+            case "Column" -> "col";
+            case "Row" -> "row";
+            case "Both" -> "both";
+            default -> "none";
+        };
+    }
+
+    private static String tableAttributeEnum(PdfStructElem element, String name) {
+        for (PdfStructureAttributes attributes : element.getAttributesList()) {
+            String value = attributes.getAttributeAsEnum(name);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    // A cell that is not merged carries no RowSpan or ColSpan attribute; its span is 1.
+    private static int tableAttributeInt(PdfStructElem element, String name) {
+        for (PdfStructureAttributes attributes : element.getAttributesList()) {
+            Integer value = attributes.getAttributeAsInt(name);
+            if (value != null) {
+                return value;
+            }
+        }
+        return 1;
     }
 
     private static String structureString(PdfStructElem element, PdfName key) {

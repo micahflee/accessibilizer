@@ -41,6 +41,24 @@ SIMPLE_FIGURE = {
     "complexity": "simple",
     "figure_alternative": "A wire carrying current.",
 }
+TABLE: dict[str, Any] = {
+    "type": "table",
+    "caption": "Resistivity of common materials",
+    "rows": [
+        {
+            "cells": [
+                {"kind": "header", "text": "Material", "scope": "col", "row_span": 1, "col_span": 1},
+                {"kind": "header", "text": "Resistivity", "scope": "col", "row_span": 1, "col_span": 1},
+            ]
+        },
+        {
+            "cells": [
+                {"kind": "header", "text": "Copper", "scope": "row", "row_span": 1, "col_span": 1},
+                {"kind": "data", "text": "1.68e-8", "scope": "none", "row_span": 1, "col_span": 1},
+            ]
+        },
+    ],
+}
 
 RECONSTRUCTION = {
     "document_class": "stem_instructional",
@@ -64,7 +82,7 @@ def page_semantics(**overrides: Any) -> dict[str, Any]:
         "source_sha256": "a" * 64,
         "title": "Electric Current",
         "language": "en-US",
-        "semantic_layer": [HEADING, PARAGRAPH, FORMULA, FIGURE],
+        "semantic_layer": [HEADING, PARAGRAPH, FORMULA, FIGURE, TABLE],
         "warnings": [],
         "reconstruction": RECONSTRUCTION,
     }
@@ -114,7 +132,7 @@ class BuildRecordTest(unittest.TestCase):
         self.assertEqual(record["page"], 1)
         self.assertEqual(record["source_sha256"], "a" * 64)
         self.assertEqual([node["type"] for node in record["semantic_layer"]],
-                         ["heading", "paragraph", "formula", "figure"])
+                         ["heading", "paragraph", "formula", "figure", "table"])
         self.assertEqual(record["candidates"], CANDIDATES)
         self.assertEqual(record["reconstruction"], RECONSTRUCTION)
 
@@ -153,6 +171,40 @@ class SchemaValidationTest(unittest.TestCase):
         figure = dict(record["semantic_layer"][3])
         figure.pop("detailed_figure_description")
         record["semantic_layer"][3] = figure
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_semantic_table_with_headers_and_a_caption_validates(self) -> None:
+        validate_review_record(built_record())
+
+    def test_a_captionless_table_validates(self) -> None:
+        record = built_record()
+        table = copy.deepcopy(TABLE)
+        del table["caption"]
+        record["semantic_layer"][4] = table
+        validate_review_record(record)
+
+    def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
+        record = built_record()
+        table = copy.deepcopy(TABLE)
+        table["rows"][1]["cells"][1]["scope"] = "col"
+        record["semantic_layer"][4] = table
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
+        record = built_record()
+        table = copy.deepcopy(TABLE)
+        table["rows"][0]["cells"][0]["scope"] = "none"
+        record["semantic_layer"][4] = table
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_table_without_rows_is_rejected(self) -> None:
+        record = built_record()
+        table = copy.deepcopy(TABLE)
+        table["rows"] = []
+        record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
             validate_review_record(record)
 
