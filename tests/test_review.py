@@ -32,8 +32,14 @@ FORMULA = {
 }
 FIGURE = {
     "type": "figure",
+    "complexity": "complex",
     "figure_alternative": "A wire carrying current.",
     "detailed_figure_description": "A wire passes through a surface.",
+}
+SIMPLE_FIGURE = {
+    "type": "figure",
+    "complexity": "simple",
+    "figure_alternative": "A wire carrying current.",
 }
 
 RECONSTRUCTION = {
@@ -127,6 +133,28 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_schema_is_versioned(self) -> None:
         self.assertEqual(review_record_schema()["properties"]["schema_version"]["const"], "1.0")
+
+    def test_a_simple_figure_without_a_detailed_description_validates(self) -> None:
+        record = built_record()
+        record["semantic_layer"][3] = copy.deepcopy(SIMPLE_FIGURE)
+        validate_review_record(record)
+
+    def test_a_simple_figure_carrying_a_detailed_description_is_rejected(self) -> None:
+        record = built_record()
+        record["semantic_layer"][3] = {
+            **copy.deepcopy(SIMPLE_FIGURE),
+            "detailed_figure_description": "A simple figure should not carry this.",
+        }
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_complex_figure_without_a_detailed_description_is_rejected(self) -> None:
+        record = built_record()
+        figure = dict(record["semantic_layer"][3])
+        figure.pop("detailed_figure_description")
+        record["semantic_layer"][3] = figure
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
 
     def test_unknown_top_level_field_is_rejected(self) -> None:
         record = built_record()

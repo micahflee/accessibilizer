@@ -39,6 +39,12 @@
     "figure": {
       "additionalProperties": false,
       "properties": {
+        "complexity": {
+          "enum": [
+            "simple",
+            "complex"
+          ]
+        },
         "detailed_figure_description": {
           "minLength": 1,
           "type": "string"
@@ -52,11 +58,30 @@
         }
       },
       "required": [
-        "detailed_figure_description",
+        "complexity",
         "figure_alternative",
         "type"
       ],
-      "type": "object"
+      "type": "object",
+      "if": {
+        "properties": {
+          "complexity": {
+            "const": "complex"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "detailed_figure_description"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "detailed_figure_description"
+          ]
+        }
+      }
     },
     "formula": {
       "additionalProperties": false,
