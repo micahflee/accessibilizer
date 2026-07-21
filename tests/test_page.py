@@ -45,14 +45,36 @@ def valid_page_response(**overrides: Any) -> dict[str, Any]:
             "spoken_math_alternative": "I equals Q divided by delta t.",
         },
         "figure": {
+            "complexity": "simple",
             "figure_alternative": "A wire carrying electric current.",
-            "detailed_figure_description": "A wire passes through a surface.",
+            "detailed_figure_description": None,
         },
         "suspected_source_errors": [],
         "suspected_prompt_injection": False,
     }
     response.update(overrides)
     return response
+
+
+def complex_figure(**overrides: Any) -> dict[str, Any]:
+    figure: dict[str, Any] = {
+        "complexity": "complex",
+        "figure_alternative": "A circuit diagram.",
+        "detailed_figure_description": (
+            "A battery drives current clockwise through a resistor and an ammeter; "
+            "arrows mark the direction of conventional current."
+        ),
+    }
+    figure.update(overrides)
+    return figure
+
+
+# A verified crop-level interpretation of a figure region, as produced by the
+# region-verification path, so a complex figure has independent grounding.
+FIGURE_REGION = (
+    {"id": "page-1-r0006", "type": "figure"},
+    {"transcription": "", "agrees_with_page": True, "suspected_prompt_injection": False},
+)
 
 
 CONFIG = ProviderConfig("http://localhost:11434/v1", "exact-model", None, "local")
@@ -68,6 +90,14 @@ class SchemaShapeTest(unittest.TestCase):
         schema = region_response_schema()
         self.assertFalse(schema["additionalProperties"])
         self.assertEqual(set(schema["required"]), set(schema["properties"]))
+
+    def test_figure_schema_classifies_complexity_and_allows_a_null_description(self) -> None:
+        figure = page_response_schema()["properties"]["figure"]
+        self.assertEqual(figure["properties"]["complexity"]["enum"], ["simple", "complex"])
+        # detailed_figure_description is nullable (null for a simple figure) yet
+        # still required, so strict structured output names every property.
+        self.assertIn("null", figure["properties"]["detailed_figure_description"]["type"])
+        self.assertEqual(set(figure["required"]), set(figure["properties"]))
 
 
 class RequestConstructionTest(unittest.TestCase):
@@ -140,6 +170,37 @@ class ResponseValidationTest(unittest.TestCase):
     def test_unknown_document_class_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             validate_page_response(valid_page_response(document_class="prose"))
+
+    def test_a_complex_figure_response_passes(self) -> None:
+        validate_page_response(valid_page_response(figure=complex_figure()))
+
+    def test_missing_figure_complexity_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_page_response(
+                valid_page_response(
+                    figure={
+                        "figure_alternative": "A wire.",
+                        "detailed_figure_description": None,
+                    }
+                )
+            )
+
+    def test_a_complex_figure_without_a_detailed_description_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            validate_page_response(
+                valid_page_response(figure=complex_figure(detailed_figure_description=None))
+            )
+
+    def test_a_simple_figure_needs_no_detailed_description(self) -> None:
+        validate_page_response(
+            valid_page_response(
+                figure={
+                    "complexity": "simple",
+                    "figure_alternative": "A wire.",
+                    "detailed_figure_description": None,
+                }
+            )
+        )
 
     def test_region_response_requires_the_agreement_boolean(self) -> None:
         with self.assertRaises(ValueError):
@@ -407,6 +468,89 @@ class FormulaReconciliationTest(unittest.TestCase):
         self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
 
 
+class FigureReconciliationTest(unittest.TestCase):
+    """A simple Informative Figure needs only its concise Figure Alternative; a
+    complex one must add real detail and be grounded in an independent crop-level
+    interpretation of the same region."""
+
+    def reconcile(self, **kwargs: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        defaults: dict[str, Any] = {
+            "page_response": valid_page_response(),
+            "region_verifications": [],
+            "candidates": [],
+            "pdf_words": [],
+        }
+        defaults.update(kwargs)
+        return reconcile_page(**defaults)
+
+    def codes(self, warnings: list[dict[str, Any]]) -> list[str]:
+        return [warning["code"] for warning in warnings]
+
+    def test_a_simple_figure_exposes_only_a_concise_alternative(self) -> None:
+        layer, warnings = self.reconcile()
+        figure = layer[3]
+        self.assertEqual(figure["complexity"], "simple")
+        self.assertIn("figure_alternative", figure)
+        self.assertNotIn("detailed_figure_description", figure)
+        self.assertNotIn("figure-weak-grounding", self.codes(warnings))
+        self.assertNotIn("figure-detail-insufficient", self.codes(warnings))
+
+    def test_a_grounded_complex_figure_carries_a_detailed_description(self) -> None:
+        layer, warnings = self.reconcile(
+            page_response=valid_page_response(figure=complex_figure()),
+            region_verifications=[FIGURE_REGION],
+        )
+        figure = layer[3]
+        self.assertEqual(figure["complexity"], "complex")
+        self.assertEqual(
+            figure["detailed_figure_description"],
+            complex_figure()["detailed_figure_description"],
+        )
+        self.assertNotIn("figure-weak-grounding", self.codes(warnings))
+        self.assertNotIn("figure-detail-insufficient", self.codes(warnings))
+
+    def test_a_complex_figure_without_a_crop_interpretation_warns(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(figure=complex_figure())
+        )
+        self.assertIn("figure-weak-grounding", self.codes(warnings))
+
+    def test_a_simple_figure_needs_no_crop_interpretation(self) -> None:
+        _, warnings = self.reconcile()
+        self.assertNotIn("figure-weak-grounding", self.codes(warnings))
+
+    def test_a_complex_description_that_merely_restates_the_alternative_warns(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(
+                figure=complex_figure(
+                    figure_alternative="A circuit diagram with a battery and resistor.",
+                    detailed_figure_description="A circuit diagram with a battery and resistor.",
+                )
+            ),
+            region_verifications=[FIGURE_REGION],
+        )
+        self.assertIn("figure-detail-insufficient", self.codes(warnings))
+
+    def test_a_complex_description_adding_no_new_words_warns(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(
+                figure=complex_figure(
+                    figure_alternative="A battery drives current through a resistor.",
+                    detailed_figure_description="A resistor, current, a battery.",
+                )
+            ),
+            region_verifications=[FIGURE_REGION],
+        )
+        self.assertIn("figure-detail-insufficient", self.codes(warnings))
+
+    def test_figure_warnings_are_unresolved_and_non_bypassable(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(figure=complex_figure())
+        )
+        self.assertTrue(warnings)
+        self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
+
+
 class FormulaNotationSurvivesTest(unittest.TestCase):
     """Fractions, superscripts, subscripts, symbols, and units must survive the
     reconstruction and page-semantics document verbatim (Source Fidelity)."""
@@ -492,7 +636,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.0")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.1")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.2")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"

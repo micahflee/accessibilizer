@@ -54,12 +54,16 @@
     "figure": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["detailed_figure_description", "figure_alternative", "type"],
+      "required": ["complexity", "figure_alternative", "type"],
       "properties": {
+        "complexity": {"enum": ["simple", "complex"]},
         "detailed_figure_description": {"type": "string", "minLength": 1},
         "figure_alternative": {"type": "string", "minLength": 1},
         "type": {"const": "figure"}
-      }
+      },
+      "if": {"properties": {"complexity": {"const": "complex"}}},
+      "then": {"required": ["detailed_figure_description"]},
+      "else": {"not": {"required": ["detailed_figure_description"]}}
     }
   }
 }

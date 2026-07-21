@@ -2,6 +2,7 @@ package org.accessibilizer.pdf;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.itextpdf.kernel.exceptions.BadPasswordException;
 import com.itextpdf.kernel.exceptions.PdfException;
@@ -209,9 +210,10 @@ public final class Author {
     // vertical band, top to bottom in Logical Reading Order, so no run overlaps
     // another. The Formula draws its normalized math. Preview reads a Figure's
     // /Alt and ignores that element's own glyphs and ActualText, so the Figure
-    // carries the short Alternative in /Alt while the Detailed Figure Description
-    // is authored as a sibling Caption whose glyphs Preview reads like any other
-    // text element. ActualText and Alt remain on every structure element so the
+    // carries the short Alternative in /Alt while a complex figure's Detailed Figure
+    // Description is authored as a sibling Caption whose glyphs Preview reads like any
+    // other text element; a simple figure has only the Alternative and no Caption.
+    // ActualText and Alt remain on every structure element so the
     // internal extraction and PDF/UA gates are unaffected, and the Figure is
     // attached to a real glyph run instead of an empty container so Preview
     // cannot drop it.
@@ -250,13 +252,24 @@ public final class Author {
                     }
                     case "figure" -> {
                         String alternative = requiredString(node, "figure_alternative");
-                        String detailed = requiredString(node, "detailed_figure_description");
-                        addNode(canvas, font, StandardRoles.FIGURE,
-                                alternative, detailed, alternative,
-                                usableWidth, bandBottom + FIGURE_CAPTION_GAP);
-                        addNode(canvas, font, StandardRoles.CAPTION,
-                                detailed, detailed, null,
-                                usableWidth, bandBottom - FIGURE_CAPTION_GAP);
+                        JsonElement detailedElement = node.get("detailed_figure_description");
+                        if (detailedElement != null && detailedElement.isJsonPrimitive()) {
+                            // A complex figure carries its Detailed Figure Description
+                            // on ActualText and as a sibling Caption Preview can read.
+                            String detailed = detailedElement.getAsString();
+                            addNode(canvas, font, StandardRoles.FIGURE,
+                                    alternative, detailed, alternative,
+                                    usableWidth, bandBottom + FIGURE_CAPTION_GAP);
+                            addNode(canvas, font, StandardRoles.CAPTION,
+                                    detailed, detailed, null,
+                                    usableWidth, bandBottom - FIGURE_CAPTION_GAP);
+                        } else {
+                            // A simple figure carries only its concise Figure
+                            // Alternative, with no Detailed Figure Description or Caption.
+                            addNode(canvas, font, StandardRoles.FIGURE,
+                                    alternative, alternative, alternative,
+                                    usableWidth, bandBottom);
+                        }
                     }
                     default -> throw new IllegalArgumentException("unsupported semantic node: " + type);
                 }
@@ -361,11 +374,20 @@ public final class Author {
     }
 
     private static JsonObject figure(PdfStructElem element) {
+        String alternative = structureString(element, PdfName.Alt);
+        String actualText = structureString(element, PdfName.ActualText);
         JsonObject node = new JsonObject();
         node.addProperty("type", "figure");
-        node.addProperty("figure_alternative", structureString(element, PdfName.Alt));
-        node.addProperty(
-                "detailed_figure_description", structureString(element, PdfName.ActualText));
+        node.addProperty("figure_alternative", alternative);
+        // A complex figure's ActualText holds a Detailed Figure Description distinct
+        // from its concise Alternative; a simple figure repeats the Alternative and
+        // exposes no Detailed Figure Description.
+        if (!actualText.isEmpty() && !actualText.equals(alternative)) {
+            node.addProperty("complexity", "complex");
+            node.addProperty("detailed_figure_description", actualText);
+        } else {
+            node.addProperty("complexity", "simple");
+        }
         return node;
     }
 

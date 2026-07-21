@@ -274,6 +274,64 @@ class OnePageConversionTest(unittest.TestCase):
                 rich_formula["normalized_math"],
             )
 
+    def _figure_survives(self, figure: dict[str, object]) -> dict[str, object]:
+        """Convert with the given reconstructed figure and return the figure node
+        the internal check reads back out of the authored output.pdf."""
+        with (
+            FakeProvider(page_overrides={"figure": figure}) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "figure.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+            self.assertIn(result.returncode, (0, 2), result.stderr)
+            self.assertTrue((bundle / "output.pdf").is_file())
+
+            internal = json.loads((bundle / "validation" / "internal.json").read_text())
+            self.assertTrue(internal["passed"], internal)
+            self.assertIn(
+                'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
+            )
+            authored: dict[str, object] = next(
+                node for node in internal["semantic_layer"] if node["type"] == "figure"
+            )
+            # The structure tree read back out of the PDF is exactly the reconstructed
+            # Semantic Layer, so figure semantics survived authoring end to end.
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(internal["semantic_layer"], record["semantic_layer"])
+            return authored
+
+    def test_a_simple_figure_survives_the_pdf_ua_authoring_path(self) -> None:
+        # A simple Informative Figure reaches assistive technology as a concise
+        # Figure Alternative with no Detailed Figure Description.
+        authored = self._figure_survives(
+            {
+                "complexity": "simple",
+                "figure_alternative": "A photograph of a copper wire.",
+                "detailed_figure_description": None,
+            }
+        )
+        self.assertEqual(authored["complexity"], "simple")
+        self.assertEqual(authored["figure_alternative"], "A photograph of a copper wire.")
+        self.assertNotIn("detailed_figure_description", authored)
+
+    def test_a_complex_figure_survives_the_pdf_ua_authoring_path(self) -> None:
+        # A complex Informative Figure reaches assistive technology with both its
+        # concise Alternative and its Detailed Figure Description intact.
+        detailed = (
+            "A resistor R connects a battery's positive terminal to an ammeter; the "
+            "arrow labels conventional current flowing clockwise around the loop."
+        )
+        authored = self._figure_survives(
+            {
+                "complexity": "complex",
+                "figure_alternative": "A single-loop resistor circuit.",
+                "detailed_figure_description": detailed,
+            }
+        )
+        self.assertEqual(authored["complexity"], "complex")
+        self.assertEqual(authored["figure_alternative"], "A single-loop resistor circuit.")
+        self.assertEqual(authored["detailed_figure_description"], detailed)
+
     def test_finalize_is_blocked_until_every_warning_is_resolved(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             bundle = Path(temporary_directory) / "review-required.accessibilizer"
@@ -634,13 +692,16 @@ class OnePageConversionTest(unittest.TestCase):
                 ["heading", "paragraph", "formula", "figure"],
             )
             self.assertIn("spoken_math_alternative", review_record["semantic_layer"][2])
+            # The default reconstruction is a complex Informative Figure, so it
+            # carries both its concise Alternative and its Detailed Description.
+            self.assertEqual(review_record["semantic_layer"][3]["complexity"], "complex")
             self.assertIn("figure_alternative", review_record["semantic_layer"][3])
             self.assertIn("detailed_figure_description", review_record["semantic_layer"][3])
             self.assertEqual(review_record["warnings"], [])
             # The original recognition candidates are retained for source context.
             self.assertTrue(review_record["candidates"])
             self.assertTrue(all("crop" in c for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.1")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.2")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -660,7 +721,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
-            self.assertEqual(provenance["page_prompt_version"], "1.1")
+            self.assertEqual(provenance["page_prompt_version"], "1.2")
             self.assertEqual(provenance["page_schema_version"], "1.0")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)

@@ -34,6 +34,7 @@ BASE_PAGE_CONTENT: dict[str, Any] = {
         "spoken_math_alternative": "I equals Q divided by delta t.",
     },
     "figure": {
+        "complexity": "complex",
         "figure_alternative": "A wire carrying electric current.",
         "detailed_figure_description": (
             "A wire passes through a surface; positive charge moves along it in the "

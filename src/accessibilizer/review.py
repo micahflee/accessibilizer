@@ -83,12 +83,18 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "figure": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["detailed_figure_description", "figure_alternative", "type"],
+            "required": ["complexity", "figure_alternative", "type"],
             "properties": {
+                "complexity": {"enum": ["simple", "complex"]},
                 "detailed_figure_description": {"type": "string", "minLength": 1},
                 "figure_alternative": {"type": "string", "minLength": 1},
                 "type": {"const": "figure"},
             },
+            # A complex Informative Figure carries a Detailed Figure Description; a
+            # simple one carries only its concise Figure Alternative.
+            "if": {"properties": {"complexity": {"const": "complex"}}},
+            "then": {"required": ["detailed_figure_description"]},
+            "else": {"not": {"required": ["detailed_figure_description"]}},
         },
     }
 
