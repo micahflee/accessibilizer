@@ -4,9 +4,9 @@ image:
 	docker build --tag accessibilizer:0.1.0 --tag accessibilizer:test .
 
 test-cli:
-	PYTHONPATH=src python3 -m unittest discover -s tests -v
+	uv run python -m unittest discover -s tests -v
 
 test: image test-cli
 
 typecheck:
-	uvx mypy --strict src tests
+	uv run mypy --strict src tests

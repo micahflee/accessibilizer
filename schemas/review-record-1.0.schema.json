@@ -1,0 +1,383 @@
+{
+  "$defs": {
+    "candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "crop": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^page-[0-9]+-r[0-9]{4,}$",
+          "type": "string"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "enum": [
+            "text",
+            "handwriting",
+            "formula",
+            "table",
+            "figure",
+            "document_structure"
+          ]
+        }
+      },
+      "required": [
+        "crop",
+        "id",
+        "text",
+        "type"
+      ],
+      "type": "object"
+    },
+    "figure": {
+      "additionalProperties": false,
+      "properties": {
+        "detailed_figure_description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "figure_alternative": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "figure"
+        }
+      },
+      "required": [
+        "detailed_figure_description",
+        "figure_alternative",
+        "type"
+      ],
+      "type": "object"
+    },
+    "formula": {
+      "additionalProperties": false,
+      "properties": {
+        "normalized_math": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "spoken_math_alternative": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "formula"
+        }
+      },
+      "required": [
+        "normalized_math",
+        "spoken_math_alternative",
+        "type"
+      ],
+      "type": "object"
+    },
+    "heading": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "const": 1
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "heading"
+        }
+      },
+      "required": [
+        "level",
+        "text",
+        "type"
+      ],
+      "type": "object"
+    },
+    "paragraph": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "paragraph"
+        }
+      },
+      "required": [
+        "text",
+        "type"
+      ],
+      "type": "object"
+    },
+    "reconstruction": {
+      "additionalProperties": false,
+      "properties": {
+        "document_class": {
+          "enum": [
+            "stem_instructional",
+            "other"
+          ]
+        },
+        "page_prompt_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "page_schema_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "primary_language_is_english": {
+          "type": "boolean"
+        },
+        "provider_endpoint": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "provider_model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reading_order": {
+          "items": {
+            "enum": [
+              "heading",
+              "paragraph",
+              "formula",
+              "figure"
+            ]
+          },
+          "type": "array"
+        },
+        "reading_order_is_unambiguous": {
+          "type": "boolean"
+        },
+        "region_prompt_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "region_schema_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "verified_regions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agrees_with_page": {
+                "type": "boolean"
+              },
+              "id": {
+                "pattern": "^page-[0-9]+-r[0-9]{4,}$",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "formula",
+                  "table",
+                  "figure"
+                ]
+              }
+            },
+            "required": [
+              "agrees_with_page",
+              "id",
+              "type"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "document_class",
+        "page_prompt_version",
+        "page_schema_version",
+        "primary_language_is_english",
+        "provider_endpoint",
+        "provider_model",
+        "reading_order",
+        "reading_order_is_unambiguous",
+        "region_prompt_version",
+        "region_schema_version",
+        "verified_regions"
+      ],
+      "type": "object"
+    },
+    "resolution": {
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "status": {
+            "const": "not_applicable"
+          }
+        }
+      },
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "corrected",
+            "accepted",
+            "not_applicable"
+          ]
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reviewer",
+        "status"
+      ],
+      "then": {
+        "properties": {
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "type": "object"
+    },
+    "warning": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "history": {
+          "items": {
+            "$ref": "#/$defs/resolution"
+          },
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^w[0-9]{4,}$",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolution": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/resolution"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "history",
+        "id",
+        "message",
+        "region",
+        "resolution"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://accessibilizer.org/schemas/review-record-1.0.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The human-editable, durable account of one page's reconstructed Semantic Layer, the original recognition candidates, and the Conversion Warnings with their resolution history. A warning is resolved only as corrected, accepted, or not_applicable (with a reason), attributed to a Reviewer. Finalization is blocked while any warning is unresolved.",
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/candidate"
+      },
+      "type": "array"
+    },
+    "language": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "page": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "reconstruction": {
+      "$ref": "#/$defs/reconstruction"
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "semantic_layer": {
+      "items": false,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/heading"
+        },
+        {
+          "$ref": "#/$defs/paragraph"
+        },
+        {
+          "$ref": "#/$defs/formula"
+        },
+        {
+          "$ref": "#/$defs/figure"
+        }
+      ],
+      "type": "array"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/warning"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "candidates",
+    "language",
+    "page",
+    "reconstruction",
+    "schema_version",
+    "semantic_layer",
+    "source_sha256",
+    "title",
+    "warnings"
+  ],
+  "title": "Accessibilizer Review Record 1.0",
+  "type": "object"
+}

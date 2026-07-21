@@ -43,6 +43,14 @@ RUN python3 /tmp/paddle-warmup.py \
     && rm -f /tmp/paddle-warmup.py \
     && chmod -R a+rX /opt/accessibilizer
 
+# Pinned application dependencies: the human-editable YAML Review Record
+# (PyYAML) and canonical-schema validation of it (jsonschema). Transitive
+# dependencies (attrs, referencing, rpds-py, jsonschema-specifications) resolve
+# to manylinux wheels, so the runtime stays offline and CPU-only.
+RUN python3 -m pip install --no-cache-dir \
+      "pyyaml==6.0.3" \
+      "jsonschema==4.26.0"
+
 COPY --from=author-build /build/target/pdf-author.jar /opt/accessibilizer/pdf-author.jar
 COPY --from=verapdf-install /opt/verapdf /opt/verapdf
 COPY src /opt/accessibilizer/src

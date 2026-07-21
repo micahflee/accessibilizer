@@ -9,6 +9,8 @@ import tempfile
 import time
 import unittest
 
+import yaml
+
 from tests.test_provider_acceptance import FakeProvider
 
 
@@ -155,6 +157,27 @@ class OnePageConversionTest(unittest.TestCase):
             env=self.conversion_environment(),
         )
 
+    def run_bundle_command(
+        self, command: str, bundle: Path, *, reviewer: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = [str(ROOT / "accessibilizer"), command, "--bundle", str(bundle)]
+        if reviewer is not None:
+            arguments += ["--reviewer", reviewer]
+        arguments += ["--json"]
+        return subprocess.run(
+            arguments,
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=self.conversion_environment(),
+        )
+
+    def make_review_required_bundle(self, bundle: Path) -> None:
+        with FakeProvider(page_overrides={"reading_order_is_unambiguous": False}) as provider:
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+        self.assertEqual(result.returncode, 2, result.stderr)
+
     def test_public_cli_reports_launcher_failures_as_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
@@ -191,39 +214,143 @@ class OnePageConversionTest(unittest.TestCase):
             )
             self.assertTrue((bundle / "output.pdf").is_file())
             self.assertEqual(stat.S_IMODE((bundle / "source.pdf").stat().st_mode), 0o400)
-            review_record = json.loads((bundle / "review-record.json").read_text())
+            review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(review_record["schema_version"], "1.0")
             warning_codes = {warning["code"] for warning in review_record["warnings"]}
             self.assertIn("ambiguous-reading-order", warning_codes)
+            # A freshly converted record starts with every warning unresolved.
             self.assertTrue(
-                all(warning["status"] == "unresolved" for warning in review_record["warnings"])
+                all(warning["resolution"] is None for warning in review_record["warnings"])
             )
+            self.assertTrue(all("id" in warning for warning in review_record["warnings"]))
             self.assertIn(
                 "Conversion Warnings", (bundle / "review-report.html").read_text()
             )
+
+    def test_finalize_is_blocked_until_every_warning_is_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "review-required.accessibilizer"
+            self.make_review_required_bundle(bundle)
+
+            # A Review-Required bundle cannot be finalized while warnings remain.
+            blocked = self.run_bundle_command("finalize", bundle, reviewer="tester")
+            self.assertEqual(blocked.returncode, 2, blocked.stderr)
+            blocked_result = json.loads(blocked.stdout)
+            self.assertEqual(blocked_result["status"], "review_required")
+            self.assertGreaterEqual(blocked_result["unresolved_warnings"], 1)
+
+            # validate agrees the record is valid but not yet finalizable.
+            checked = self.run_bundle_command("validate", bundle)
+            self.assertEqual(checked.returncode, 2, checked.stderr)
+            self.assertFalse(json.loads(checked.stdout)["finalizable"])
+
+            # The Reviewer resolves the warning by hand-editing the YAML record,
+            # then corrects the heading text to prove reviewer edits survive.
+            record_path = bundle / "review-record.yaml"
+            record = yaml.safe_load(record_path.read_text())
+            record["warnings"][0]["resolution"] = {"status": "accepted"}
+            record["semantic_layer"][0]["text"] = "Reviewer Corrected Heading"
+            record_path.write_text(yaml.safe_dump(record, sort_keys=True))
+
+            finalized = self.run_bundle_command("finalize", bundle, reviewer="tester")
+            self.assertEqual(finalized.returncode, 0, finalized.stderr + finalized.stdout)
+            self.assertEqual(json.loads(finalized.stdout)["status"], "accessible")
+
+            # The corrected heading survived, the resolution is attributed, and no
+            # provider requests were made (finalize runs with the network disabled).
+            finalized_record = yaml.safe_load(record_path.read_text())
+            self.assertEqual(
+                finalized_record["semantic_layer"][0]["text"], "Reviewer Corrected Heading"
+            )
+            resolution = finalized_record["warnings"][0]["resolution"]
+            self.assertEqual(resolution["reviewer"], "tester")
+            self.assertEqual(resolution["status"], "accepted")
+            self.assertTrue(resolution["timestamp"])
+            provenance = json.loads((bundle / "provenance.json").read_text())
+            self.assertTrue(provenance["finalized"])
+            self.assertEqual(provenance["reviewer"], "tester")
+            # Finalization merges its audit fields onto the conversion provenance
+            # and preserves the request-usage record rather than discarding them.
+            self.assertEqual(provenance["recognition_backend"], "fake")
+            self.assertTrue((bundle / "request-usage.json").is_file())
+            self.assertTrue((bundle / "output.pdf").is_file())
+            self.assertNotIn(
+                "Unresolved", (bundle / "review-report.html").read_text()
+            )
+            self.assertEqual(stat.S_IMODE((bundle / "source.pdf").stat().st_mode), 0o400)
+
+    def test_review_records_resolutions_and_keeps_history_across_rounds(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "reviewed.accessibilizer"
+            self.make_review_required_bundle(bundle)
+            record_path = bundle / "review-record.yaml"
+
+            record = yaml.safe_load(record_path.read_text())
+            record["warnings"][0]["resolution"] = {"status": "accepted"}
+            record_path.write_text(yaml.safe_dump(record, sort_keys=True))
+            first = self.run_bundle_command("review", bundle, reviewer="alice")
+            self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+            self.assertEqual(json.loads(first.stdout)["unresolved_warnings"], 0)
+
+            # A second reviewer changes the resolution; the prior one is preserved.
+            record = yaml.safe_load(record_path.read_text())
+            record["warnings"][0]["resolution"] = {
+                "status": "not_applicable", "reason": "Order does not affect meaning."
+            }
+            record_path.write_text(yaml.safe_dump(record, sort_keys=True))
+            second = self.run_bundle_command("review", bundle, reviewer="bob")
+            self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+
+            reviewed = yaml.safe_load(record_path.read_text())
+            warning = reviewed["warnings"][0]
+            self.assertEqual(warning["resolution"]["status"], "not_applicable")
+            self.assertEqual(warning["resolution"]["reviewer"], "bob")
+            self.assertEqual(len(warning["history"]), 1)
+            self.assertEqual(warning["history"][0]["status"], "accepted")
+            self.assertEqual(warning["history"][0]["reviewer"], "alice")
+
+    def test_finalize_refuses_when_the_source_copy_no_longer_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "tampered.accessibilizer"
+            self.make_review_required_bundle(bundle)
+            record_path = bundle / "review-record.yaml"
+            record = yaml.safe_load(record_path.read_text())
+            record["warnings"][0]["resolution"] = {"status": "accepted", "reviewer": "tester"}
+            record_path.write_text(yaml.safe_dump(record, sort_keys=True))
+
+            # Corrupt the immutable Source PDF copy so its hash no longer matches.
+            source_copy = bundle / "source.pdf"
+            os.chmod(source_copy, 0o600)
+            source_copy.write_bytes(b"%PDF-1.7\nnot the original\n")
+
+            refused = self.run_bundle_command("finalize", bundle, reviewer="tester")
+            self.assertEqual(refused.returncode, 1, refused.stderr)
+            self.assertEqual(json.loads(refused.stdout)["status"], "operational_failure")
+            self.assertIn("does not match", json.loads(refused.stdout)["error"])
 
     def test_public_cli_requires_authorization_to_replace_a_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             bundle = Path(temporary_directory) / "protected.accessibilizer"
             created = self.run_conversion(SOURCE, bundle)
             self.assertEqual(created.returncode, 0, created.stderr)
-            reviewer_edit = '{"reviewer_edit": "keep me"}\n'
-            (bundle / "review-record.json").write_text(reviewer_edit)
+            reviewer_edit = "reviewer_edit: keep me\n"
+            (bundle / "review-record.yaml").write_text(reviewer_edit)
 
             refused = self.run_conversion(SOURCE, bundle)
 
             self.assertEqual(refused.returncode, 1, refused.stderr)
             self.assertEqual(json.loads(refused.stdout)["status"], "operational_failure")
-            self.assertEqual((bundle / "review-record.json").read_text(), reviewer_edit)
+            self.assertEqual((bundle / "review-record.yaml").read_text(), reviewer_edit)
 
             failed_replacement = self.run_conversion(SOURCE, bundle, page=999, replace=True)
 
             self.assertEqual(failed_replacement.returncode, 1, failed_replacement.stderr)
-            self.assertEqual((bundle / "review-record.json").read_text(), reviewer_edit)
+            self.assertEqual((bundle / "review-record.yaml").read_text(), reviewer_edit)
 
             replaced = self.run_conversion(SOURCE, bundle, replace=True)
 
             self.assertEqual(replaced.returncode, 0, replaced.stderr + replaced.stdout)
-            self.assertNotEqual((bundle / "review-record.json").read_text(), reviewer_edit)
+            self.assertNotEqual((bundle / "review-record.yaml").read_text(), reviewer_edit)
 
     def test_replacement_reuses_all_valid_stages_without_new_provider_calls(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -411,7 +538,8 @@ class OnePageConversionTest(unittest.TestCase):
                 "regions/page-1.png",
                 "regions/page-1-recognition.png",
                 "request-usage.json",
-                "review-record.json",
+                "review-baseline.json",
+                "review-record.yaml",
                 "review-report.html",
                 "source.pdf",
                 "validation/internal.json",
@@ -452,7 +580,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(recognition_provenance["recognition_dpi"], 300)
 
             # The Semantic Layer is reconstructed by the provider, not supplied.
-            review_record = json.loads((bundle / "review-record.json").read_text())
+            review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
             self.assertEqual(review_record["schema_version"], "1.0")
             self.assertEqual(
                 [node["type"] for node in review_record["semantic_layer"]],
@@ -462,15 +590,22 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn("figure_alternative", review_record["semantic_layer"][3])
             self.assertIn("detailed_figure_description", review_record["semantic_layer"][3])
             self.assertEqual(review_record["warnings"], [])
+            # The original recognition candidates are retained for source context.
+            self.assertTrue(review_record["candidates"])
+            self.assertTrue(all("crop" in c for c in review_record["candidates"]))
             self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.0")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
             )
             self.assertEqual(len(review_record["reconstruction"]["verified_regions"]), 3)
+            # The baseline mirrors the freshly built record for history tracking.
+            baseline = json.loads((bundle / "review-baseline.json").read_text())
+            self.assertEqual(baseline["semantic_layer"], review_record["semantic_layer"])
 
             page_semantics = json.loads((bundle / "page-semantics.json").read_text())
-            self.assertEqual(page_semantics, review_record)
+            self.assertEqual(page_semantics["semantic_layer"], review_record["semantic_layer"])
+            self.assertEqual(page_semantics["title"], review_record["title"])
 
             provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertTrue(provenance["source_copy_verified"])
@@ -536,7 +671,7 @@ class LauncherHelpTest(unittest.TestCase):
         result = self.run_launcher("bogus")
 
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("usage: accessibilizer convert", result.stderr)
+        self.assertIn("usage: accessibilizer {convert,review,validate,finalize}", result.stderr)
 
 
 REAL_OCR_PROBE = """
