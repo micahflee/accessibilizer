@@ -4,8 +4,8 @@
 These tests do not compare model output; they guard the *oracle itself* so it
 cannot silently drift away from the schema, the sample it describes, or the
 internal semantic invariants that a conforming conversion must satisfy. The
-record becomes gold only after maintainer approval, but once approved it must
-keep validating exactly as any Review Record produced by the pipeline does.
+record was approved as gold by the maintainer (ADR 0020) and must keep
+validating exactly as any Review Record produced by the pipeline does.
 """
 
 from __future__ import annotations

@@ -1,9 +1,9 @@
-# Full-sample gold Review Record (DRAFT pending maintainer approval).
+# Full-sample gold Review Record — the approved acceptance oracle (issue #14,
+# parent #1). Approved by the maintainer on 2026-07-21 per ADR 0020.
 #
 # A source-linked semantic oracle for all 11 pages of the supplied
-# electrical-current notes, hand-authored by reading the Source PDF. It becomes
-# the acceptance oracle only after maintainer approval (issue #14, parent #1).
-# Genuine ambiguities are recorded as unresolved Conversion Warnings rather than
+# electrical-current notes, hand-authored by reading the Source PDF. Genuine
+# ambiguities are recorded as unresolved Conversion Warnings rather than
 # silently guessed. This file is human-editable YAML backed by
 # schemas/review-record-2.0.schema.json.
 candidates:
