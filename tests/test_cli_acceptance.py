@@ -227,6 +227,53 @@ class OnePageConversionTest(unittest.TestCase):
                 "Conversion Warnings", (bundle / "review-report.html").read_text()
             )
 
+    def test_formula_notation_survives_the_pdf_ua_authoring_path(self) -> None:
+        # Fractions, superscripts, subscripts, symbols, and units must reach the
+        # tagged PDF/UA structure verbatim. The internal check reads the authored
+        # structure tree back out of output.pdf, so comparing its Formula node to
+        # the reconstructed one proves the notation survived authoring end to end.
+        rich_formula = {
+            "normalized_math": "v₀ = √(2·g·h), a = 9.8 m/s² × ¾ ± Δx ⇒ x⁻¹, m₁/m₂",
+            "spoken_math_alternative": (
+                "v naught equals the square root of two g h; a is about 9.8 meters "
+                "per second squared."
+            ),
+        }
+        with (
+            FakeProvider(page_overrides={"formula": rich_formula}) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "formula.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+
+            # A Formula that diverges from the fake specialized candidate raises a
+            # reviewable warning (exit 2); authoring and the PDF/UA gates still run.
+            self.assertIn(result.returncode, (0, 2), result.stderr)
+            self.assertTrue((bundle / "output.pdf").is_file())
+
+            internal = json.loads((bundle / "validation" / "internal.json").read_text())
+            self.assertTrue(internal["passed"], internal)
+            authored_formula = next(
+                node for node in internal["semantic_layer"] if node["type"] == "formula"
+            )
+            self.assertEqual(
+                authored_formula["normalized_math"], rich_formula["normalized_math"]
+            )
+            self.assertEqual(
+                authored_formula["spoken_math_alternative"],
+                rich_formula["spoken_math_alternative"],
+            )
+            # The independent PDF/UA-1 validator agrees the output is conformant,
+            # so the exotic glyphs never produced a forbidden .notdef.
+            self.assertIn(
+                'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
+            )
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(
+                record["semantic_layer"][2]["normalized_math"],
+                rich_formula["normalized_math"],
+            )
+
     def test_finalize_is_blocked_until_every_warning_is_resolved(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             bundle = Path(temporary_directory) / "review-required.accessibilizer"
@@ -593,7 +640,7 @@ class OnePageConversionTest(unittest.TestCase):
             # The original recognition candidates are retained for source context.
             self.assertTrue(review_record["candidates"])
             self.assertTrue(all("crop" in c for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.0")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.1")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -613,7 +660,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
-            self.assertEqual(provenance["page_prompt_version"], "1.0")
+            self.assertEqual(provenance["page_prompt_version"], "1.1")
             self.assertEqual(provenance["page_schema_version"], "1.0")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
