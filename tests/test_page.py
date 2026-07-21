@@ -283,6 +283,182 @@ class ReconciliationTest(unittest.TestCase):
         self.assertIn("recognition-disagreement", self.codes(warnings))
 
 
+class FormulaReconciliationTest(unittest.TestCase):
+    """The high-resolution Formula reconstruction is reconciled against the
+    independent specialized recognition of the same region, and the Spoken Math
+    Alternative is checked for being concise mathematical English."""
+
+    def reconcile(self, **kwargs: Any) -> list[dict[str, Any]]:
+        defaults: dict[str, Any] = {
+            "page_response": valid_page_response(),
+            "region_verifications": [],
+            "candidates": [],
+            "pdf_words": [],
+        }
+        defaults.update(kwargs)
+        _, warnings = reconcile_page(**defaults)
+        return warnings
+
+    def codes(self, warnings: list[dict[str, Any]]) -> list[str]:
+        return [warning["code"] for warning in warnings]
+
+    def test_specialized_formula_candidate_that_disagrees_warns(self) -> None:
+        warnings = self.reconcile(
+            candidates=[
+                {"id": "page-1-r0003", "type": "formula", "text": "sin theta over lambda"}
+            ]
+        )
+        self.assertIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_specialized_formula_candidate_that_agrees_does_not_warn(self) -> None:
+        # "I = Q / t" is what the specialized backend recognized; it corroborates
+        # the reconstructed "I = Q / delta t" even though it dropped "delta".
+        warnings = self.reconcile(
+            candidates=[{"id": "page-1-r0003", "type": "formula", "text": "I = Q / t"}]
+        )
+        self.assertNotIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_a_tiny_formula_candidate_is_ignored_as_noise(self) -> None:
+        warnings = self.reconcile(
+            candidates=[{"id": "page-1-r0003", "type": "formula", "text": "z"}]
+        )
+        self.assertNotIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_a_formula_candidate_without_text_is_ignored(self) -> None:
+        warnings = self.reconcile(
+            candidates=[{"id": "page-1-r0003", "type": "formula", "text": None}]
+        )
+        self.assertNotIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_latex_spoken_alternative_is_a_fidelity_warning(self) -> None:
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "Q / delta t",
+                    "spoken_math_alternative": r"\frac{Q}{\Delta t}",
+                }
+            )
+        )
+        self.assertIn("formula-spoken-fidelity", self.codes(warnings))
+
+    def test_spoken_alternative_equal_to_the_transcription_is_a_fidelity_warning(self) -> None:
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "I = Q / delta t",
+                    "spoken_math_alternative": "I = Q / delta t",
+                }
+            )
+        )
+        self.assertIn("formula-spoken-fidelity", self.codes(warnings))
+
+    def test_symbol_only_spoken_alternative_is_a_fidelity_warning(self) -> None:
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "I = Q / delta t",
+                    "spoken_math_alternative": "I=Q/Δt",
+                }
+            )
+        )
+        self.assertIn("formula-spoken-fidelity", self.codes(warnings))
+
+    def test_a_concise_spoken_alternative_is_not_flagged(self) -> None:
+        warnings = self.reconcile()
+        self.assertNotIn("formula-spoken-fidelity", self.codes(warnings))
+
+    def test_a_symbolic_candidate_is_reconciled_not_stripped_to_nothing(self) -> None:
+        # A purely symbolic recognition must still be compared: with ASCII-only
+        # tokenization it would tokenize to nothing and be skipped as noise.
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "a + b = c",
+                    "spoken_math_alternative": "a plus b equals c.",
+                }
+            ),
+            candidates=[
+                {"id": "page-1-r0003", "type": "formula", "text": "∫ √ x ∂ ∑ ω"}
+            ],
+        )
+        self.assertIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_greek_notation_is_not_discarded_before_reconciliation(self) -> None:
+        # The reconstructed Greek notation corroborates a matching candidate, so no
+        # disagreement is raised even though the symbols are non-ASCII.
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "ω = 2·π·f",
+                    "spoken_math_alternative": "omega equals two pi f.",
+                }
+            ),
+            candidates=[{"id": "page-1-r0003", "type": "formula", "text": "ω = 2·π·f"}],
+        )
+        self.assertNotIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_formula_warnings_are_unresolved_and_non_bypassable(self) -> None:
+        warnings = self.reconcile(
+            candidates=[
+                {"id": "page-1-r0003", "type": "formula", "text": "sin theta over lambda"}
+            ]
+        )
+        self.assertTrue(warnings)
+        self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
+
+
+class FormulaNotationSurvivesTest(unittest.TestCase):
+    """Fractions, superscripts, subscripts, symbols, and units must survive the
+    reconstruction and page-semantics document verbatim (Source Fidelity)."""
+
+    RICH_FORMULA: dict[str, Any] = {
+        "normalized_math": "v₀ = √(2·g·h) = 9.8 m/s² × ¾ ± Δx, with x⁻¹ and m₁ / m₂",
+        "spoken_math_alternative": (
+            "v naught equals the square root of two g h, about 9.8 meters per "
+            "second squared."
+        ),
+    }
+
+    def test_rich_notation_survives_reconciliation_verbatim(self) -> None:
+        layer, warnings = reconcile_page(
+            page_response=valid_page_response(formula=dict(self.RICH_FORMULA)),
+            region_verifications=[],
+            candidates=[],
+            pdf_words=[],
+        )
+        formula_node = layer[2]
+        self.assertEqual(formula_node["type"], "formula")
+        self.assertEqual(formula_node["normalized_math"], self.RICH_FORMULA["normalized_math"])
+        self.assertEqual(
+            formula_node["spoken_math_alternative"],
+            self.RICH_FORMULA["spoken_math_alternative"],
+        )
+        # Faithful notation is not itself a warning.
+        self.assertNotIn("formula-spoken-fidelity", [w["code"] for w in warnings])
+
+    def test_rich_notation_survives_the_page_semantics_document(self) -> None:
+        page_response = valid_page_response(formula=dict(self.RICH_FORMULA))
+        layer, warnings = reconcile_page(
+            page_response=page_response,
+            region_verifications=[],
+            candidates=[],
+            pdf_words=[],
+        )
+        document = build_page_semantics_document(
+            page=1,
+            source_sha256="a" * 64,
+            config=CONFIG,
+            page_response=page_response,
+            region_verifications=[],
+            semantic_layer=layer,
+            warnings=warnings,
+        )
+        self.assertEqual(
+            document["semantic_layer"][2]["normalized_math"],
+            self.RICH_FORMULA["normalized_math"],
+        )
+
+
 class DocumentAndBudgetTest(unittest.TestCase):
     def test_document_records_versions_and_reconstruction_provenance(self) -> None:
         layer, warnings = reconcile_page(
@@ -316,7 +492,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.0")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.0")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.1")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"

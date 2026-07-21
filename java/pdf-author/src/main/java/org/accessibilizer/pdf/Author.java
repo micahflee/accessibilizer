@@ -268,7 +268,7 @@ public final class Author {
             Canvas canvas, PdfFont font, String role,
             String laidOutText, String actualText, String alternateDescription,
             float width, float bottom) {
-        Paragraph paragraph = new Paragraph(laidOutText)
+        Paragraph paragraph = new Paragraph(sanitizeForFont(font, laidOutText))
                 .setFont(font)
                 .setFontSize(SEMANTIC_FONT_SIZE)
                 .setMargin(0)
@@ -280,6 +280,33 @@ public final class Author {
             paragraph.getAccessibilityProperties().setAlternateDescription(alternateDescription);
         }
         canvas.add(paragraph);
+    }
+
+    // The meaning of a node is carried by its ActualText and Alt, which are PDF
+    // text strings independent of the font, so a Formula's fractions,
+    // superscripts, subscripts, symbols, and units always survive to the tagged
+    // structure and to text extraction. The laid-out glyph run is only what a
+    // sighted reader would see and what macOS Preview reads for prose nodes, and
+    // PDF/UA forbids the .notdef glyph. Any character the authoring font cannot
+    // render is therefore dropped from the invisible laid-out run (replaced with a
+    // space) so authoring never emits .notdef, while ActualText and Alt keep the
+    // exact string. English prose is fully covered by the font, so headings and
+    // paragraphs are unaffected; only exotic mathematical symbols are ever
+    // substituted, and their exact form is still exposed through ActualText.
+    private static String sanitizeForFont(PdfFont font, String text) {
+        StringBuilder builder = new StringBuilder(text.length());
+        int index = 0;
+        while (index < text.length()) {
+            int codePoint = text.codePointAt(index);
+            index += Character.charCount(codePoint);
+            if (font.containsGlyph(codePoint) || Character.isWhitespace(codePoint)) {
+                builder.appendCodePoint(codePoint);
+            } else {
+                builder.append(' ');
+            }
+        }
+        String sanitized = builder.toString();
+        return sanitized.isBlank() ? " " : sanitized;
     }
 
     private static JsonObject inspect(Path outputPath) throws IOException {
