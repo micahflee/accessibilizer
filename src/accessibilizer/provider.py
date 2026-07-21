@@ -16,7 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from accessibilizer.configuration import config_path
+from accessibilizer.configuration import config_path, user_config_default
 
 
 CAPABILITY_IMAGE = (
@@ -137,8 +137,7 @@ def _load_provider_config(path: Path) -> dict[str, str]:
 
 
 def resolve_provider(args: argparse.Namespace) -> ProviderConfig:
-    user_default = Path.home() / ".config" / "accessibilizer" / "config.toml"
-    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
+    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_config_default())
     project_path = config_path(
         "ACCESSIBILIZER_PROJECT_CONFIG", Path.cwd() / "accessibilizer.toml"
     )
