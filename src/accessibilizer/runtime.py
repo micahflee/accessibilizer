@@ -9,7 +9,7 @@ except ImportError:  # pragma: no cover - the canonical Python 3.10 image uses t
     import tomli as tomllib  # type: ignore[import-not-found, no-redef]
 from typing import Any
 
-from accessibilizer.configuration import config_path
+from accessibilizer.configuration import config_path, user_config_default
 
 
 @dataclass(frozen=True)
@@ -52,8 +52,7 @@ def _load_conversion_config(path: Path) -> dict[str, int | float]:
 
 
 def resolve_conversion_limits(args: argparse.Namespace) -> ConversionLimits:
-    user_default = Path.home() / ".config" / "accessibilizer" / "config.toml"
-    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
+    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_config_default())
     project_path = config_path(
         "ACCESSIBILIZER_PROJECT_CONFIG", Path.cwd() / "accessibilizer.toml"
     )
@@ -117,8 +116,7 @@ def resolve_reviewer(args: argparse.Namespace) -> str | None:
         if not text:
             raise ValueError("--reviewer must not be empty")
         return text
-    user_default = Path.home() / ".config" / "accessibilizer" / "config.toml"
-    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_default)
+    user_path = config_path("ACCESSIBILIZER_USER_CONFIG", user_config_default())
     project_path = config_path(
         "ACCESSIBILIZER_PROJECT_CONFIG", Path.cwd() / "accessibilizer.toml"
     )
