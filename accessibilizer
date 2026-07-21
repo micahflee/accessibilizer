@@ -157,8 +157,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ -z "$page" ] || [ -z "$bundle_path" ]; then
-    operational_failure "--page and --bundle are required"
+if [ -z "$bundle_path" ]; then
+    operational_failure "--bundle is required"
 fi
 if [ ! -f "$source_path" ]; then
     operational_failure "source must be a file"
@@ -248,8 +248,8 @@ if [ -t 0 ]; then set -- --interactive "$@"; fi
 if [ -t 1 ]; then set -- --tty "$@"; fi
 set -- "$@" "$image" \
     python3 -m accessibilizer convert /work/source.pdf \
-    --page "$page" \
     --bundle "/work/output/$bundle_name"
+if [ -n "$page" ]; then set -- "$@" --page "$page"; fi
 if [ -n "$provider_base_url" ]; then set -- "$@" --provider-base-url "$provider_base_url"; fi
 if [ -n "$provider_model" ]; then set -- "$@" --provider-model "$provider_model"; fi
 if [ -n "$provider_api_key_env" ]; then set -- "$@" --provider-api-key-env "$provider_api_key_env"; fi

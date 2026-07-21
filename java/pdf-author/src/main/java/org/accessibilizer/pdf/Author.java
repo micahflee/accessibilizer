@@ -16,11 +16,14 @@ import com.itextpdf.kernel.pdf.PdfDictionary;
 import com.itextpdf.kernel.pdf.PdfName;
 import com.itextpdf.kernel.pdf.PdfObject;
 import com.itextpdf.kernel.pdf.PdfOutline;
+import com.itextpdf.kernel.pdf.PdfPage;
 import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.PdfString;
 import com.itextpdf.kernel.pdf.PdfUAConformance;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.kernel.pdf.action.PdfAction;
+import com.itextpdf.kernel.pdf.annot.PdfAnnotation;
+import com.itextpdf.kernel.pdf.annot.PdfLinkAnnotation;
 import com.itextpdf.kernel.pdf.canvas.CanvasArtifact;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
 import com.itextpdf.kernel.pdf.canvas.PdfCanvasConstants.TextRenderingMode;
@@ -33,6 +36,7 @@ import com.itextpdf.layout.Canvas;
 import com.itextpdf.layout.borders.Border;
 import com.itextpdf.layout.element.Cell;
 import com.itextpdf.layout.element.Div;
+import com.itextpdf.layout.element.Link;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Table;
 import com.itextpdf.layout.properties.Property;
@@ -43,10 +47,14 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class Author {
@@ -176,34 +184,82 @@ public final class Author {
         }
     }
 
+    // A heading recorded while authoring, so the document outline can be built from
+    // the heading hierarchy after every page is on the document: the level drives the
+    // nesting and the output page is the destination of that outline entry.
+    private record HeadingRef(int level, String text, PdfPage page) {
+    }
+
+    // An open outline frame while nesting the tree: an H(n) becomes a child of the most
+    // recent preceding heading with level < n, so frames whose level is >= the incoming
+    // heading are popped before its parent is read off the top of the stack.
+    private record OutlineFrame(int level, PdfOutline outline) {
+    }
+
     private static void author(JsonObject contract, Path sourcePath, Path outputPath) throws Exception {
         String title = requiredString(contract, "title");
         String language = requiredString(contract, "language");
-        int sourcePageNumber = contract.get("page").getAsInt();
+        JsonArray pages = contract.getAsJsonArray("pages");
 
         try (PdfDocument source = new PdfDocument(new PdfReader(sourcePath.toString()));
              PdfUADocument output = new PdfUADocument(
                      new PdfWriter(outputPath.toString()),
                      new PdfUAConfig(PdfUAConformance.PDF_UA_1, title, language))) {
-            if (sourcePageNumber < 1 || sourcePageNumber > source.getNumberOfPages()) {
-                throw new IllegalArgumentException("source page is outside the document");
+            // One authoring font shared across every page rather than re-created per page.
+            PdfFont font = PdfFontFactory.createFont(FONT.toString());
+            List<HeadingRef> headings = new ArrayList<>();
+            PdfPage firstOutputPage = null;
+
+            for (JsonElement pageElement : pages) {
+                JsonObject pageNode = pageElement.getAsJsonObject();
+                int sourcePageNumber = pageNode.get("source_page").getAsInt();
+                if (sourcePageNumber < 1 || sourcePageNumber > source.getNumberOfPages()) {
+                    throw new IllegalArgumentException("source page is outside the document");
+                }
+
+                var sourcePage = source.getPage(sourcePageNumber);
+                var outputPage = output.addNewPage(new PageSize(sourcePage.getPageSize()));
+                outputPage.setTabOrder(PdfName.S);
+                if (firstOutputPage == null) {
+                    firstOutputPage = outputPage;
+                }
+
+                var visualLayer = sourcePage.copyAsFormXObject(output);
+                PdfCanvas visualCanvas = new PdfCanvas(outputPage);
+                visualCanvas.openTag(new CanvasArtifact());
+                visualCanvas.addXObjectAt(visualLayer, 0, 0);
+                visualCanvas.closeTag();
+
+                addSemanticLayer(outputPage, font, pageNode.getAsJsonArray("semantic_layer"), headings);
             }
 
-            var sourcePage = source.getPage(sourcePageNumber);
-            var outputPage = output.addNewPage(new PageSize(sourcePage.getPageSize()));
-            outputPage.setTabOrder(PdfName.S);
+            buildOutline(output, title, headings, firstOutputPage);
+        }
+    }
 
-            var visualLayer = sourcePage.copyAsFormXObject(output);
-            PdfCanvas visualCanvas = new PdfCanvas(outputPage);
-            visualCanvas.openTag(new CanvasArtifact());
-            visualCanvas.addXObjectAt(visualLayer, 0, 0);
-            visualCanvas.closeTag();
+    // The document outline is built from the heading hierarchy collected across every
+    // page: each H(n) nests under the most recent preceding heading with a smaller
+    // level, and its destination is a fit-to-page GoTo of that heading's output page.
+    // With no headings at all a single top-level entry titled by the document title
+    // points at the first page, matching the pre-hierarchy behaviour.
+    private static void buildOutline(
+            PdfUADocument output, String title, List<HeadingRef> headings, PdfPage firstOutputPage) {
+        PdfOutline root = output.getOutlines(false);
+        if (headings.isEmpty()) {
+            PdfOutline bookmark = root.addOutline(title);
+            bookmark.addAction(PdfAction.createGoTo(PdfExplicitDestination.createFit(firstOutputPage)));
+            return;
+        }
 
-            PdfFont font = PdfFontFactory.createFont(FONT.toString());
-            addSemanticLayer(outputPage, font, contract.getAsJsonArray("semantic_layer"));
-
-            PdfOutline bookmark = output.getOutlines(false).addOutline(title);
-            bookmark.addAction(PdfAction.createGoTo(PdfExplicitDestination.createFit(outputPage)));
+        Deque<OutlineFrame> stack = new ArrayDeque<>();
+        for (HeadingRef heading : headings) {
+            while (!stack.isEmpty() && stack.peek().level() >= heading.level()) {
+                stack.pop();
+            }
+            PdfOutline parent = stack.isEmpty() ? root : stack.peek().outline();
+            PdfOutline entry = parent.addOutline(heading.text());
+            entry.addAction(PdfAction.createGoTo(PdfExplicitDestination.createFit(heading.page())));
+            stack.push(new OutlineFrame(heading.level(), entry));
         }
     }
 
@@ -230,7 +286,7 @@ public final class Author {
     private static final float FIGURE_CAPTION_GAP = 24f;
 
     private static void addSemanticLayer(
-            com.itextpdf.kernel.pdf.PdfPage page, PdfFont font, JsonArray nodes) {
+            PdfPage page, PdfFont font, JsonArray nodes, List<HeadingRef> headings) {
         Rectangle pageSize = page.getPageSize();
         float usableWidth = pageSize.getWidth() - 2 * PAGE_MARGIN;
         int count = nodes.size();
@@ -243,9 +299,16 @@ public final class Author {
                 String type = requiredString(node, "type");
                 switch (type) {
                     case "heading" -> {
+                        int level = node.get("level").getAsInt();
+                        if (level < 1 || level > 6) {
+                            throw new IllegalArgumentException("heading level out of range: " + level);
+                        }
                         String text = requiredString(node, "text");
-                        addNode(canvas, font, StandardRoles.H1, text, text, null,
+                        // Role is H1..H6 by level; StandardRoles.H1 is the string "H1".
+                        addNode(canvas, font, "H" + level, text, text, null,
                                 usableWidth, bandBottom);
+                        // Recorded so the document outline can be nested by heading level.
+                        headings.add(new HeadingRef(level, text, page));
                     }
                     case "paragraph" -> {
                         String text = requiredString(node, "text");
@@ -280,6 +343,11 @@ public final class Author {
                         }
                     }
                     case "table" -> addTable(canvas, font, node, usableWidth, bandBottom);
+                    case "link" -> {
+                        String text = requiredString(node, "text");
+                        String href = requiredString(node, "href");
+                        addLink(canvas, font, text, href, usableWidth, bandBottom);
+                    }
                     default -> throw new IllegalArgumentException("unsupported semantic node: " + type);
                 }
             }
@@ -301,6 +369,40 @@ public final class Author {
         if (alternateDescription != null) {
             paragraph.getAccessibilityProperties().setAlternateDescription(alternateDescription);
         }
+        canvas.add(paragraph);
+    }
+
+    // A Link is authored as a Link structure element wrapped in a Paragraph (role P),
+    // exactly like every other node's full-width invisible glyph run, but its glyphs
+    // belong to an iText layout Link bound to a Link annotation whose action opens the
+    // URI. The Link element carries ActualText and an alternate description (both the
+    // link text) on the structure element. PDF/UA additionally requires the link
+    // annotation itself to expose an alternate description, so the annotation's
+    // /Contents is set to the text; the annotation is flagged Print and given a zero
+    // border so it neither prints a box nor is dropped from the print path.
+    private static void addLink(
+            Canvas canvas, PdfFont font, String text, String href, float width, float bottom) {
+        PdfLinkAnnotation annotation = new PdfLinkAnnotation(new Rectangle(0, 0, 0, 0));
+        annotation.setAction(PdfAction.createURI(href));
+        annotation.setContents(text);
+        annotation.setFlag(PdfAnnotation.PRINT);
+        annotation.put(PdfName.Border, new PdfArray(new int[] {0, 0, 0}));
+
+        Link link = new Link(sanitizeForFont(font, text), annotation);
+        link.setFont(font).setFontSize(SEMANTIC_FONT_SIZE);
+        link.setProperty(Property.TEXT_RENDERING_MODE, TextRenderingMode.INVISIBLE);
+        link.getAccessibilityProperties()
+                .setRole(StandardRoles.LINK)
+                .setActualText(text)
+                .setAlternateDescription(text);
+
+        Paragraph paragraph = new Paragraph(link)
+                .setFont(font)
+                .setFontSize(SEMANTIC_FONT_SIZE)
+                .setMargin(0)
+                .setMultipliedLeading(1f)
+                .setFixedPosition(PAGE_MARGIN, bottom, width);
+        paragraph.setProperty(Property.TEXT_RENDERING_MODE, TextRenderingMode.INVISIBLE);
         canvas.add(paragraph);
     }
 
@@ -413,43 +515,142 @@ public final class Author {
     }
 
     private static JsonObject inspect(Path outputPath) throws IOException {
-        JsonArray semanticLayer = new JsonArray();
+        JsonArray pages = new JsonArray();
         try (PdfDocument document = new PdfDocument(new PdfReader(outputPath.toString()))) {
-            collectSemanticNodes(document.getStructTreeRoot().getKids(), semanticLayer);
+            // One Semantic Layer per output page, keyed by page number and kept in
+            // document (page 1 first) order; the tree walk fills each page in the
+            // order its nodes appear beneath the structure tree root.
+            Map<Integer, JsonArray> byPage = new LinkedHashMap<>();
+            for (int number = 1; number <= document.getNumberOfPages(); number++) {
+                byPage.put(number, new JsonArray());
+            }
+            collectSemanticNodes(document, document.getStructTreeRoot().getKids(), byPage);
+            for (int number = 1; number <= document.getNumberOfPages(); number++) {
+                JsonObject page = new JsonObject();
+                page.add("semantic_layer", byPage.get(number));
+                pages.add(page);
+            }
         }
         JsonObject result = new JsonObject();
-        result.add("semantic_layer", semanticLayer);
+        result.add("pages", pages);
         return result;
     }
 
-    private static void collectSemanticNodes(List<IStructureNode> nodes, JsonArray result) {
+    private static void collectSemanticNodes(
+            PdfDocument document, List<IStructureNode> nodes, Map<Integer, JsonArray> byPage) {
         for (IStructureNode structureNode : nodes) {
             if (!(structureNode instanceof PdfStructElem element)) {
                 continue;
             }
             String role = element.getRole().getValue();
-            JsonObject extracted = switch (role) {
-                case StandardRoles.H1 -> heading(element);
-                case StandardRoles.P -> textNode("paragraph", element);
-                case StandardRoles.FORMULA -> formula(element);
-                case StandardRoles.FIGURE -> figure(element);
-                case StandardRoles.TABLE -> table(element);
-                default -> null;
-            };
+            JsonObject extracted;
+            if (isHeadingRole(role)) {
+                extracted = heading(element, role);
+            } else if (role.equals(StandardRoles.P)) {
+                // A link is authored as a Link structure element inside a Paragraph, so a
+                // P is a link when a Link descendant exists and a paragraph otherwise.
+                PdfStructElem linkElement = findLink(element);
+                extracted = linkElement != null
+                        ? linkNode(document, linkElement)
+                        : textNode("paragraph", element);
+            } else if (role.equals(StandardRoles.FORMULA)) {
+                extracted = formula(element);
+            } else if (role.equals(StandardRoles.FIGURE)) {
+                extracted = figure(element);
+            } else if (role.equals(StandardRoles.TABLE)) {
+                extracted = table(element);
+            } else {
+                extracted = null;
+            }
             if (extracted != null) {
                 // A semantic node owns its whole subtree (a Table's rows and cells, a
                 // node's laid-out glyph run), so recursion stops here; only structural
                 // containers are traversed to reach the flat Semantic Layer beneath.
-                result.add(extracted);
+                PdfDictionary pageDict = pageObjectOf(element);
+                int pageNumber = pageDict == null ? 1 : document.getPageNumber(pageDict);
+                byPage.computeIfAbsent(pageNumber, key -> new JsonArray()).add(extracted);
             } else {
-                collectSemanticNodes(element.getKids(), result);
+                collectSemanticNodes(document, element.getKids(), byPage);
             }
         }
     }
 
-    private static JsonObject heading(PdfStructElem element) {
+    // The output page a structure element sits on is its own /Pg when present, else the
+    // first /Pg found on a struct-element descendant.
+    private static PdfDictionary pageObjectOf(PdfStructElem element) {
+        PdfDictionary page = element.getPdfObject().getAsDictionary(PdfName.Pg);
+        if (page != null) {
+            return page;
+        }
+        for (IStructureNode kid : element.getKids()) {
+            if (kid instanceof PdfStructElem child) {
+                PdfDictionary childPage = pageObjectOf(child);
+                if (childPage != null) {
+                    return childPage;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isHeadingRole(String role) {
+        return role.length() == 2 && role.charAt(0) == 'H'
+                && role.charAt(1) >= '1' && role.charAt(1) <= '6';
+    }
+
+    // A Link structure element nested anywhere beneath a Paragraph, or null when the
+    // Paragraph is plain prose.
+    private static PdfStructElem findLink(PdfStructElem element) {
+        for (IStructureNode kid : element.getKids()) {
+            if (kid instanceof PdfStructElem child) {
+                if (child.getRole().getValue().equals(StandardRoles.LINK)) {
+                    return child;
+                }
+                PdfStructElem nested = findLink(child);
+                if (nested != null) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static JsonObject linkNode(PdfDocument document, PdfStructElem linkElement) {
+        JsonObject node = new JsonObject();
+        node.addProperty("type", "link");
+        node.addProperty("text", structureString(linkElement, PdfName.ActualText));
+        node.addProperty("href", linkHref(document, linkElement));
+        return node;
+    }
+
+    // The link's destination is read from the Link annotation on the Link element's
+    // page: the first Link-subtype annotation's /A action /URI. This assumes at most
+    // one link per page (true for every node the reconstruction emits); associating a
+    // specific Link element with its own annotation would need the element's OBJR.
+    private static String linkHref(PdfDocument document, PdfStructElem linkElement) {
+        PdfDictionary pageDict = pageObjectOf(linkElement);
+        if (pageDict == null) {
+            return "";
+        }
+        PdfPage page = document.getPage(document.getPageNumber(pageDict));
+        for (PdfAnnotation annotation : page.getAnnotations()) {
+            if (PdfName.Link.equals(annotation.getSubtype())) {
+                PdfDictionary action = annotation.getPdfObject().getAsDictionary(PdfName.A);
+                if (action != null) {
+                    PdfString uri = action.getAsString(PdfName.URI);
+                    if (uri != null) {
+                        return uri.toUnicodeString();
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    private static JsonObject heading(PdfStructElem element, String role) {
         JsonObject node = textNode("heading", element);
-        node.addProperty("level", 1);
+        // Level is the digit in the H1..H6 role.
+        node.addProperty("level", role.charAt(1) - '0');
         return node;
     }
 

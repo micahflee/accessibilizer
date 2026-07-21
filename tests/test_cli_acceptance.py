@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from typing import Any
 
 import yaml
 
@@ -77,7 +78,7 @@ def write_pdf(
     path.write_bytes(contents)
 
 
-class OnePageConversionTest(unittest.TestCase):
+class ConversionTest(unittest.TestCase):
     provider: FakeProvider
 
     @classmethod
@@ -94,19 +95,19 @@ class OnePageConversionTest(unittest.TestCase):
         source: Path,
         bundle: Path,
         *,
-        page: int = 1,
+        page: str | None = "1",
         replace: bool = False,
         resume: bool = False,
         base_url: str | None = None,
     ) -> list[str]:
         replacement_arguments = ["--replace"] if replace else []
         resume_arguments = ["--resume"] if resume else []
+        page_arguments = ["--page", page] if page is not None else []
         return [
             str(ROOT / "accessibilizer"),
             "convert",
             str(source),
-            "--page",
-            str(page),
+            *page_arguments,
             "--bundle",
             str(bundle),
             "--provider-base-url",
@@ -136,7 +137,7 @@ class OnePageConversionTest(unittest.TestCase):
         source: Path,
         bundle: Path,
         *,
-        page: int = 1,
+        page: str | None = "1",
         replace: bool = False,
         resume: bool = False,
         base_url: str | None = None,
@@ -215,7 +216,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertTrue((bundle / "output.pdf").is_file())
             self.assertEqual(stat.S_IMODE((bundle / "source.pdf").stat().st_mode), 0o400)
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(review_record["schema_version"], "1.0")
+            self.assertEqual(review_record["schema_version"], "2.0")
             warning_codes = {warning["code"] for warning in review_record["warnings"]}
             self.assertIn("ambiguous-reading-order", warning_codes)
             # A freshly converted record starts with every warning unresolved.
@@ -251,10 +252,15 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn(result.returncode, (0, 2), result.stderr)
             self.assertTrue((bundle / "output.pdf").is_file())
 
+            # The internal checks read the authored structure tree back out of
+            # output.pdf and confirm it matches the Review Record, so a passing
+            # internal check proves the Review Record's Formula reached the tagged
+            # PDF verbatim.
             internal = json.loads((bundle / "validation" / "internal.json").read_text())
             self.assertTrue(internal["passed"], internal)
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
             authored_formula = next(
-                node for node in internal["semantic_layer"] if node["type"] == "formula"
+                node for node in record["semantic_layer"] if node["type"] == "formula"
             )
             self.assertEqual(
                 authored_formula["normalized_math"], rich_formula["normalized_math"]
@@ -267,11 +273,6 @@ class OnePageConversionTest(unittest.TestCase):
             # so the exotic glyphs never produced a forbidden .notdef.
             self.assertIn(
                 'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
-            )
-            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(
-                record["semantic_layer"][2]["normalized_math"],
-                rich_formula["normalized_math"],
             )
 
     def _figure_survives(self, figure: dict[str, object]) -> dict[str, object]:
@@ -291,13 +292,12 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn(
                 'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
             )
-            authored: dict[str, object] = next(
-                node for node in internal["semantic_layer"] if node["type"] == "figure"
-            )
-            # The structure tree read back out of the PDF is exactly the reconstructed
-            # Semantic Layer, so figure semantics survived authoring end to end.
+            # A passing internal check confirms the authored structure tree matches
+            # the Review Record, so the figure semantics survived authoring end to end.
             record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(internal["semantic_layer"], record["semantic_layer"])
+            authored: dict[str, object] = next(
+                node for node in record["semantic_layer"] if node["type"] == "figure"
+            )
             return authored
 
     def test_a_simple_figure_survives_the_pdf_ua_authoring_path(self) -> None:
@@ -350,13 +350,12 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertIn(
                 'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
             )
-            authored: dict[str, object] = next(
-                node for node in internal["semantic_layer"] if node["type"] == "table"
-            )
-            # The structure tree read back out of the PDF is exactly the reconstructed
-            # Semantic Layer, so table semantics survived authoring end to end.
+            # A passing internal check confirms the authored structure tree matches
+            # the Review Record, so the table semantics survived authoring end to end.
             record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(internal["semantic_layer"], record["semantic_layer"])
+            authored: dict[str, object] = next(
+                node for node in record["semantic_layer"] if node["type"] == "table"
+            )
             return authored
 
     def test_a_semantic_table_survives_the_pdf_ua_authoring_path(self) -> None:
@@ -548,7 +547,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(json.loads(refused.stdout)["status"], "operational_failure")
             self.assertEqual((bundle / "review-record.yaml").read_text(), reviewer_edit)
 
-            failed_replacement = self.run_conversion(SOURCE, bundle, page=999, replace=True)
+            failed_replacement = self.run_conversion(SOURCE, bundle, page="999", replace=True)
 
             self.assertEqual(failed_replacement.returncode, 1, failed_replacement.stderr)
             self.assertEqual((bundle / "review-record.yaml").read_text(), reviewer_edit)
@@ -594,7 +593,7 @@ class OnePageConversionTest(unittest.TestCase):
                 env=self.conversion_environment(),
             )
             workspace = temporary / ".interrupted.accessibilizer.in-progress"
-            page_checkpoint = workspace / "checkpoints" / "page-1.json"
+            page_checkpoint = workspace / "checkpoints" / "document.json"
             deadline = time.monotonic() + 30
             while not page_checkpoint.is_file() and process.poll() is None:
                 if time.monotonic() >= deadline:
@@ -730,7 +729,7 @@ class OnePageConversionTest(unittest.TestCase):
 
             expected_files = {
                 "authoring.json",
-                "checkpoints/page-1.json",
+                "checkpoints/document.json",
                 "checkpoints/page-semantics-page-1.json",
                 "checkpoints/provider-capability.json",
                 "checkpoints/recognition-page-1.json",
@@ -738,7 +737,7 @@ class OnePageConversionTest(unittest.TestCase):
                 "checkpoints/source.json",
                 "checkpoints/validation.json",
                 "output.pdf",
-                "page-semantics.json",
+                "page-semantics/page-1.json",
                 "provenance.json",
                 "recognition/page-1.json",
                 "regions/page-1.png",
@@ -787,11 +786,14 @@ class OnePageConversionTest(unittest.TestCase):
 
             # The Semantic Layer is reconstructed by the provider, not supplied.
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(review_record["schema_version"], "1.0")
+            self.assertEqual(review_record["schema_version"], "2.0")
+            self.assertEqual(review_record["pages"], [1])
             self.assertEqual(
                 [node["type"] for node in review_record["semantic_layer"]],
                 ["heading", "paragraph", "formula", "figure", "table"],
             )
+            # Every node is tagged with its source page.
+            self.assertTrue(all(node["page"] == 1 for node in review_record["semantic_layer"]))
             self.assertIn("spoken_math_alternative", review_record["semantic_layer"][2])
             # The default reconstruction is a complex Informative Figure, so it
             # carries both its concise Alternative and its Detailed Description.
@@ -812,13 +814,22 @@ class OnePageConversionTest(unittest.TestCase):
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
             )
-            self.assertEqual(len(review_record["reconstruction"]["verified_regions"]), 3)
+            self.assertEqual(len(review_record["reconstruction"]["pages"]), 1)
+            self.assertEqual(review_record["reconstruction"]["pages"][0]["page"], 1)
+            self.assertEqual(
+                len(review_record["reconstruction"]["pages"][0]["verified_regions"]), 3
+            )
             # The baseline mirrors the freshly built record for history tracking.
             baseline = json.loads((bundle / "review-baseline.json").read_text())
             self.assertEqual(baseline["semantic_layer"], review_record["semantic_layer"])
 
-            page_semantics = json.loads((bundle / "page-semantics.json").read_text())
-            self.assertEqual(page_semantics["semantic_layer"], review_record["semantic_layer"])
+            page_semantics = json.loads((bundle / "page-semantics" / "page-1.json").read_text())
+            # The per-page Semantic Layer matches the record once each node is tagged
+            # with its page.
+            self.assertEqual(
+                [{**node, "page": 1} for node in page_semantics["semantic_layer"]],
+                review_record["semantic_layer"],
+            )
             self.assertEqual(page_semantics["title"], review_record["title"])
 
             provenance = json.loads((bundle / "provenance.json").read_text())
@@ -827,6 +838,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
+            self.assertEqual(provenance["source_pages"], [1])
             self.assertEqual(provenance["page_prompt_version"], "1.3")
             self.assertEqual(provenance["page_schema_version"], "1.0")
             # capability check plus one page call and one call per crop region.
@@ -839,15 +851,149 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(internal["checks"], [])
             self.assertTrue(internal["passed"])
             self.assertEqual(internal["source"], "output.pdf structure tree")
-            self.assertEqual(internal["semantic_layer"], review_record["semantic_layer"])
+            # Every internal semantic-check category passed.
+            self.assertTrue(all(internal["categories"].values()), internal["categories"])
+            self.assertEqual(
+                set(internal["categories"]),
+                {
+                    "review-record-consistency",
+                    "reading-order",
+                    "source-region-coverage",
+                    "alternatives",
+                    "table-relationships",
+                    "recognition-agreement",
+                },
+            )
 
             visual = json.loads((bundle / "validation/visual.json").read_text())
-            self.assertLessEqual(visual["different_pixel_ratio"], visual["tolerance"])
-            self.assertEqual(visual["source_width"], visual["output_width"])
-            self.assertEqual(visual["source_height"], visual["output_height"])
+            self.assertTrue(visual["passed"])
+            self.assertLessEqual(visual["max_different_pixel_ratio"], visual["tolerance"])
+            self.assertEqual(len(visual["pages"]), 1)
+            self.assertEqual(visual["pages"][0]["source_page"], 1)
+            self.assertEqual(visual["pages"][0]["source_width"], visual["pages"][0]["output_width"])
+            self.assertEqual(
+                visual["pages"][0]["source_height"], visual["pages"][0]["output_height"]
+            )
 
             verapdf_report = (bundle / "validation/verapdf.xml").read_text()
             self.assertIn('isCompliant="true"', verapdf_report)
+
+    def test_whole_document_conversion_covers_all_eleven_pages(self) -> None:
+        # The acceptance gate for issue #13: convert the entire 11-page sample into
+        # one visually faithful, internally verifiable, PDF/UA-1 conformant document.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "whole-document.accessibilizer"
+            # No --page: the whole document is converted by default.
+            result = self.run_conversion(SOURCE, bundle, page=None)
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(json.loads(result.stdout)["status"], "accessible")
+
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(record["pages"], list(range(1, 12)))
+            # Each of the 11 pages contributes its five reconstructed nodes, tagged
+            # with the source page they belong to.
+            self.assertEqual(len(record["semantic_layer"]), 55)
+            self.assertEqual(
+                sorted({node["page"] for node in record["semantic_layer"]}),
+                list(range(1, 12)),
+            )
+            self.assertEqual(len(record["reconstruction"]["pages"]), 11)
+
+            provenance = json.loads((bundle / "provenance.json").read_text())
+            self.assertEqual(provenance["source_pages"], list(range(1, 12)))
+            # capability check once, plus one page call and three crop calls per page.
+            self.assertEqual(provenance["provider_usage"]["actual_requests"], 1 + 11 * 4)
+
+            # Full-page visual regression covers all 11 pages within tolerance.
+            visual = json.loads((bundle / "validation/visual.json").read_text())
+            self.assertTrue(visual["passed"])
+            self.assertEqual([p["source_page"] for p in visual["pages"]], list(range(1, 12)))
+
+            # Clean internal semantic checks and independent PDF/UA-1 validation.
+            internal = json.loads((bundle / "validation/internal.json").read_text())
+            self.assertTrue(internal["passed"], internal["checks"])
+            self.assertIn(
+                'isCompliant="true"', (bundle / "validation/verapdf.xml").read_text()
+            )
+            # The whole-document output carries a bookmark outline for navigation.
+            self.assertIn(b"/Outlines", (bundle / "output.pdf").read_bytes())
+
+
+class AuthoringCapabilityTest(unittest.TestCase):
+    """Author supported node types directly and read them back out of the PDF.
+
+    Exercises the PDF/UA-1 representations the reconstruction pipeline does not
+    emit for the scanned sample — a heading hierarchy (H1 through H3) and a
+    reconstructable link — proving they survive authoring and validate.
+    """
+
+    CONTRACT: dict[str, Any] = {
+        "schema_version": "2.0",
+        "title": "Authoring Capability Fixture",
+        "language": "en-US",
+        "pages": [
+            {
+                "source_page": 1,
+                "semantic_layer": [
+                    {"type": "heading", "level": 1, "text": "Chapter"},
+                    {"type": "heading", "level": 2, "text": "Section"},
+                    {"type": "heading", "level": 3, "text": "Subsection"},
+                    {"type": "paragraph", "text": "A paragraph of body text."},
+                    {"type": "link", "text": "Ohm's Law", "href": "https://example.org/ohm"},
+                ],
+            },
+            {
+                "source_page": 2,
+                "semantic_layer": [
+                    {"type": "heading", "level": 1, "text": "Second Chapter"},
+                    {"type": "paragraph", "text": "More body text on the next page."},
+                ],
+            },
+        ],
+    }
+
+    def test_heading_hierarchy_and_link_survive_authoring_and_validate(self) -> None:
+        image = os.environ.get("ACCESSIBILIZER_IMAGE", "accessibilizer:test")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            (temporary / "contract.json").write_text(json.dumps(self.CONTRACT))
+            script = (
+                "set -e\n"
+                "jar=/opt/accessibilizer/pdf-author.jar\n"
+                'java -jar "$jar" /work/contract.json "$SOURCE" /work/out.pdf\n'
+                'java -jar "$jar" --inspect /work/out.pdf > /work/inspect.json\n'
+                'verapdf --format xml -f ua1 /work/out.pdf > /work/verapdf.xml || true\n'
+            )
+            result = subprocess.run(
+                [
+                    "docker", "run", "--rm", "--network", "none",
+                    "--volume", f"{temporary}:/work",
+                    "--volume", f"{SOURCE}:/source.pdf:ro",
+                    "--env", "SOURCE=/source.pdf",
+                    image, "bash", "-c", script,
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            inspected = json.loads((temporary / "inspect.json").read_text())
+            self.assertEqual(len(inspected["pages"]), 2)
+            first = inspected["pages"][0]["semantic_layer"]
+            self.assertEqual(
+                [(node["type"], node.get("level")) for node in first[:3]],
+                [("heading", 1), ("heading", 2), ("heading", 3)],
+            )
+            link = next(node for node in first if node["type"] == "link")
+            self.assertEqual(link["text"], "Ohm's Law")
+            self.assertEqual(link["href"], "https://example.org/ohm")
+            self.assertEqual(inspected["pages"][1]["semantic_layer"][0]["level"], 1)
+
+            self.assertIn(
+                'isCompliant="true"', (temporary / "verapdf.xml").read_text()
+            )
 
 
 class LauncherHelpTest(unittest.TestCase):

@@ -66,18 +66,19 @@ class ConvertHelpTest(unittest.TestCase):
         ):
             self.assertIn(flag, result.stdout)
 
-    def test_convert_help_explains_page_is_a_single_page_scaffold(self) -> None:
+    def test_convert_help_explains_page_is_an_optional_subset(self) -> None:
         result = run_cli("convert", "--help")
 
         stdout = unwrapped(result.stdout)
         self.assertIn("1-indexed", stdout)
-        self.assertIn("issue #1", stdout)
+        self.assertIn("subset", stdout)
+        self.assertIn("whole document", stdout)
 
     def test_convert_help_includes_a_worked_example(self) -> None:
         result = run_cli("convert", "--help")
 
         self.assertIn("examples:", result.stdout)
-        self.assertIn("accessibilizer convert source.pdf --page 1", result.stdout)
+        self.assertIn("accessibilizer convert source.pdf", result.stdout)
 
 
 if __name__ == "__main__":

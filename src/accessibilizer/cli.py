@@ -37,24 +37,35 @@ from accessibilizer.runtime import (
 PDF_AUTHOR_JAR = "/opt/accessibilizer/pdf-author.jar"
 
 
-class VisualReport(TypedDict):
+class PageVisualReport(TypedDict):
+    source_page: int
+    output_page: int
     different_pixel_ratio: float
     output_height: int
     output_width: int
     source_height: int
     source_width: int
+
+
+class VisualReport(TypedDict):
+    pages: list[PageVisualReport]
+    max_different_pixel_ratio: float
     tolerance: float
+    passed: bool
+
+
+VISUAL_TOLERANCE = 0.0001
 
 
 CONVERT_EPILOG = """\
 examples:
-  accessibilizer convert source.pdf --page 1 \\
+  accessibilizer convert source.pdf \\
       --bundle output.accessibilizer \\
       --provider-base-url http://localhost:11434/v1 \\
       --provider-model exact-model-identifier \\
       --provider-data-location local --json
 
-  accessibilizer convert source.pdf --page 1 \\
+  accessibilizer convert source.pdf --page 1-3 \\
       --bundle output.accessibilizer \\
       --provider-base-url http://localhost:11434/v1 \\
       --provider-model exact-model-identifier \\
@@ -110,11 +121,10 @@ def _parser() -> argparse.ArgumentParser:
     convert.add_argument("source", type=Path, help="path to the Source PDF to convert")
     convert.add_argument(
         "--page",
-        type=int,
-        required=True,
         help=(
-            "single, required page number (1-indexed) to convert; whole-document "
-            "conversion is tracked by issue #1"
+            "optional subset of pages to convert (1-indexed); accepts a single page "
+            "(3), a range (1-11), or a comma list (1,3,5). Defaults to the whole "
+            "document."
         ),
     )
     convert.add_argument(
@@ -369,6 +379,76 @@ def _host_bundle(bundle: Path) -> Path:
     return Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
 
 
+def _pdf_page_count(pdf: Path) -> int:
+    info = _run(["pdfinfo", str(pdf)])
+    if info.returncode:
+        raise RuntimeError(f"could not read the Source PDF page count: {info.stderr.strip()}")
+    for line in info.stdout.splitlines():
+        if line.startswith("Pages:"):
+            return int(line.split(":", 1)[1])
+    raise RuntimeError("could not read the Source PDF page count")
+
+
+def _parse_page_selection(spec: str | None, total: int) -> list[int]:
+    """Resolve a --page subset spec against a document's page count.
+
+    Accepts a single page (``3``), a range (``1-11``), or a comma list
+    (``1,3,5``). Defaults to the whole document. Every selected page must be
+    within the document.
+    """
+    if spec is None:
+        return list(range(1, total + 1))
+    pages: set[int] = set()
+    for raw in spec.split(","):
+        part = raw.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part:
+                low_text, high_text = part.split("-", 1)
+                low, high = int(low_text), int(high_text)
+                if low > high:
+                    raise ValueError
+                pages.update(range(low, high + 1))
+            else:
+                pages.add(int(part))
+        except ValueError:
+            raise ValueError(f"invalid --page selection: {spec}") from None
+    selected = sorted(pages)
+    if not selected:
+        raise ValueError(f"invalid --page selection: {spec}")
+    for page in selected:
+        if page < 1 or page > total:
+            raise ValueError(
+                f"page {page} is outside the document (1-{total})"
+            )
+    return selected
+
+
+def _authoring_contract(record: dict[str, Any]) -> dict[str, Any]:
+    """Group a flat whole-document Review Record into the Java authoring contract.
+
+    The Review Record's Semantic Layer is one flat list whose nodes each carry a
+    ``page``; the authoring boundary wants the nodes grouped per source page, in
+    document Logical Reading Order, without the ``page`` tag on each node.
+    """
+    grouped: dict[int, list[dict[str, Any]]] = {page: [] for page in record["pages"]}
+    for node in record["semantic_layer"]:
+        page = node["page"]
+        grouped.setdefault(page, []).append(
+            {key: value for key, value in node.items() if key != "page"}
+        )
+    return {
+        "schema_version": "2.0",
+        "title": record["title"],
+        "language": record["language"],
+        "pages": [
+            {"source_page": page, "semantic_layer": grouped[page]}
+            for page in record["pages"]
+        ],
+    }
+
+
 def _read_ppm(path: Path) -> tuple[int, int, bytes]:
     data = path.read_bytes()
     position = 0
@@ -391,16 +471,18 @@ def _read_ppm(path: Path) -> tuple[int, int, bytes]:
     return int(tokens[1]), int(tokens[2]), data[position:]
 
 
-def _visual_report(source: Path, output: Path, page: int, directory: Path) -> VisualReport:
+def _page_visual_report(
+    source: Path, output: Path, source_page: int, output_page: int, directory: Path
+) -> PageVisualReport:
     source_prefix = directory / "source-render"
     output_prefix = directory / "output-render"
     source_render = _run([
-        "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-r", "144",
-        str(source), str(source_prefix),
+        "pdftoppm", "-f", str(source_page), "-l", str(source_page), "-singlefile",
+        "-r", "144", str(source), str(source_prefix),
     ])
     output_render = _run([
-        "pdftoppm", "-f", "1", "-l", "1", "-singlefile", "-r", "144",
-        str(output), str(output_prefix),
+        "pdftoppm", "-f", str(output_page), "-l", str(output_page), "-singlefile",
+        "-r", "144", str(output), str(output_prefix),
     ])
     if source_render.returncode or output_render.returncode:
         raise RuntimeError(source_render.stderr + output_render.stderr)
@@ -416,51 +498,157 @@ def _visual_report(source: Path, output: Path, page: int, directory: Path) -> Vi
         )
         different_ratio = different / pixels
     return {
+        "source_page": source_page,
+        "output_page": output_page,
         "different_pixel_ratio": different_ratio,
         "output_height": output_height,
         "output_width": output_width,
         "source_height": source_height,
         "source_width": source_width,
-        "tolerance": 0.0001,
+    }
+
+
+def _visual_report(
+    source: Path, output: Path, source_pages: list[int], directory: Path
+) -> VisualReport:
+    """Full-page visual regression: compare every authored page to its source page.
+
+    The authored ``output.pdf`` holds the selected source pages in order, so output
+    page ``i`` corresponds to ``source_pages[i - 1]``.
+    """
+    pages: list[PageVisualReport] = []
+    for output_page, source_page in enumerate(source_pages, start=1):
+        pages.append(
+            _page_visual_report(source, output, source_page, output_page, directory)
+        )
+    for render in directory.glob("*-render.ppm"):
+        render.unlink()
+    max_ratio = max((page["different_pixel_ratio"] for page in pages), default=0.0)
+    return {
+        "pages": pages,
+        "max_different_pixel_ratio": max_ratio,
+        "tolerance": VISUAL_TOLERANCE,
+        "passed": max_ratio <= VISUAL_TOLERANCE,
     }
 
 
 def _internal_checks(
-    semantics: dict[str, Any], extracted_semantics: dict[str, Any]
-) -> dict[str, object]:
-    expected = semantics["semantic_layer"]
-    actual = extracted_semantics.get("semantic_layer")
+    record: dict[str, Any], extracted: dict[str, Any]
+) -> dict[str, Any]:
+    """Run the internal semantic checks over the authored whole-document output.
+
+    The checks read the authored structure tree back out of ``output.pdf`` and
+    confirm the Semantic Layer that reaches assistive technology is exactly the one
+    the Review Record describes. Each named category covers one acceptance concern.
+    """
+    categories: dict[str, bool] = {}
     failures: list[str] = []
-    if actual != expected:
-        failures.append(
-            "output PDF Semantic Layer does not match the required Logical Reading Order"
-        )
+
+    def check(name: str, ok: bool, message: str) -> None:
+        categories[name] = ok
+        if not ok:
+            failures.append(f"{name}: {message}")
+
+    # Review Record consistency: the record still validates and its pages agree.
+    consistent = True
+    try:
+        review.validate_review_record(record)
+    except review.ReviewRecordError:
+        consistent = False
+    node_pages = {node["page"] for node in record["semantic_layer"]}
+    consistent = consistent and node_pages.issubset(set(record["pages"]))
+    check("review-record-consistency", consistent,
+          "the Review Record does not validate against its schema, or a node names a "
+          "page outside the converted set")
+
+    # Reading order: the authored structure tree matches the record's Semantic
+    # Layer grouped per page, in document Logical Reading Order. The output PDF
+    # does not echo the source page numbers, so the authored pages are compared in
+    # order against the record's per-page node lists.
+    expected_layers = [
+        page["semantic_layer"] for page in _authoring_contract(record)["pages"]
+    ]
+    actual_layers = [
+        page.get("semantic_layer") for page in extracted.get("pages", [])
+    ]
+    check("reading-order", actual_layers == expected_layers,
+          "the output PDF structure tree does not match the Logical Reading Order")
+
+    # Source-region coverage: every warning that names a source region resolves to
+    # a retained candidate crop, so each warning can be checked against evidence.
+    candidate_ids = {candidate["id"] for candidate in record.get("candidates", [])}
+    uncovered = [
+        warning["region"]
+        for warning in record.get("warnings", [])
+        if warning.get("region") and warning["region"] not in candidate_ids
+    ]
+    check("source-region-coverage", not uncovered,
+          f"warnings reference source regions with no retained crop: {uncovered}")
+
+    # Alternatives: every Formula, Informative Figure, and link exposes its
+    # required alternative text.
+    missing_alternatives: list[str] = []
+    for node in record["semantic_layer"]:
+        if node["type"] == "formula" and not node.get("spoken_math_alternative"):
+            missing_alternatives.append("formula spoken_math_alternative")
+        if node["type"] == "figure":
+            if not node.get("figure_alternative"):
+                missing_alternatives.append("figure_alternative")
+            if node.get("complexity") == "complex" and not node.get(
+                "detailed_figure_description"
+            ):
+                missing_alternatives.append("detailed_figure_description")
+        if node["type"] == "link" and not node.get("text"):
+            missing_alternatives.append("link text")
+    check("alternatives", not missing_alternatives,
+          f"semantic nodes are missing alternatives: {missing_alternatives}")
+
+    # Table relationships: every Semantic Table has at least one header cell and
+    # every header cell associates the cells it labels through a scope.
+    table_problems: list[str] = []
+    for node in record["semantic_layer"]:
+        if node["type"] != "table":
+            continue
+        cells = [cell for row in node["rows"] for cell in row["cells"]]
+        if not any(cell["kind"] == "header" for cell in cells):
+            table_problems.append("a table has no header cell")
+        for cell in cells:
+            if cell["kind"] == "header" and cell["scope"] == "none":
+                table_problems.append("a header cell has no scope")
+    check("table-relationships", not table_problems,
+          f"table header relationships are incomplete: {table_problems}")
+
+    # Recognition agreement: every Formula, table, and Figure node sits on a page
+    # whose reconstruction was cross-checked against an independent crop of that
+    # type. This is a structural coverage check (a missing cross-check is an
+    # operational failure); a crop that was checked and *disagreed* is a semantic
+    # concern surfaced as a recognition-disagreement Conversion Warning (exit 2),
+    # never a gate failure here (exit 1).
+    verified: dict[int, set[str]] = {}
+    for page in record["reconstruction"]["pages"]:
+        verified[page["page"]] = {
+            region["type"] for region in page["verified_regions"]
+        }
+    ungrounded: list[str] = []
+    for node in record["semantic_layer"]:
+        if node["type"] in {"formula", "figure", "table"}:
+            if node["type"] not in verified.get(node["page"], set()):
+                ungrounded.append(f"{node['type']} on page {node['page']}")
+    check("recognition-agreement", not ungrounded,
+          f"reconstructed regions were not verified against a crop: {ungrounded}")
+
     return {
+        "categories": categories,
         "checks": failures,
         "passed": not failures,
-        "semantic_layer": actual,
         "source": "output.pdf structure tree",
     }
 
 
-def _author_pdf(
-    *,
-    source_pdf: Path,
-    output: Path,
-    authoring_contract: Path,
-    language: str,
-    page_number: int,
-    semantic_layer: list[dict[str, Any]],
-    title: str,
-) -> None:
-    """Author output.pdf from a Semantic Layer through the Java authoring boundary."""
-    atomic_write_json(authoring_contract, {
-        "language": language,
-        "page": page_number,
-        "schema_version": "1.0",
-        "semantic_layer": semantic_layer,
-        "title": title,
-    })
+def _author_pdf(*, source_pdf: Path, output: Path, authoring_contract: Path,
+                record: dict[str, Any]) -> None:
+    """Author output.pdf from a whole-document Review Record through Java."""
+    atomic_write_json(authoring_contract, _authoring_contract(record))
     authored = _run([
         "java", "-jar", PDF_AUTHOR_JAR,
         str(authoring_contract), str(source_pdf), str(output),
@@ -474,8 +662,7 @@ def _run_output_gates(
     workspace: Path,
     source_pdf: Path,
     output: Path,
-    page_number: int,
-    semantics: dict[str, Any],
+    record: dict[str, Any],
     internal_artifact: Path,
     visual_artifact: Path,
     verapdf_artifact: Path,
@@ -488,35 +675,120 @@ def _run_output_gates(
     if inspected.returncode:
         raise RuntimeError(f"PDF semantic inspection failed: {inspected.stderr}")
     try:
-        extracted_semantics: dict[str, Any] = json.loads(inspected.stdout)
+        extracted: dict[str, Any] = json.loads(inspected.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
-    internal = _internal_checks(semantics, extracted_semantics)
+    internal = _internal_checks(record, extracted)
     atomic_write_json(internal_artifact, internal)
-    visual = _visual_report(source_pdf, output, page_number, workspace)
+    visual = _visual_report(source_pdf, output, list(record["pages"]), workspace)
     atomic_write_json(visual_artifact, visual)
-    for render in workspace.glob("*-render.ppm"):
-        render.unlink()
     verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
     atomic_write_text(verapdf_artifact, verapdf.stdout)
     compliant = 'isCompliant="true"' in verapdf.stdout
-    visual_failed = visual["different_pixel_ratio"] > visual["tolerance"]
-    if not internal["passed"] or visual_failed or not compliant:
+    if not internal["passed"] or not visual["passed"] or not compliant:
         raise RuntimeError("conversion failed its accessibility or visual-preservation gates")
+
+
+def _source_stage(
+    *, checkpoints: CheckpointStore, source: Path,
+    source_copy: Path, source_sha256: str, preflight_artifact: Path,
+) -> None:
+    """Copy, verify, and preflight the immutable Source PDF (once per bundle)."""
+    source_key = dependency_key({
+        "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
+        "preflight_contract_version": "1.0",
+        "preflight_stage_version": "1.0",
+        "source_sha256": source_sha256,
+    })
+    if checkpoints.is_reusable("source", source_key):
+        return
+    _atomic_copy(source, source_copy, stat.S_IRUSR)
+    if file_sha256(source_copy) != source_sha256:
+        raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
+    preflight = _run(["java", "-jar", PDF_AUTHOR_JAR, "--preflight", str(source_copy)])
+    if preflight.returncode:
+        raise RuntimeError(f"Source PDF preflight failed: {preflight.stderr.strip()}")
+    try:
+        preflight_result: dict[str, Any] = json.loads(preflight.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Source PDF preflight returned invalid JSON") from error
+    unsupported_features = preflight_result.get("unsupported_features")
+    if not isinstance(unsupported_features, list):
+        raise RuntimeError("Source PDF preflight returned an invalid result")
+    if unsupported_features:
+        features = ", ".join(str(feature) for feature in unsupported_features)
+        raise RuntimeError(f"Unsupported Source PDF: {features}")
+    atomic_write_json(preflight_artifact, preflight_result)
+    checkpoints.complete("source", source_key, [source_copy, preflight_artifact])
+
+
+def _recognize_page(
+    *, checkpoints: CheckpointStore, source_copy: Path,
+    source_sha256: str, page_number: int, backend: recognition.RecognitionBackend,
+    regions: Path, recognition_directory: Path,
+    pdftoppm_version: str, pdftotext_version: str,
+) -> str:
+    """Run the region-crop and specialized-recognition stages for one page.
+
+    Returns the recognition stage's dependency key so downstream keys can depend
+    on it.
+    """
+    crop_artifact = regions / f"page-{page_number}.png"
+    region_key = dependency_key({
+        "format": "png",
+        "page": page_number,
+        "renderer": "pdftoppm",
+        "renderer_version": pdftoppm_version,
+        "rendering_dpi": 144,
+        "source_sha256": source_sha256,
+    })
+    if not checkpoints.is_reusable(f"region-page-{page_number}", region_key):
+        crop = _run([
+            "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
+            "-r", "144", "-png", str(source_copy), str(regions / f"page-{page_number}"),
+        ])
+        if crop.returncode:
+            raise RuntimeError(f"source-region crop failed: {crop.stderr}")
+        checkpoints.complete(f"region-page-{page_number}", region_key, [crop_artifact])
+
+    recognition_key = dependency_key({
+        "backend": backend.name,
+        "backend_version": backend.version,
+        "page": page_number,
+        "pdf_text_extractor": "pdftotext",
+        "pdf_text_extractor_version": pdftotext_version,
+        "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
+        "recognition_dpi": recognition.RECOGNITION_DPI,
+        "renderer": "pdftoppm",
+        "renderer_version": pdftoppm_version,
+        "source_sha256": source_sha256,
+        "weights_version": backend.weights_version,
+    })
+    recognition_stage = f"recognition-page-{page_number}"
+    if not checkpoints.is_reusable(recognition_stage, recognition_key):
+        recognized = recognition.recognize_page(
+            source_pdf=source_copy,
+            page=page_number,
+            dpi=recognition.RECOGNITION_DPI,
+            regions_dir=regions,
+            recognition_dir=recognition_directory,
+            backend=backend,
+            source_sha256=source_sha256,
+            renderer_version=pdftoppm_version,
+            extractor_version=pdftotext_version,
+        )
+        checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
+    return recognition_key
 
 
 def _convert(args: argparse.Namespace) -> int:
     source: Path = args.source
     bundle: Path = args.bundle
-    if args.page < 1:
-        raise ValueError("--page must be positive")
     provider = resolve_provider(args)
     limits = resolve_conversion_limits(args)
     authorize_remote(provider, allow_remote=args.allow_remote)
     bundle.parent.mkdir(parents=True, exist_ok=True)
-    workspace = _prepare_workspace(
-        bundle, replace=args.replace, resume=args.resume
-    )
+    workspace = _prepare_workspace(bundle, replace=args.replace, resume=args.resume)
     checkpoints = CheckpointStore(workspace)
 
     capability_key = dependency_key({
@@ -528,9 +800,7 @@ def _convert(args: argparse.Namespace) -> int:
     })
     capability_reusable = checkpoints.is_reusable("provider-capability", capability_key)
     capability_estimate = 0 if capability_reusable else 1
-    budget = _request_budget(
-        workspace, limits, estimated_requests=capability_estimate
-    )
+    budget = _request_budget(workspace, limits, estimated_requests=capability_estimate)
     if not capability_reusable:
         if budget.actual_requests + 1 > budget.ceiling:
             raise RequestCeilingExceeded(
@@ -550,121 +820,78 @@ def _convert(args: argparse.Namespace) -> int:
     validation.mkdir(mode=0o700, exist_ok=True)
     source_copy = workspace / "source.pdf"
     source_sha256 = file_sha256(source)
-    source_key = dependency_key({
-        "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
-        "preflight_contract_version": "1.0",
-        "preflight_stage_version": "1.0",
-        "source_sha256": source_sha256,
-    })
-    preflight_artifact = validation / "preflight.json"
-    if not checkpoints.is_reusable("source", source_key):
-        _atomic_copy(source, source_copy, stat.S_IRUSR)
-        if file_sha256(source_copy) != source_sha256:
-            raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
-        preflight = _run([
-            "java", "-jar", PDF_AUTHOR_JAR, "--preflight",
-            str(source_copy),
-        ])
-        if preflight.returncode:
-            raise RuntimeError(f"Source PDF preflight failed: {preflight.stderr.strip()}")
-        try:
-            preflight_result: dict[str, Any] = json.loads(preflight.stdout)
-        except json.JSONDecodeError as error:
-            raise RuntimeError("Source PDF preflight returned invalid JSON") from error
-        unsupported_features = preflight_result.get("unsupported_features")
-        if not isinstance(unsupported_features, list):
-            raise RuntimeError("Source PDF preflight returned an invalid result")
-        if unsupported_features:
-            features = ", ".join(str(feature) for feature in unsupported_features)
-            raise RuntimeError(f"Unsupported Source PDF: {features}")
-        atomic_write_json(preflight_artifact, preflight_result)
-        checkpoints.complete("source", source_key, [source_copy, preflight_artifact])
+    _source_stage(
+        checkpoints=checkpoints, source=source,
+        source_copy=source_copy, source_sha256=source_sha256,
+        preflight_artifact=validation / "preflight.json",
+    )
+
+    pages = _parse_page_selection(args.page, _pdf_page_count(source_copy))
 
     regions = workspace / "regions"
     regions.mkdir(mode=0o700, exist_ok=True)
-    crop_artifact = regions / f"page-{args.page}.png"
-    region_key = dependency_key({
-        "format": "png",
-        "page": args.page,
-        "renderer": "pdftoppm",
-        "renderer_version": _tool_version(["pdftoppm", "-v"]),
-        "rendering_dpi": 144,
-        "source_sha256": source_sha256,
-    })
-    if not checkpoints.is_reusable(f"region-page-{args.page}", region_key):
-        crop = _run([
-            "pdftoppm", "-f", str(args.page), "-l", str(args.page), "-singlefile",
-            "-r", "144", "-png", str(source_copy),
-            str(regions / f"page-{args.page}"),
-        ])
-        if crop.returncode:
-            raise RuntimeError(f"source-region crop failed: {crop.stderr}")
-        checkpoints.complete(
-            f"region-page-{args.page}", region_key, [crop_artifact]
-        )
-
     recognition_directory = workspace / "recognition"
     recognition_directory.mkdir(mode=0o700, exist_ok=True)
+    page_semantics_dir = workspace / "page-semantics"
+    page_semantics_dir.mkdir(mode=0o700, exist_ok=True)
     backend = recognition.select_backend(os.environ)
     pdftoppm_version = _tool_version(["pdftoppm", "-v"])
     pdftotext_version = _tool_version(["pdftotext", "-v"])
-    recognition_key = dependency_key({
-        "backend": backend.name,
-        "backend_version": backend.version,
-        "page": args.page,
-        "pdf_text_extractor": "pdftotext",
-        "pdf_text_extractor_version": pdftotext_version,
-        "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
-        "recognition_dpi": recognition.RECOGNITION_DPI,
-        "renderer": "pdftoppm",
-        "renderer_version": pdftoppm_version,
-        "source_sha256": source_sha256,
-        "weights_version": backend.weights_version,
-    })
-    recognition_stage = f"recognition-page-{args.page}"
-    if not checkpoints.is_reusable(recognition_stage, recognition_key):
-        recognized = recognition.recognize_page(
-            source_pdf=source_copy,
-            page=args.page,
-            dpi=recognition.RECOGNITION_DPI,
-            regions_dir=regions,
-            recognition_dir=recognition_directory,
-            backend=backend,
-            source_sha256=source_sha256,
-            renderer_version=pdftoppm_version,
-            extractor_version=pdftotext_version,
+
+    # First pass over every selected page: crop, recognize, and work out the
+    # page-semantics dependency key so the whole conversion's request estimate is
+    # known before any reconstruction call is made.
+    recognition_keys: dict[int, str] = {}
+    page_candidates: dict[int, list[dict[str, Any]]] = {}
+    page_words: dict[int, list[dict[str, Any]]] = {}
+    page_semantics_keys: dict[int, str] = {}
+    page_semantics_reusable: dict[int, bool] = {}
+    total_estimate = capability_estimate
+    for page_number in pages:
+        recognition_keys[page_number] = _recognize_page(
+            checkpoints=checkpoints, source_copy=source_copy,
+            source_sha256=source_sha256, page_number=page_number, backend=backend,
+            regions=regions, recognition_directory=recognition_directory,
+            pdftoppm_version=pdftoppm_version, pdftotext_version=pdftotext_version,
         )
-        checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
+        recognition_document: dict[str, Any] = json.loads(
+            (recognition_directory / f"page-{page_number}.json").read_text(encoding="utf-8")
+        )
+        candidates = recognition_document["candidates"]
+        page_candidates[page_number] = candidates
+        page_words[page_number] = recognition_document["pdf_text_evidence"]["words"]
+        page_semantics_keys[page_number] = dependency_key({
+            "base_url": provider.base_url,
+            "model": provider.model,
+            "page": page_number,
+            "page_prompt_version": page.PAGE_PROMPT_VERSION,
+            "page_schema_version": page.PAGE_SCHEMA_VERSION,
+            "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
+            "recognition_stage": recognition_keys[page_number],
+            "region_prompt_version": page.REGION_PROMPT_VERSION,
+            "region_schema_version": page.REGION_SCHEMA_VERSION,
+            "source_sha256": source_sha256,
+        })
+        reusable = checkpoints.is_reusable(
+            f"page-semantics-page-{page_number}", page_semantics_keys[page_number]
+        )
+        page_semantics_reusable[page_number] = reusable
+        if not reusable:
+            total_estimate += page.expected_request_count(candidates)
 
-    recognition_document: dict[str, Any] = json.loads(
-        (recognition_directory / f"page-{args.page}.json").read_text(encoding="utf-8")
-    )
-    candidates = recognition_document["candidates"]
-    pdf_words = recognition_document["pdf_text_evidence"]["words"]
-
-    page_semantics_path = workspace / "page-semantics.json"
-    page_semantics_key = dependency_key({
-        "base_url": provider.base_url,
-        "model": provider.model,
-        "page": args.page,
-        "page_prompt_version": page.PAGE_PROMPT_VERSION,
-        "page_schema_version": page.PAGE_SCHEMA_VERSION,
-        "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
-        "recognition_stage": recognition_key,
-        "region_prompt_version": page.REGION_PROMPT_VERSION,
-        "region_schema_version": page.REGION_SCHEMA_VERSION,
-        "source_sha256": source_sha256,
-    })
-    page_semantics_stage = f"page-semantics-page-{args.page}"
-    page_semantics_reusable = checkpoints.is_reusable(page_semantics_stage, page_semantics_key)
-    page_requests = 0 if page_semantics_reusable else page.expected_request_count(candidates)
-    budget.update_estimate(capability_estimate + page_requests)
+    budget.update_estimate(total_estimate)
     if not args.json:
         print(
             f"Estimated provider requests: {budget.estimated_requests} "
             f"(ceiling: {budget.ceiling})"
         )
-    if not page_semantics_reusable:
+
+    # Second pass: reconstruct each page that cannot be reused, enforcing the
+    # request ceiling against the running total before every page.
+    for page_number in pages:
+        if page_semantics_reusable[page_number]:
+            continue
+        page_requests = page.expected_request_count(page_candidates[page_number])
         if budget.actual_requests + page_requests > budget.ceiling:
             raise RequestCeilingExceeded(
                 f"conversion paused before exceeding request ceiling {budget.ceiling}; "
@@ -672,29 +899,55 @@ def _convert(args: argparse.Namespace) -> int:
             )
         semantics_document = page.reconstruct_page(
             provider,
-            page=args.page,
+            page=page_number,
             source_sha256=source_sha256,
-            page_image=crop_artifact,
+            page_image=regions / f"page-{page_number}.png",
             regions_dir=regions,
-            candidates=candidates,
-            pdf_words=pdf_words,
+            candidates=page_candidates[page_number],
+            pdf_words=page_words[page_number],
             budget=budget,
             max_retries=limits.provider_max_retries,
             retry_base_seconds=limits.provider_retry_base_seconds,
             retry_max_seconds=limits.provider_retry_max_seconds,
         )
-        atomic_write_json(page_semantics_path, semantics_document)
-        checkpoints.complete(page_semantics_stage, page_semantics_key, [page_semantics_path])
+        atomic_write_json(
+            page_semantics_dir / f"page-{page_number}.json", semantics_document
+        )
+        checkpoints.complete(
+            f"page-semantics-page-{page_number}",
+            page_semantics_keys[page_number],
+            [page_semantics_dir / f"page-{page_number}.json"],
+        )
 
-    semantics: dict[str, Any] = json.loads(
-        page_semantics_path.read_text(encoding="utf-8")
+    # Assemble the whole-document Review Record from every page's reconstruction,
+    # injecting each page's retained recognition candidates.
+    page_documents: list[dict[str, Any]] = []
+    for page_number in pages:
+        document = json.loads(
+            (page_semantics_dir / f"page-{page_number}.json").read_text(encoding="utf-8")
+        )
+        document["candidates"] = page_candidates[page_number]
+        page_documents.append(document)
+    first = page_documents[0]
+    record = review.build_review_record(
+        source_sha256=source_sha256,
+        title=first["title"],
+        language=first["language"],
+        provider_endpoint=provider.base_url,
+        provider_model=provider.model,
+        page_prompt_version=page.PAGE_PROMPT_VERSION,
+        page_schema_version=page.PAGE_SCHEMA_VERSION,
+        region_prompt_version=page.REGION_PROMPT_VERSION,
+        region_schema_version=page.REGION_SCHEMA_VERSION,
+        pages=page_documents,
     )
-    page_key = dependency_key({
-        "authoring_contract_version": "1.0",
-        "page_semantics_stage": page_semantics_key,
-        "page_stage_version": "3.0",
+    review.validate_review_record(record)
+
+    document_key = dependency_key({
+        "authoring_contract_version": "2.0",
+        "document_stage_version": "1.0",
+        "page_semantics_stages": [page_semantics_keys[p] for p in pages],
         "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
-        "page": args.page,
         "review_record_schema_version": review.REVIEW_RECORD_SCHEMA_VERSION,
         "review_report_version": review.REVIEW_REPORT_VERSION,
         "source_sha256": source_sha256,
@@ -704,10 +957,7 @@ def _convert(args: argparse.Namespace) -> int:
     review_report = workspace / "review-report.html"
     authoring_contract = workspace / "authoring.json"
     output = workspace / "output.pdf"
-    page_stage = f"page-{args.page}"
-    if not checkpoints.is_reusable(page_stage, page_key):
-        record = review.build_review_record(page_semantics=semantics, candidates=candidates)
-        review.validate_review_record(record)
+    if not checkpoints.is_reusable("document", document_key):
         atomic_write_text(review_record, review.dump_yaml(record))
         atomic_write_json(review_baseline, record)
         atomic_write_text(review_report, review.render_review_report(record))
@@ -715,25 +965,22 @@ def _convert(args: argparse.Namespace) -> int:
             source_pdf=source_copy,
             output=output,
             authoring_contract=authoring_contract,
-            language=semantics["language"],
-            page_number=args.page,
-            semantic_layer=semantics["semantic_layer"],
-            title=semantics["title"],
+            record=record,
         )
         checkpoints.complete(
-            page_stage,
-            page_key,
+            "document",
+            document_key,
             [review_record, review_baseline, review_report, authoring_contract, output],
         )
 
     validation_key = dependency_key({
-        "internal_checks_version": "1.0",
-        "page_stage": page_key,
-        "region_stage": region_key,
+        "document_stage": document_key,
+        "internal_checks_version": "2.0",
+        "region_stages": [recognition_keys[p] for p in pages],
         "verapdf_profile": "ua1",
         "verapdf_version": _tool_version(["verapdf", "--version"]),
         "visual_dpi": 144,
-        "visual_tolerance": 0.0001,
+        "visual_tolerance": VISUAL_TOLERANCE,
     })
     internal_artifact = validation / "internal.json"
     visual_artifact = validation / "visual.json"
@@ -743,8 +990,7 @@ def _convert(args: argparse.Namespace) -> int:
             workspace=workspace,
             source_pdf=source_copy,
             output=output,
-            page_number=args.page,
-            semantics=semantics,
+            record=record,
             internal_artifact=internal_artifact,
             visual_artifact=visual_artifact,
             verapdf_artifact=verapdf_artifact,
@@ -757,7 +1003,7 @@ def _convert(args: argparse.Namespace) -> int:
 
     atomic_write_json(workspace / "provenance.json", {
         "accessibilizer_version": __version__,
-        "authoring_contract_version": "1.0",
+        "authoring_contract_version": "2.0",
         "page_prompt_version": page.PAGE_PROMPT_VERSION,
         "page_schema_version": page.PAGE_SCHEMA_VERSION,
         "page_semantics_contract_version": page.PAGE_SEMANTICS_CONTRACT_VERSION,
@@ -771,7 +1017,7 @@ def _convert(args: argparse.Namespace) -> int:
         "recognition_weights_version": backend.weights_version,
         "source_copy_verified": True,
         "source_sha256": source_sha256,
-        "source_page": args.page,
+        "source_pages": pages,
         "provider_data_location": provider.data_location,
         "provider_endpoint": provider.base_url,
         "provider_model": provider.model,
@@ -780,9 +1026,7 @@ def _convert(args: argparse.Namespace) -> int:
     _publish_bundle(workspace, bundle, args.replace)
 
     host_bundle = _host_bundle(bundle)
-    review_required = any(
-        warning.get("status") == "unresolved" for warning in semantics.get("warnings", [])
-    )
+    review_required = bool(review.unresolved_warnings(record))
     result = {
         "bundle": str(host_bundle),
         "output": str(host_bundle / "output.pdf"),
@@ -885,17 +1129,13 @@ def _rebuild_and_validate(workspace: Path, record: dict[str, Any]) -> None:
         source_pdf=source_copy,
         output=output,
         authoring_contract=workspace / "authoring.json",
-        language=record["language"],
-        page_number=record["page"],
-        semantic_layer=record["semantic_layer"],
-        title=record["title"],
+        record=record,
     )
     _run_output_gates(
         workspace=workspace,
         source_pdf=source_copy,
         output=output,
-        page_number=record["page"],
-        semantics=record,
+        record=record,
         internal_artifact=validation / "internal.json",
         visual_artifact=validation / "visual.json",
         verapdf_artifact=validation / "verapdf.xml",
