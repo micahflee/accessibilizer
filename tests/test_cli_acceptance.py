@@ -332,6 +332,107 @@ class OnePageConversionTest(unittest.TestCase):
         self.assertEqual(authored["figure_alternative"], "A single-loop resistor circuit.")
         self.assertEqual(authored["detailed_figure_description"], detailed)
 
+    def _table_survives(self, table: dict[str, object]) -> dict[str, object]:
+        """Convert with the given reconstructed table and return the table node the
+        internal check reads back out of the authored output.pdf."""
+        with (
+            FakeProvider(page_overrides={"table": table}) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "table.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+            self.assertIn(result.returncode, (0, 2), result.stderr)
+            self.assertTrue((bundle / "output.pdf").is_file())
+
+            internal = json.loads((bundle / "validation" / "internal.json").read_text())
+            self.assertTrue(internal["passed"], internal)
+            # The independent PDF/UA-1 validator agrees the tagged table is conformant.
+            self.assertIn(
+                'isCompliant="true"', (bundle / "validation" / "verapdf.xml").read_text()
+            )
+            authored: dict[str, object] = next(
+                node for node in internal["semantic_layer"] if node["type"] == "table"
+            )
+            # The structure tree read back out of the PDF is exactly the reconstructed
+            # Semantic Layer, so table semantics survived authoring end to end.
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(internal["semantic_layer"], record["semantic_layer"])
+            return authored
+
+    def test_a_semantic_table_survives_the_pdf_ua_authoring_path(self) -> None:
+        # A Semantic Table reaches assistive technology with its caption, column and
+        # row headers (with their associations), merged cells, and data cells intact.
+        table: dict[str, object] = {
+            "caption": "Resistivity of common materials at 20 degrees Celsius",
+            "boundaries_are_uncertain": False,
+            "headers_are_uncertain": False,
+            "rows": [
+                {
+                    "cells": [
+                        {"kind": "header", "text": "Electrical properties",
+                         "scope": "col", "row_span": 1, "col_span": 2},
+                    ]
+                },
+                {
+                    "cells": [
+                        {"kind": "header", "text": "Material", "scope": "col",
+                         "row_span": 1, "col_span": 1},
+                        {"kind": "header", "text": "Resistivity (ohm-metre)",
+                         "scope": "col", "row_span": 1, "col_span": 1},
+                    ]
+                },
+                {
+                    "cells": [
+                        {"kind": "header", "text": "Copper", "scope": "row",
+                         "row_span": 1, "col_span": 1},
+                        {"kind": "data", "text": "1.68e-8", "scope": "none",
+                         "row_span": 1, "col_span": 1},
+                    ]
+                },
+            ],
+        }
+        authored = self._table_survives(table)
+        self.assertEqual(
+            authored["caption"], "Resistivity of common materials at 20 degrees Celsius"
+        )
+        rows = authored["rows"]
+        assert isinstance(rows, list)
+        # The merged header cell keeps its two-column span and column scope.
+        self.assertEqual(rows[0]["cells"][0]["col_span"], 2)
+        self.assertEqual(rows[0]["cells"][0]["scope"], "col")
+        self.assertEqual(rows[0]["cells"][0]["kind"], "header")
+        # The row header and its data cell keep their associations and values.
+        self.assertEqual(rows[2]["cells"][0]["scope"], "row")
+        self.assertEqual(rows[2]["cells"][1]["kind"], "data")
+        self.assertEqual(rows[2]["cells"][1]["text"], "1.68e-8")
+
+    def test_a_captionless_table_survives_without_a_caption(self) -> None:
+        table: dict[str, object] = {
+            "caption": None,
+            "boundaries_are_uncertain": False,
+            "headers_are_uncertain": False,
+            "rows": [
+                {
+                    "cells": [
+                        {"kind": "header", "text": "Material", "scope": "col",
+                         "row_span": 1, "col_span": 1},
+                        {"kind": "header", "text": "Resistivity", "scope": "col",
+                         "row_span": 1, "col_span": 1},
+                    ]
+                },
+                {
+                    "cells": [
+                        {"kind": "header", "text": "Copper", "scope": "row",
+                         "row_span": 1, "col_span": 1},
+                        {"kind": "data", "text": "1.68e-8", "scope": "none",
+                         "row_span": 1, "col_span": 1},
+                    ]
+                },
+            ],
+        }
+        authored = self._table_survives(table)
+        self.assertNotIn("caption", authored)
+
     def test_finalize_is_blocked_until_every_warning_is_resolved(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             bundle = Path(temporary_directory) / "review-required.accessibilizer"
@@ -689,7 +790,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(review_record["schema_version"], "1.0")
             self.assertEqual(
                 [node["type"] for node in review_record["semantic_layer"]],
-                ["heading", "paragraph", "formula", "figure"],
+                ["heading", "paragraph", "formula", "figure", "table"],
             )
             self.assertIn("spoken_math_alternative", review_record["semantic_layer"][2])
             # The default reconstruction is a complex Informative Figure, so it
@@ -697,11 +798,16 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(review_record["semantic_layer"][3]["complexity"], "complex")
             self.assertIn("figure_alternative", review_record["semantic_layer"][3])
             self.assertIn("detailed_figure_description", review_record["semantic_layer"][3])
+            # The Semantic Table preserves its caption, headers, and cells.
+            table = review_record["semantic_layer"][4]
+            self.assertEqual(table["type"], "table")
+            self.assertTrue(table["caption"])
+            self.assertEqual(table["rows"][0]["cells"][0]["scope"], "col")
             self.assertEqual(review_record["warnings"], [])
             # The original recognition candidates are retained for source context.
             self.assertTrue(review_record["candidates"])
             self.assertTrue(all("crop" in c for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.2")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.3")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -721,7 +827,7 @@ class OnePageConversionTest(unittest.TestCase):
             self.assertEqual(
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
-            self.assertEqual(provenance["page_prompt_version"], "1.2")
+            self.assertEqual(provenance["page_prompt_version"], "1.3")
             self.assertEqual(provenance["page_schema_version"], "1.0")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)

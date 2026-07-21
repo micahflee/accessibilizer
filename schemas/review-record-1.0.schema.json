@@ -177,7 +177,8 @@
               "heading",
               "paragraph",
               "formula",
-              "figure"
+              "figure",
+              "table"
             ]
           },
           "type": "array"
@@ -285,6 +286,106 @@
       },
       "type": "object"
     },
+    "table": {
+      "additionalProperties": false,
+      "properties": {
+        "caption": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cells": {
+                "items": {
+                  "$ref": "#/$defs/table_cell"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            },
+            "required": [
+              "cells"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "type": {
+          "const": "table"
+        }
+      },
+      "required": [
+        "rows",
+        "type"
+      ],
+      "type": "object"
+    },
+    "table_cell": {
+      "additionalProperties": false,
+      "properties": {
+        "col_span": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "header",
+            "data"
+          ]
+        },
+        "row_span": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "col",
+            "row",
+            "both",
+            "none"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "col_span",
+        "kind",
+        "row_span",
+        "scope",
+        "text"
+      ],
+      "type": "object",
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "data"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "const": "none"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "scope": {
+            "enum": [
+              "col",
+              "row",
+              "both"
+            ]
+          }
+        }
+      }
+    },
     "warning": {
       "additionalProperties": false,
       "properties": {
@@ -373,6 +474,9 @@
         },
         {
           "$ref": "#/$defs/figure"
+        },
+        {
+          "$ref": "#/$defs/table"
         }
       ],
       "type": "array"

@@ -16,7 +16,8 @@
         {"$ref": "#/$defs/heading"},
         {"$ref": "#/$defs/paragraph"},
         {"$ref": "#/$defs/formula"},
-        {"$ref": "#/$defs/figure"}
+        {"$ref": "#/$defs/figure"},
+        {"$ref": "#/$defs/table"}
       ],
       "items": false
     }
@@ -64,6 +65,46 @@
       "if": {"properties": {"complexity": {"const": "complex"}}},
       "then": {"required": ["detailed_figure_description"]},
       "else": {"not": {"required": ["detailed_figure_description"]}}
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows", "type"],
+      "properties": {
+        "caption": {"type": "string", "minLength": 1},
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cells"],
+            "properties": {
+              "cells": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/table_cell"}
+              }
+            }
+          }
+        },
+        "type": {"const": "table"}
+      }
+    },
+    "table_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["col_span", "kind", "row_span", "scope", "text"],
+      "properties": {
+        "kind": {"enum": ["header", "data"]},
+        "text": {"type": "string"},
+        "scope": {"enum": ["col", "row", "both", "none"]},
+        "row_span": {"type": "integer", "minimum": 1},
+        "col_span": {"type": "integer", "minimum": 1}
+      },
+      "if": {"properties": {"kind": {"const": "data"}}},
+      "then": {"properties": {"scope": {"const": "none"}}},
+      "else": {"properties": {"scope": {"enum": ["col", "row", "both"]}}}
     }
   }
 }

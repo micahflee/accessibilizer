@@ -25,7 +25,7 @@ BASE_PAGE_CONTENT: dict[str, Any] = {
     "language": "en-US",
     "primary_language_is_english": True,
     "document_class": "stem_instructional",
-    "reading_order": ["heading", "paragraph", "formula", "figure"],
+    "reading_order": ["heading", "paragraph", "formula", "figure", "table"],
     "reading_order_is_unambiguous": True,
     "heading": {"level": 1, "text": "Electric Current, Resistance, and Ohm's Law"},
     "paragraph": {"text": "Electric current is the rate at which charge flows."},
@@ -40,6 +40,29 @@ BASE_PAGE_CONTENT: dict[str, Any] = {
             "A wire passes through a surface; positive charge moves along it in the "
             "direction of conventional current."
         ),
+    },
+    "table": {
+        "caption": "Resistivity of common materials at 20 degrees Celsius",
+        "boundaries_are_uncertain": False,
+        "headers_are_uncertain": False,
+        "rows": [
+            {
+                "cells": [
+                    {"kind": "header", "text": "Material", "scope": "col",
+                     "row_span": 1, "col_span": 1},
+                    {"kind": "header", "text": "Resistivity (ohm-metre)", "scope": "col",
+                     "row_span": 1, "col_span": 1},
+                ]
+            },
+            {
+                "cells": [
+                    {"kind": "header", "text": "Copper", "scope": "row",
+                     "row_span": 1, "col_span": 1},
+                    {"kind": "data", "text": "1.68e-8", "scope": "none",
+                     "row_span": 1, "col_span": 1},
+                ]
+            },
+        ],
     },
     "suspected_source_errors": [],
     "suspected_prompt_injection": False,
