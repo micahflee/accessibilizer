@@ -198,11 +198,16 @@ class SchemaShapeTest(unittest.TestCase):
 
     def test_figure_schema_classifies_complexity_and_allows_a_null_description(self) -> None:
         figure = page_response_schema()["properties"]["nodes"]["items"]["anyOf"][3]
-        self.assertEqual(figure["properties"]["complexity"]["enum"], ["simple", "complex"])
-        # detailed_figure_description is nullable (null for a simple figure) yet
-        # still required, so strict structured output names every property.
-        self.assertIn("null", figure["properties"]["detailed_figure_description"]["type"])
-        self.assertEqual(set(figure["required"]), set(figure["properties"]))
+        simple, complex_figure_schema = figure["anyOf"]
+        self.assertEqual(simple["properties"]["complexity"]["enum"], ["simple"])
+        self.assertEqual(complex_figure_schema["properties"]["complexity"]["enum"], ["complex"])
+        self.assertEqual(simple["properties"]["detailed_figure_description"]["type"], "null")
+        self.assertEqual(
+            complex_figure_schema["properties"]["detailed_figure_description"]["type"],
+            "string",
+        )
+        for variant in figure["anyOf"]:
+            self.assertEqual(set(variant["required"]), set(variant["properties"]))
 
     def test_table_schema_is_strict_and_carries_cells_with_scope_and_spans(self) -> None:
         table = page_response_schema()["properties"]["nodes"]["items"]["anyOf"][4]
@@ -211,10 +216,14 @@ class SchemaShapeTest(unittest.TestCase):
         # A caption may be absent (null) yet is still a named, required property.
         self.assertIn("null", table["properties"]["caption"]["type"])
         cell = table["properties"]["rows"]["items"]["properties"]["cells"]["items"]
-        self.assertFalse(cell["additionalProperties"])
-        self.assertEqual(set(cell["required"]), set(cell["properties"]))
-        self.assertEqual(cell["properties"]["kind"]["enum"], ["header", "data"])
-        self.assertEqual(cell["properties"]["scope"]["enum"], ["col", "row", "both", "none"])
+        header, data = cell["anyOf"]
+        for variant in cell["anyOf"]:
+            self.assertFalse(variant["additionalProperties"])
+            self.assertEqual(set(variant["required"]), set(variant["properties"]))
+        self.assertEqual(header["properties"]["kind"]["enum"], ["header"])
+        self.assertEqual(header["properties"]["scope"]["enum"], ["col", "row", "both"])
+        self.assertEqual(data["properties"]["kind"]["enum"], ["data"])
+        self.assertEqual(data["properties"]["scope"]["enum"], ["none"])
 
     def test_table_schema_rejects_empty_rows_and_cells(self) -> None:
         schema_document = page_response_schema()
@@ -231,9 +240,9 @@ class SchemaShapeTest(unittest.TestCase):
 
         self.assertTrue(list(schema.iter_errors(empty_rows)))
         self.assertTrue(list(schema.iter_errors(empty_cells)))
-        with self.assertRaisesRegex(ValueError, "table.rows must be a non-empty array"):
+        with self.assertRaisesRegex(ValueError, "provider schema"):
             validate_page_response(empty_rows)
-        with self.assertRaisesRegex(ValueError, "non-empty cells array"):
+        with self.assertRaisesRegex(ValueError, "provider schema"):
             validate_page_response(empty_cells)
 
     def test_node_regions_are_limited_to_the_deterministic_evidence_set(self) -> None:
@@ -311,13 +320,13 @@ class ResponseValidationTest(unittest.TestCase):
     def test_an_unknown_source_region_is_rejected(self) -> None:
         response = valid_page_response()
         response["nodes"][0]["source_regions"] = ["page-1-r9999"]
-        with self.assertRaisesRegex(ValueError, "unknown Source Region"):
+        with self.assertRaisesRegex(ValueError, "provider schema"):
             validate_page_response(response, source_region_ids=["page-1-r0000", "page-1-r0001"])
 
     def test_duplicate_source_regions_are_rejected_at_runtime(self) -> None:
         response = valid_page_response()
         response["nodes"][0]["source_regions"] = ["page-1-r0001", "page-1-r0001"]
-        with self.assertRaisesRegex(ValueError, "non-empty unique array"):
+        with self.assertRaisesRegex(ValueError, "unique array"):
             validate_page_response(response)
 
     def test_a_non_english_flag_is_still_schema_valid(self) -> None:
@@ -350,10 +359,14 @@ class ResponseValidationTest(unittest.TestCase):
             )
 
     def test_a_complex_figure_without_a_detailed_description_is_rejected(self) -> None:
+        response = valid_page_response(
+            figure=complex_figure(detailed_figure_description=None)
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
         with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(figure=complex_figure(detailed_figure_description=None))
-            )
+            validate_page_response(response)
 
     def test_a_simple_figure_needs_no_detailed_description(self) -> None:
         validate_page_response(
@@ -392,24 +405,28 @@ class ResponseValidationTest(unittest.TestCase):
 
     def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
         # Only header cells associate through a scope; a data cell must be "none".
-        with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(
-                    table=valid_table(
-                        rows=[{"cells": [_cell("data", "1.68e-8", scope="col")]}]
-                    )
-                )
+        response = valid_page_response(
+            table=valid_table(
+                rows=[{"cells": [_cell("data", "1.68e-8", scope="col")]}]
             )
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
+        with self.assertRaises(ValueError):
+            validate_page_response(response)
 
     def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(
-                    table=valid_table(
-                        rows=[{"cells": [_cell("header", "Material", scope="none")]}]
-                    )
-                )
+        response = valid_page_response(
+            table=valid_table(
+                rows=[{"cells": [_cell("header", "Material", scope="none")]}]
             )
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
+        with self.assertRaises(ValueError):
+            validate_page_response(response)
 
     def test_a_zero_span_cell_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
