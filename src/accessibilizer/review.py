@@ -628,6 +628,16 @@ def validate_review_record(record: dict[str, Any]) -> None:
         width, height = dimensions[page_number]
         if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
             fail(f"Source Region {identifier} bounds must be ordered and contained by page")
+    for page_number, (width, height) in dimensions.items():
+        fallback_id = f"page-{page_number}-r0000"
+        fallback = regions.get(fallback_id)
+        if fallback is None or [float(value) for value in fallback["bbox_points"]] != [
+            0.0, 0.0, width, height
+        ]:
+            fail(
+                f"page {page_number} requires whole-page fallback Source Region "
+                f"{fallback_id} with exact page bounds"
+            )
 
     nodes = unique_by_id("semantic_layer")
     for identifier, node in nodes.items():
@@ -668,6 +678,13 @@ def validate_review_record(record: dict[str, Any]) -> None:
             if warning_page is not None and warning_region["page"] != warning_page:
                 fail(f"warning {warning['id']} references a different-page Source Region")
 
+    reconstruction_pages = [
+        reconstruction["page"] for reconstruction in record["reconstruction"]["pages"]
+    ]
+    if len(reconstruction_pages) != len(set(reconstruction_pages)) or set(
+        reconstruction_pages
+    ) != page_set:
+        fail("reconstruction must describe every converted page exactly once")
     for reconstruction in record["reconstruction"]["pages"]:
         page_number = reconstruction["page"]
         for verified in reconstruction["verified_regions"]:
@@ -782,27 +799,56 @@ def _escape(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _warning_ids(
-    warnings: list[dict[str, Any]], *, node_id: str | None = None, region_id: str | None = None,
-    page: int | None = None,
-) -> str:
-    """Return explicit warning associations; never infer them from list position."""
+def _region_warning_ids(warnings: list[dict[str, Any]], region_id: str) -> str:
+    """Return explicit region warning associations; never infer from list position."""
     return " ".join(
         str(warning["id"])
         for warning in warnings
-        if (node_id is not None and node_id in warning.get("semantic_nodes", []))
-        or (region_id is not None and region_id in warning.get("source_regions", []))
-        or (page is not None and warning.get("page") == page
-            and not warning.get("semantic_nodes") and not warning.get("source_regions"))
-        or (page is None and warning.get("page") is None
-            and not warning.get("semantic_nodes") and not warning.get("source_regions"))
+        if region_id in warning.get("source_regions", [])
+    )
+
+
+def _warnings_for_node(
+    warnings: list[dict[str, Any]], node: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Return warnings explicitly attached to a node or one of its regions."""
+    node_id = node.get("id")
+    region_ids = {
+        region for region in node.get("source_regions", []) if isinstance(region, str)
+    }
+    return [
+        warning
+        for warning in warnings
+        if node_id in warning.get("semantic_nodes", [])
+        or bool(region_ids.intersection(warning.get("source_regions", [])))
+    ]
+
+
+def _warning_link(warning: dict[str, Any]) -> str:
+    identifier = _escape(warning.get("id", ""))
+    code = _escape(warning.get("code", ""))
+    message = _escape(warning.get("message", ""))
+    status = _status_label(warning.get("resolution"))
+    return (
+        f'<a href="#warning-{identifier}">{identifier}: {code}</a> — '
+        f"{message} (Status: {status})"
     )
 
 
 def _node_content(node: dict[str, Any]) -> str:
     node_type = str(node.get("type", ""))
-    if node_type in {"heading", "paragraph", "link"}:
+    if node_type == "heading":
+        return (
+            f"<dl><dt>Heading level</dt><dd>{_escape(node.get('level', ''))}</dd>"
+            f"<dt>Text</dt><dd>{_escape(node.get('text', ''))}</dd></dl>"
+        )
+    if node_type == "paragraph":
         return f"<p>{_escape(node.get('text', ''))}</p>"
+    if node_type == "link":
+        return (
+            f"<dl><dt>Link text</dt><dd>{_escape(node.get('text', ''))}</dd>"
+            f"<dt>Destination</dt><dd><code>{_escape(node.get('href', ''))}</code></dd></dl>"
+        )
     if node_type == "formula":
         return (f"<dl><dt>Normalized math</dt><dd>{_escape(node.get('normalized_math', ''))}</dd>"
                 f"<dt>Spoken Math Alternative</dt><dd>{_escape(node.get('spoken_math_alternative', ''))}</dd></dl>")
@@ -818,7 +864,12 @@ def _node_content(node: dict[str, Any]) -> str:
             for cell in row.get("cells", []):
                 tag = "th" if cell.get("kind") == "header" else "td"
                 scope = f' scope="{_escape(cell.get("scope"))}"' if tag == "th" else ""
-                cells.append(f"<{tag}{scope}>{_escape(cell.get('text', ''))}</{tag}>")
+                row_span = f' rowspan="{_escape(cell.get("row_span", 1))}"'
+                col_span = f' colspan="{_escape(cell.get("col_span", 1))}"'
+                cells.append(
+                    f"<{tag}{scope}{row_span}{col_span}>"
+                    f"{_escape(cell.get('text', ''))}</{tag}>"
+                )
             rows.append(f"<tr>{''.join(cells)}</tr>")
         caption = f"<caption>{_escape(node.get('caption', ''))}</caption>" if node.get("caption") else ""
         return f"<table>{caption}<tbody>{''.join(rows)}</tbody></table>"
@@ -828,7 +879,7 @@ def _node_content(node: dict[str, Any]) -> str:
 def _region_evidence(
     region_id: str, candidates_by_region: dict[str, list[dict[str, Any]]], warnings: list[dict[str, Any]]
 ) -> str:
-    warning_ids = _warning_ids(warnings, region_id=region_id)
+    warning_ids = _region_warning_ids(warnings, region_id)
     data_warning = f' data-warning-ids="{_escape(warning_ids)}"' if warning_ids else ""
     candidates = "".join(
         f"<li><strong>{_escape(candidate.get('type', 'Candidate'))}</strong>: {_escape(candidate.get('text') or 'No retained text')}</li>"
@@ -849,27 +900,31 @@ def _warning_row(
     message = html.escape(str(warning.get("message", "")))
     page = warning.get("page")
     page_cell = f"Page {html.escape(str(page))}" if page is not None else "Document"
-    source_regions = warning.get("source_regions", [])
-    region = source_regions[0] if source_regions else None
-    if region:
-        candidates = candidates_by_region.get(str(region), [])
-        candidate = candidates[0] if candidates else {}
-        source = html.escape(f"regions/{region}.png", quote=True)
-        region_type = html.escape(str(candidate.get("type", "region")))
-        recognized = candidate.get("text")
-        recognized_cell = (
-            f"<span>Recognized text: {html.escape(str(recognized))}</span>"
-            if recognized
-            else ""
-        )
-        region_cell = (
-            f'<img src="{source}" '
-            f'alt="Source region {html.escape(str(region))} ({region_type})">'
-            f"<span> Region {html.escape(str(region))} ({region_type})</span>"
-            f"{recognized_cell}"
-        )
+    source_regions = [
+        region for region in warning.get("source_regions", []) if isinstance(region, str)
+    ]
+    if source_regions:
+        rendered_regions: list[str] = []
+        for region in source_regions:
+            candidates = candidates_by_region.get(region, [])
+            candidate = candidates[0] if candidates else {}
+            source = html.escape(f"regions/{region}.png", quote=True)
+            region_type = html.escape(str(candidate.get("type", "region")))
+            recognized = candidate.get("text")
+            recognized_cell = (
+                f"<span>Recognized text: {html.escape(str(recognized))}</span>"
+                if recognized
+                else ""
+            )
+            rendered_regions.append(
+                f'<div><img src="{source}" '
+                f'alt="Source region {html.escape(region)} ({region_type})">'
+                f"<span> Region {html.escape(region)} ({region_type})</span>"
+                f"{recognized_cell}</div>"
+            )
+        region_cell = "".join(rendered_regions)
     else:
-        region_cell = "Whole page"
+        region_cell = "No Source Region (page or document scope)"
     resolution = warning.get("resolution")
     if resolution is None:
         resolution_cell = "Awaiting reviewer resolution"
@@ -880,7 +935,7 @@ def _warning_row(
         detail = f" {html.escape(str(reason))}" if reason else ""
         resolution_cell = f"By {reviewer} on {timestamp}.{detail}"
     return (
-        f'<tr><th scope="row">{identifier}: {code}</th>'
+        f'<tr id="warning-{identifier}"><th scope="row">{identifier}: {code}</th>'
         f"<td>{page_cell}</td>"
         f"<td>{message}</td><td>{region_cell}</td>"
         f"<td>Status: {_status_label(resolution)}</td>"
@@ -913,7 +968,7 @@ def render_review_report(record: dict[str, Any]) -> str:
             "<thead><tr>"
             '<th scope="col">Warning</th><th scope="col">Page</th>'
             '<th scope="col">Concern</th>'
-            '<th scope="col">Source region</th><th scope="col">Status</th>'
+            '<th scope="col">Source regions</th><th scope="col">Status</th>'
             '<th scope="col">Resolution</th>'
             f"</tr></thead><tbody>{rows}</tbody></table>"
         )
@@ -924,10 +979,9 @@ def render_review_report(record: dict[str, Any]) -> str:
     for index, page in enumerate(pages):
         previous = f'<a href="#page-{pages[index - 1]}">Previous page</a>' if index else ""
         following = f'<a href="#page-{pages[index + 1]}">Next page</a>' if index + 1 < len(pages) else ""
-        page_warning_ids = _warning_ids(warnings, page=page)
         page_warnings = [warning for warning in warnings if warning.get("page") in {None, page}]
         warning_list = "".join(
-            f"<li><strong>{_escape(warning.get('id'))}: {_escape(warning.get('code'))}</strong> — {_escape(warning.get('message'))} (Status: {_status_label(warning.get('resolution'))})</li>"
+            f"<li>{_warning_link(warning)}</li>"
             for warning in page_warnings
         ) or "<li>No Conversion Warnings for this page.</li>"
         cards: list[str] = []
@@ -935,14 +989,23 @@ def render_review_report(record: dict[str, Any]) -> str:
             if not isinstance(node, dict) or node.get("page") != page:
                 continue
             node_id = str(node.get("id", ""))
-            node_warning_ids = _warning_ids(warnings, node_id=node_id)
-            all_warning_ids = " ".join(filter(None, [page_warning_ids, node_warning_ids]))
+            attached_warnings = _warnings_for_node(warnings, node)
+            all_warning_ids = " ".join(
+                str(warning.get("id", "")) for warning in attached_warnings
+            )
+            attached_warning_list = "".join(
+                f"<li>{_warning_link(warning)}</li>" for warning in attached_warnings
+            ) or "<li>No Conversion Warnings attached.</li>"
             regions = "".join(_region_evidence(str(region), candidates_by_region, warnings)
                               for region in node.get("source_regions", []) if isinstance(region, str))
             cards.append(
-                f'<article class="semantic-node" data-warning-ids="{_escape(all_warning_ids)}">'
+                f'<article id="{_escape(node_id)}" class="semantic-node" '
+                f'data-warning-ids="{_escape(all_warning_ids)}">'
                 f"<h3>{_escape(str(node.get('type', '')).replace('_', ' ').title())}</h3>"
-                f"{_node_content(node)}<section aria-label=\"Source Regions\">{regions}</section></article>"
+                f"{_node_content(node)}"
+                f'<section aria-label="Attached Conversion Warnings"><h4>Attached Conversion Warnings</h4>'
+                f"<ul>{attached_warning_list}</ul></section>"
+                f'<section aria-label="Source Regions">{regions}</section></article>'
             )
         page_sections.append(
             f'<section id="page-{page}" class="review-page"><h2>Source PDF page {page}</h2>'

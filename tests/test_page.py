@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from typing import Any
 
+from jsonschema import Draft202012Validator
+
 from accessibilizer.page import (
     CANONICAL_READING_ORDER,
     build_page_request,
@@ -623,6 +625,22 @@ class FormulaReconciliationTest(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
 
+    def test_formula_fidelity_warning_carries_explicit_source_provenance(self) -> None:
+        warnings = self.reconcile(
+            page_response=valid_page_response(
+                formula={
+                    "normalized_math": "I = Q / delta t",
+                    "spoken_math_alternative": "I = Q / delta t",
+                    "source_regions": ["page-1-r0003"],
+                }
+            )
+        )
+        warning = next(
+            warning for warning in warnings if warning["code"] == "formula-spoken-fidelity"
+        )
+        self.assertEqual(warning["semantic_types"], ["formula"])
+        self.assertEqual(warning["source_regions"], ["page-1-r0003"])
+
 
 class FigureReconciliationTest(unittest.TestCase):
     """A simple Informative Figure needs only its concise Figure Alternative; a
@@ -705,6 +723,16 @@ class FigureReconciliationTest(unittest.TestCase):
         )
         self.assertTrue(warnings)
         self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
+
+    def test_figure_warning_carries_explicit_source_provenance(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(figure=complex_figure())
+        )
+        warning = next(
+            warning for warning in warnings if warning["code"] == "figure-weak-grounding"
+        )
+        self.assertEqual(warning["semantic_types"], ["figure"])
+        self.assertEqual(warning["source_regions"], ["page-1-r0004"])
 
 
 class TableReconciliationTest(unittest.TestCase):
@@ -795,6 +823,16 @@ class TableReconciliationTest(unittest.TestCase):
         self.assertTrue(warnings)
         self.assertTrue(all(warning["status"] == "unresolved" for warning in warnings))
 
+    def test_table_warning_carries_explicit_source_provenance(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(table=merged_table())
+        )
+        warning = next(
+            warning for warning in warnings if warning["code"] == "table-merged-cells"
+        )
+        self.assertEqual(warning["semantic_types"], ["table"])
+        self.assertEqual(warning["source_regions"], ["page-1-r0005"])
+
 
 class FormulaNotationSurvivesTest(unittest.TestCase):
     """Fractions, superscripts, subscripts, symbols, and units must survive the
@@ -878,7 +916,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
             warnings=warnings,
         )
 
-        self.assertEqual(document["schema_version"], "1.0")
+        self.assertEqual(document["schema_version"], "1.1")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
         self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.4")
@@ -886,6 +924,10 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"
         )
+
+        schema_path = Path(__file__).resolve().parents[1] / "schemas/page-semantics-1.1.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.assertEqual(list(Draft202012Validator(schema).iter_errors(document)), [])
 
     def test_expected_request_count_is_one_page_call_plus_each_crop_call(self) -> None:
         candidates = [

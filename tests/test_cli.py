@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import copy
+import hashlib
+import os
 from pathlib import Path
+from types import SimpleNamespace
+import tempfile
 import unittest
 from typing import Any
 from unittest.mock import patch
@@ -9,8 +14,11 @@ from unittest.mock import patch
 from accessibilizer import review
 from accessibilizer.cli import (
     _authoring_contract,
+    _generate_report,
     _internal_checks,
     _parse_page_selection,
+    _publish_protected_directory,
+    _report,
     _review_page_document,
 )
 
@@ -50,8 +58,11 @@ def page_document(page: int) -> dict[str, Any]:
         "language": "en-US",
         "page_dimensions": {"width_points": 612, "height_points": 792},
         "source_regions": [
+            {"id": f"page-{page}-r0000", "page": page, "bbox_points": [0, 0, 612, 792]},
+            *[
             {"id": identifier, "page": page, "bbox_points": [10, 10, 600, 780]}
             for identifier in region_ids
+            ],
         ],
         "semantic_layer": [
             {
@@ -170,6 +181,215 @@ class SourceEvidenceTest(unittest.TestCase):
         warning = next(w for w in reviewed["warnings"] if w["code"] == "imprecise-source-grounding")
         self.assertEqual(warning["semantic_nodes"], ["page-1-s0001"])
         self.assertEqual(warning["source_regions"], ["page-1-r0000"])
+
+    def test_node_specific_warning_references_survive_record_construction(self) -> None:
+        document = page_document(1)
+        document["warnings"] = [{
+            "code": "formula-spoken-fidelity",
+            "message": "Review the Spoken Math Alternative.",
+            "status": "unresolved",
+            "semantic_types": ["formula"],
+            "source_regions": ["page-1-r0003"],
+        }]
+        for verified in document["reconstruction"]["verified_regions"]:
+            verified["id"] = verified.pop("source_region")
+        recognition_document = {
+            "rendering": {"dpi": 300},
+            "candidates": [{
+                "id": "page-1-r0003", "type": "formula",
+                "bbox_pixels": [0, 0, 100, 100],
+            }],
+        }
+        with patch("accessibilizer.cli.recognition.png_size", return_value=(100, 100)):
+            reviewed = _review_page_document(
+                document, recognition_document, Path("page.png"), (72.0, 72.0)
+            )
+
+        warning = reviewed["warnings"][0]
+        self.assertEqual(warning["semantic_nodes"], ["page-1-s0003"])
+        self.assertEqual(warning["source_regions"], ["page-1-r0003"])
+        self.assertNotIn("semantic_types", warning)
+
+
+class ReportCommandTest(unittest.TestCase):
+    @staticmethod
+    def arguments(**overrides: Any) -> argparse.Namespace:
+        values: dict[str, Any] = {
+            "bundle": None,
+            "source": None,
+            "record": None,
+            "output": None,
+            "replace": False,
+            "json": False,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    @staticmethod
+    def fake_generate(source: Path, record: dict[str, Any], output: Path) -> None:
+        del source, record
+        (output / "regions").mkdir(parents=True)
+        (output / "regions" / "new.png").write_bytes(b"new region")
+        (output / "review-report.html").write_text("new report", encoding="utf-8")
+
+    @staticmethod
+    def fake_render_regions(
+        source: Path, record: dict[str, Any], regions: Path
+    ) -> None:
+        del source
+        regions.mkdir(parents=True, exist_ok=True)
+        for page in record["pages"]:
+            (regions / f"page-{page}.png").write_bytes(b"page")
+        for region in record["source_regions"]:
+            (regions / f"{region['id']}.png").write_bytes(b"region")
+
+    @staticmethod
+    def write_source_and_record(directory: Path) -> tuple[Path, Path]:
+        source = directory / "source.pdf"
+        source.write_bytes(b"source")
+        record = record_for([1])
+        record["source_sha256"] = hashlib.sha256(b"source").hexdigest()
+        record_path = directory / "review-record.yaml"
+        record_path.write_text(review.dump_yaml(record), encoding="utf-8")
+        return source, record_path
+
+    def test_standalone_report_creates_a_nested_output_offline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            source, record_path = self.write_source_and_record(temporary)
+            output = temporary / "nested" / "gold-report"
+
+            with patch(
+                "accessibilizer.cli._render_report_regions",
+                side_effect=self.fake_render_regions,
+            ):
+                result = _report(self.arguments(
+                    source=source, record=record_path, output=output
+                ))
+
+            self.assertEqual(result, 0)
+            html = (output / "review-report.html").read_text(encoding="utf-8")
+            self.assertIn('src="regions/page-1.png"', html)
+            self.assertNotIn("https://", html)
+
+    def test_bundle_report_preserves_non_report_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "example.accessibilizer"
+            bundle.mkdir()
+            source, record_path = self.write_source_and_record(bundle)
+            self.assertEqual(source, bundle / "source.pdf")
+            self.assertEqual(record_path, bundle / "review-record.yaml")
+            (bundle / "reviewer-note.txt").write_text("keep me", encoding="utf-8")
+
+            with patch(
+                "accessibilizer.cli._render_report_regions",
+                side_effect=self.fake_render_regions,
+            ):
+                result = _report(self.arguments(bundle=bundle))
+
+            self.assertEqual(result, 0)
+            self.assertEqual((bundle / "reviewer-note.txt").read_text(), "keep me")
+            self.assertTrue((bundle / "review-report.html").is_file())
+            self.assertTrue((bundle / "regions" / "page-1.png").is_file())
+
+    def test_bundle_regeneration_rolls_back_both_artifacts_if_publication_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            bundle = Path(temporary_directory) / "example.accessibilizer"
+            (bundle / "regions").mkdir(parents=True)
+            (bundle / "review-report.html").write_text("old report", encoding="utf-8")
+            (bundle / "regions" / "old.png").write_bytes(b"old region")
+            (bundle / "source.pdf").write_bytes(b"source")
+            (bundle / "review-record.yaml").write_text("record", encoding="utf-8")
+            real_replace = os.replace
+            publication_attempts = 0
+
+            def fail_publication(source: Path | str, destination: Path | str) -> None:
+                nonlocal publication_attempts
+                if Path(destination) in {bundle, bundle / "regions"}:
+                    publication_attempts += 1
+                    if publication_attempts == 1:
+                        raise OSError("simulated publication failure")
+                real_replace(source, destination)
+
+            with (
+                patch("accessibilizer.cli._load_bundle_record", return_value=({}, bundle / "review-record.yaml")),
+                patch("accessibilizer.cli._generate_report", side_effect=self.fake_generate),
+                patch("accessibilizer.cli.ctypes.CDLL", side_effect=AttributeError("renameat2 unavailable")),
+                patch("accessibilizer.cli.os.replace", side_effect=fail_publication),
+                self.assertRaisesRegex(OSError, "simulated publication failure"),
+            ):
+                _report(self.arguments(bundle=bundle))
+
+            self.assertEqual((bundle / "review-report.html").read_text(), "old report")
+            self.assertEqual((bundle / "regions" / "old.png").read_bytes(), b"old region")
+            self.assertFalse((bundle / "regions" / "new.png").exists())
+
+    def test_protected_publication_recovers_an_interrupted_fallback_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            published = temporary / "report"
+            transaction = temporary / ".report.replacement"
+            previous = transaction / "previous"
+            staging = temporary / "staging"
+            previous.mkdir(parents=True)
+            (transaction / "accessibilizer-transaction").write_text(
+                "accessibilizer protected directory replacement 1\n", encoding="utf-8"
+            )
+            (previous / "version.txt").write_text("old", encoding="utf-8")
+            staging.mkdir()
+            (staging / "version.txt").write_text("new", encoding="utf-8")
+
+            with patch(
+                "accessibilizer.cli._exchange_directories", return_value=False
+            ):
+                _publish_protected_directory(staging, published, True)
+
+            self.assertEqual((published / "version.txt").read_text(), "new")
+            self.assertFalse(transaction.exists())
+
+    def test_protected_publication_refuses_an_unowned_recovery_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            published = temporary / "report"
+            published.mkdir()
+            staging = temporary / "staging"
+            staging.mkdir()
+            unowned = temporary / ".report.replacement"
+            unowned.mkdir()
+            (unowned / "user-data.txt").write_text("keep me", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "ambiguous protected-publication state"
+            ):
+                _publish_protected_directory(staging, published, False)
+
+            self.assertEqual((unowned / "user-data.txt").read_text(), "keep me")
+
+    def test_report_crop_geometry_rounds_both_pixel_edges(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            source = temporary / "source.pdf"
+            source.write_bytes(b"source")
+            record = record_for([1])
+            record["source_sha256"] = hashlib.sha256(b"source").hexdigest()
+            region = next(
+                item for item in record["source_regions"] if item["id"] == "page-1-r0001"
+            )
+            region["bbox_points"] = [0.24, 0.24, 0.76, 0.76]
+            commands: list[list[str]] = []
+
+            def succeed(command: list[str]) -> SimpleNamespace:
+                commands.append(command)
+                if "-x" not in command:
+                    Path(command[-1]).with_suffix(".png").write_bytes(b"page")
+                return SimpleNamespace(returncode=0, stderr="")
+
+            with patch("accessibilizer.cli._run", side_effect=succeed):
+                _generate_report(source, record, temporary / "report")
+
+            crop = next(command for command in commands if "-x" in command)
+            self.assertEqual(crop[crop.index("-x") + 1], "0")
+            self.assertEqual(crop[crop.index("-W") + 1], "2")
 
 
 class InternalChecksTest(unittest.TestCase):

@@ -87,6 +87,7 @@ def candidates_for(page: int) -> list[dict[str, Any]]:
 
 def source_regions_for(page: int) -> list[dict[str, Any]]:
     return [
+        {"id": f"page-{page}-r0000", "page": page, "bbox_points": [0, 0, 612, 792]},
         {"id": f"page-{page}-r0001", "page": page, "bbox_points": [10, 10, 590, 120]},
         {"id": f"page-{page}-r0002", "page": page, "bbox_points": [10, 130, 590, 250]},
         {"id": f"page-{page}-r0003", "page": page, "bbox_points": [10, 260, 590, 360]},
@@ -248,6 +249,32 @@ class SchemaValidationTest(unittest.TestCase):
                 record = built_record()
                 record["source_regions"][0]["bbox_points"] = bounds
                 with self.assertRaises(ReviewRecordError):
+                    validate_review_record(record)
+
+    def test_every_page_requires_an_exact_whole_page_fallback_region(self) -> None:
+        for mutation in ("missing", "partial"):
+            with self.subTest(mutation=mutation):
+                record = built_record()
+                fallback = next(
+                    region for region in record["source_regions"]
+                    if region["id"] == "page-1-r0000"
+                )
+                if mutation == "missing":
+                    record["source_regions"].remove(fallback)
+                else:
+                    fallback["bbox_points"] = [0, 0, 611, 792]
+                with self.assertRaisesRegex(ReviewRecordError, "whole-page fallback"):
+                    validate_review_record(record)
+
+    def test_reconstruction_must_describe_every_converted_page_exactly_once(self) -> None:
+        for mutation in ("missing", "duplicate"):
+            with self.subTest(mutation=mutation):
+                record = built_record()
+                existing = copy.deepcopy(record["reconstruction"]["pages"][0])
+                record["reconstruction"]["pages"] = (
+                    [] if mutation == "missing" else [existing, copy.deepcopy(existing)]
+                )
+                with self.assertRaisesRegex(ReviewRecordError, "reconstruction"):
                     validate_review_record(record)
 
     def test_semantic_node_references_must_be_nonempty_resolved_and_same_page(self) -> None:
@@ -532,6 +559,15 @@ class ReviewReportTest(unittest.TestCase):
         self.assertIn('src="regions/page-1-r0003.png"', html)
         self.assertIn('alt="Source region page-1-r0003', html)
 
+    def test_warning_table_shows_every_referenced_source_region(self) -> None:
+        record = built_record()
+        record["warnings"][1]["source_regions"] = ["page-1-r0003", "page-1-r0004"]
+
+        html = self.report(record)
+
+        self.assertIn("<span> Region page-1-r0003", html)
+        self.assertIn("<span> Region page-1-r0004", html)
+
     def test_source_region_shows_the_retained_recognized_text_as_context(self) -> None:
         record = built_record()
         # Point the warning at a candidate that carries recognized text.
@@ -558,6 +594,29 @@ class ReviewReportTest(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_link_card_exposes_text_and_destination_without_an_active_remote_resource(self) -> None:
+        record = built_record()
+        record["semantic_layer"].append(semantic_node(LINK, 6))
+
+        html = self.report(record)
+
+        self.assertIn("<dt>Link text</dt><dd>Ohm&#x27;s Law</dd>", html)
+        self.assertIn("<dt>Destination</dt><dd><code>https://example.org/ohm</code></dd>", html)
+        self.assertNotIn('href="https://example.org/ohm"', html)
+
+    def test_cards_show_heading_level_and_table_cell_spans(self) -> None:
+        record = built_record()
+        table = next(
+            node for node in record["semantic_layer"] if node["type"] == "table"
+        )
+        table["rows"][0]["cells"][0]["row_span"] = 2
+        table["rows"][0]["cells"][0]["col_span"] = 3
+
+        html = self.report(record)
+
+        self.assertIn("<dt>Heading level</dt><dd>1</dd>", html)
+        self.assertIn('rowspan="2" colspan="3"', html)
+
     def test_report_is_page_oriented_and_includes_local_page_and_region_images(self) -> None:
         record = build([page_document(1), page_document(2)])
         record["semantic_layer"][0]["source_regions"] = ["page-1-r0001", "page-1-r0002"]
@@ -580,7 +639,38 @@ class ReviewReportTest(unittest.TestCase):
         html = self.report(record)
         self.assertIn('data-warning-ids="w0002"', html)
         self.assertIn('data-warning-ids="w0003"', html)
-        self.assertIn('data-warning-ids="w0001"', html)
+        self.assertIn('href="#warning-w0001"', html)
+
+    def test_node_cards_show_explicitly_attached_and_region_warnings(self) -> None:
+        record = built_record()
+        record["warnings"].append({
+            "id": "w0003", "code": "region-only", "message": "Inspect this figure region.",
+            "page": 1, "semantic_nodes": [], "source_regions": ["page-1-r0004"],
+            "resolution": None, "history": [],
+        })
+
+        html = self.report(record)
+
+        self.assertIn(
+            '<article id="page-1-s0003" class="semantic-node" data-warning-ids="w0002">',
+            html,
+        )
+        self.assertIn(
+            '<article id="page-1-s0004" class="semantic-node" data-warning-ids="w0003">',
+            html,
+        )
+        self.assertIn('href="#warning-w0002">w0002: recognition-disagreement</a>', html)
+        self.assertIn('href="#warning-w0003">w0003: region-only</a>', html)
+        self.assertIn('id="warning-w0003"', html)
+
+    def test_page_warnings_remain_reachable_without_marking_unrelated_cards(self) -> None:
+        html = self.report(built_record())
+
+        self.assertIn('href="#warning-w0001">w0001: ambiguous-reading-order</a>', html)
+        self.assertIn(
+            '<article id="page-1-s0001" class="semantic-node" data-warning-ids="">',
+            html,
+        )
 
     def test_report_has_an_accessible_warnings_filter_and_disclosures(self) -> None:
         html = self.report(built_record())
