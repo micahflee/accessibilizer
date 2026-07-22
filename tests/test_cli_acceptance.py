@@ -975,7 +975,7 @@ class ConversionTest(unittest.TestCase):
             )
             self.assertEqual(provenance["source_pages"], [1])
             self.assertEqual(provenance["page_prompt_version"], "1.4")
-            self.assertEqual(provenance["page_schema_version"], "1.1")
+            self.assertEqual(provenance["page_schema_version"], "1.2")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)
