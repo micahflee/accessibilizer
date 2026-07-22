@@ -128,10 +128,12 @@ class ConversionTest(unittest.TestCase):
         page: str | None = "1",
         replace: bool = False,
         resume: bool = False,
+        verbose: bool = False,
         base_url: str | None = None,
     ) -> list[str]:
         replacement_arguments = ["--replace"] if replace else []
         resume_arguments = ["--resume"] if resume else []
+        verbose_arguments = ["--verbose"] if verbose else []
         page_arguments = ["--page", page] if page is not None else []
         return [
             str(ROOT / "accessibilizer"),
@@ -148,6 +150,7 @@ class ConversionTest(unittest.TestCase):
             "local",
             *replacement_arguments,
             *resume_arguments,
+            *verbose_arguments,
             "--json",
         ]
 
@@ -170,6 +173,7 @@ class ConversionTest(unittest.TestCase):
         page: str | None = "1",
         replace: bool = False,
         resume: bool = False,
+        verbose: bool = False,
         base_url: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -179,6 +183,7 @@ class ConversionTest(unittest.TestCase):
                 page=page,
                 replace=replace,
                 resume=resume,
+                verbose=verbose,
                 base_url=base_url,
             ),
             cwd=ROOT,
@@ -1192,6 +1197,23 @@ class ConversionTest(unittest.TestCase):
             reused_stages = {e["stage"] for e in final_events if e["state"] == "reused"}
             self.assertIn("provider-capability", reused_stages)
             self.assertIn("page-recognition", reused_stages)
+
+    def test_verbose_flag_is_forwarded_and_adds_technical_detail_on_stderr(self) -> None:
+        with (
+            FakeProvider() as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "verbose.accessibilizer"
+            result = self.run_conversion(
+                SOURCE, bundle, base_url=provider.base_url, verbose=True
+            )
+
+            # The launcher accepts and forwards --verbose (it is not rejected as an
+            # unknown argument), and the extra detail appears on stderr only.
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("model=acceptance-model-2026-07-19", result.stderr)
+            self.assertNotIn("model=", result.stdout)
+            self.assertEqual(json.loads(result.stdout)["status"], "accessible")
 
     def test_provider_retries_are_reported_and_logged(self) -> None:
         with (

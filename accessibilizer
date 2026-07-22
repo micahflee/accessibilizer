@@ -223,6 +223,7 @@ provider_max_retries=
 provider_retry_base_seconds=
 provider_retry_max_seconds=
 resume_flag=
+verbose_flag=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --page) [ "$#" -ge 2 ] || operational_failure "--page requires a value"; page=$2; shift 2 ;;
@@ -239,6 +240,7 @@ while [ "$#" -gt 0 ]; do
         --resume) resume_flag=--resume; shift ;;
         --replace) replace_flag=--replace; shift ;;
         --json) json_flag=--json; shift ;;
+        --verbose) verbose_flag=--verbose; shift ;;
         *) operational_failure "unknown argument" ;;
     esac
 done
@@ -353,6 +355,7 @@ if [ -n "$provider_max_retries" ]; then set -- "$@" --provider-max-retries "$pro
 if [ -n "$provider_retry_base_seconds" ]; then set -- "$@" --provider-retry-base-seconds "$provider_retry_base_seconds"; fi
 if [ -n "$provider_retry_max_seconds" ]; then set -- "$@" --provider-retry-max-seconds "$provider_retry_max_seconds"; fi
 if [ -n "$json_flag" ]; then set -- "$@" --json; fi
+if [ -n "$verbose_flag" ]; then set -- "$@" --verbose; fi
 if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
 if [ -n "$resume_flag" ]; then set -- "$@" --resume; fi
 
