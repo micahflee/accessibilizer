@@ -1019,7 +1019,7 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["request_ceiling"], 100)
-            self.assertIn('<html lang="en-US">', (bundle / "review-report.html").read_text())
+            self.assertIn('<html lang="en-US"', (bundle / "review-report.html").read_text())
 
             internal = json.loads((bundle / "validation/internal.json").read_text())
             self.assertEqual(internal["checks"], [])
