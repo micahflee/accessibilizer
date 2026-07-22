@@ -313,9 +313,11 @@ class RequestConstructionTest(unittest.TestCase):
         self.assertIn("I = Q / delta t", request["messages"][1]["content"][0]["text"])
 
     def test_region_request_budgets_tokens_for_a_dense_crop_transcription(self) -> None:
-        # A crop of a page-filling table can need a transcription as large as the
+        # A crop of a page-filling table can need a transcription approaching the
         # page itself, and a reasoning model spends part of the budget on hidden
-        # reasoning; the region ceiling must match the page request, not undercut it.
+        # reasoning; the region ceiling must not undercut a dense crop (it once
+        # capped at 1024 and truncated), yet a region is a subset of a page and
+        # never needs more output than the whole page.
         with tempfile.TemporaryDirectory() as directory:
             image = self.image(directory)
             region = build_region_request(
@@ -332,7 +334,10 @@ class RequestConstructionTest(unittest.TestCase):
                 source_region_ids=["page-1-r0001"],
             )
 
-        self.assertEqual(region["max_completion_tokens"], page["max_completion_tokens"])
+        self.assertGreaterEqual(region["max_completion_tokens"], 4096)
+        self.assertLessEqual(
+            region["max_completion_tokens"], page["max_completion_tokens"]
+        )
 
 
 class ResponseValidationTest(unittest.TestCase):

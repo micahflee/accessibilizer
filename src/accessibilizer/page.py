@@ -361,7 +361,7 @@ def build_page_request(
     candidates: Sequence[dict[str, Any]],
     pdf_words: Sequence[dict[str, Any]],
     source_region_ids: Sequence[str],
-    max_completion_tokens: int = 4096,
+    max_completion_tokens: int = 8192,
 ) -> dict[str, Any]:
     return {
         "model": model,
