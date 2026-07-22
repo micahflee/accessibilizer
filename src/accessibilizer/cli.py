@@ -113,7 +113,7 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     subparsers = parser.add_subparsers(
-        dest="command", required=True, metavar="{convert,review,validate,finalize}"
+        dest="command", required=True, metavar="{convert,report,review,validate,finalize}"
     )
     convert = subparsers.add_parser(
         "convert",
@@ -149,6 +149,15 @@ def _parser() -> argparse.ArgumentParser:
             "interactive confirmation prompt"
         ),
     )
+    report = subparsers.add_parser(
+        "report", description="Regenerate the read-only, page-oriented Review Report offline."
+    )
+    report.add_argument("--bundle", type=Path, help="existing Conversion Bundle")
+    report.add_argument("--source", type=Path, help="Source PDF for standalone report generation")
+    report.add_argument("--record", type=Path, help="Review Record 3.0 YAML for standalone generation")
+    report.add_argument("--output", type=Path, help="standalone report directory")
+    report.add_argument("--replace", action="store_true", help="replace an existing standalone report")
+    report.add_argument("--json", action="store_true", help="print machine-readable JSON")
     convert.add_argument(
         "--max-requests",
         type=int,
@@ -563,8 +572,12 @@ def _review_page_document(
             for node in document["semantic_layer"]
             if region and region in node["source_regions"]
         ]
-        if region and not semantic_nodes:
-            node_type = node_type_for_candidate_type.get(candidate_type_by_region.get(region))
+        if isinstance(region, str) and not semantic_nodes:
+            candidate_type = candidate_type_by_region.get(region)
+            node_type = (
+                node_type_for_candidate_type.get(candidate_type)
+                if candidate_type is not None else None
+            )
             semantic_nodes = [
                 node["id"] for node in document["semantic_layer"]
                 if node["type"] == node_type
@@ -1126,7 +1139,7 @@ def _convert(args: argparse.Namespace) -> int:
     if not checkpoints.is_reusable("document", document_key):
         atomic_write_text(review_record, review.dump_yaml(record))
         atomic_write_json(review_baseline, record)
-        atomic_write_text(review_report, review.render_review_report(record))
+        _generate_report(source_copy, record, workspace)
         _author_pdf(
             source_pdf=source_copy,
             output=output,
@@ -1218,6 +1231,83 @@ def _load_bundle_record(bundle: Path) -> tuple[dict[str, Any], Path]:
     return record, record_path
 
 
+def _render_report_regions(source: Path, record: dict[str, Any], regions: Path) -> None:
+    """Derive local review evidence from the immutable Source PDF and point geometry."""
+    regions.mkdir(mode=0o700, parents=True, exist_ok=True)
+    dpi = 144
+    scale = dpi / 72
+    for page_number in record["pages"]:
+        prefix = regions / f"page-{page_number}"
+        rendered = _run([
+            "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
+            "-r", str(dpi), "-png", str(source), str(prefix),
+        ])
+        if rendered.returncode:
+            raise RuntimeError(f"report page render failed: {rendered.stderr}")
+        for region in (item for item in record["source_regions"] if item["page"] == page_number):
+            identifier = str(region["id"])
+            if identifier.endswith("-r0000"):
+                _atomic_copy(prefix.with_suffix(".png"), regions / f"{identifier}.png")
+                continue
+            x0, y0, x1, y1 = (float(value) for value in region["bbox_points"])
+            width = max(1, round((x1 - x0) * scale))
+            height = max(1, round((y1 - y0) * scale))
+            crop = _run([
+                "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
+                "-r", str(dpi), "-x", str(round(x0 * scale)), "-y", str(round(y0 * scale)),
+                "-W", str(width), "-H", str(height), "-png", str(source),
+                str(regions / identifier),
+            ])
+            if crop.returncode:
+                raise RuntimeError(f"Source Region render failed: {crop.stderr}")
+
+
+def _generate_report(source: Path, record: dict[str, Any], output: Path) -> None:
+    review.validate_review_record(record)
+    if file_sha256(source) != record["source_sha256"]:
+        raise RuntimeError("the Source PDF does not match the Review Record")
+    _render_report_regions(source, record, output / "regions")
+    atomic_write_text(output / "review-report.html", review.render_review_report(record))
+
+
+def _report(args: argparse.Namespace) -> int:
+    if args.bundle is not None:
+        if any(value is not None for value in (args.source, args.record, args.output)):
+            raise ValueError("--bundle cannot be combined with --source, --record, or --output")
+        record, _ = _load_bundle_record(args.bundle)
+        source = args.bundle / "source.pdf"
+        if not source.is_file():
+            raise RuntimeError("bundle is missing its immutable Source PDF copy")
+        staging = Path(tempfile.mkdtemp(prefix=f".{args.bundle.name}.report-", dir=args.bundle.parent))
+        try:
+            _generate_report(source, record, staging)
+            os.replace(staging / "review-report.html", args.bundle / "review-report.html")
+            shutil.rmtree(args.bundle / "regions", ignore_errors=True)
+            os.replace(staging / "regions", args.bundle / "regions")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        result = {"bundle": str(_host_bundle(args.bundle)), "report": str(_host_bundle(args.bundle) / "review-report.html"), "status": "reported"}
+    else:
+        if args.source is None or args.record is None or args.output is None:
+            raise ValueError("standalone report requires --source, --record, and --output")
+        if not args.source.is_file() or not args.record.is_file():
+            raise RuntimeError("--source and --record must be files")
+        if args.output.exists() and not args.replace:
+            raise FileExistsError(f"report output already exists: {args.output}")
+        record = review.load_yaml(args.record.read_text(encoding="utf-8"))
+        staging = Path(tempfile.mkdtemp(prefix=f".{args.output.name}.report-", dir=args.output.parent))
+        try:
+            _generate_report(args.source, record, staging)
+            if args.output.exists():
+                shutil.rmtree(args.output)
+            os.replace(staging, args.output)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        result = {"report": str(_host_bundle(args.output) / "review-report.html"), "status": "reported"}
+    _emit(args, result, f"Review Report: {result['report']}")
+    return 0
+
+
 def _load_baseline(bundle: Path) -> dict[str, Any] | None:
     baseline_path = bundle / "review-baseline.json"
     if not baseline_path.is_file():
@@ -1258,7 +1348,7 @@ def _validate(args: argparse.Namespace) -> int:
 def _persist_review(bundle: Path, record: dict[str, Any]) -> None:
     atomic_write_text(bundle / "review-record.yaml", review.dump_yaml(record))
     atomic_write_json(bundle / "review-baseline.json", record)
-    atomic_write_text(bundle / "review-report.html", review.render_review_report(record))
+    _generate_report(bundle / "source.pdf", record, bundle)
 
 
 def _review(args: argparse.Namespace) -> int:
@@ -1380,9 +1470,7 @@ def _finalize(args: argparse.Namespace) -> int:
             _atomic_copy(usage, workspace / "request-usage.json")
         atomic_write_text(workspace / "review-record.yaml", review.dump_yaml(committed))
         atomic_write_json(workspace / "review-baseline.json", committed)
-        atomic_write_text(
-            workspace / "review-report.html", review.render_review_report(committed)
-        )
+        _generate_report(workspace / "source.pdf", committed, workspace)
         _rebuild_and_validate(workspace, committed)
         atomic_write_json(
             workspace / "provenance.json",
@@ -1408,6 +1496,8 @@ def main() -> int:
     try:
         if args.command == "convert":
             return _convert(args)
+        if args.command == "report":
+            return _report(args)
         if args.command == "validate":
             return _validate(args)
         if args.command == "review":

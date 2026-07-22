@@ -558,6 +558,37 @@ class ReviewReportTest(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_report_is_page_oriented_and_includes_local_page_and_region_images(self) -> None:
+        record = build([page_document(1), page_document(2)])
+        record["semantic_layer"][0]["source_regions"] = ["page-1-r0001", "page-1-r0002"]
+        html = self.report(record)
+        self.assertIn('id="page-1"', html)
+        self.assertIn('id="page-2"', html)
+        self.assertIn('src="regions/page-1.png"', html)
+        self.assertIn('src="regions/page-1-r0001.png"', html)
+        self.assertIn('src="regions/page-1-r0002.png"', html)
+        self.assertIn('href="#page-2"', html)
+        self.assertNotIn("https://", html)
+
+    def test_report_associates_every_warning_scope_without_array_position_inference(self) -> None:
+        record = built_record()
+        record["warnings"].append({
+            "id": "w0003", "code": "region-only", "message": "Region concern.",
+            "page": 1, "semantic_nodes": [], "source_regions": ["page-1-r0004"],
+            "resolution": None, "history": [],
+        })
+        html = self.report(record)
+        self.assertIn('data-warning-ids="w0002"', html)
+        self.assertIn('data-warning-ids="w0003"', html)
+        self.assertIn('data-warning-ids="w0001"', html)
+
+    def test_report_has_an_accessible_warnings_filter_and_disclosures(self) -> None:
+        html = self.report(built_record())
+        self.assertIn('id="warnings-only"', html)
+        self.assertIn('aria-pressed="false"', html)
+        self.assertIn("<details>", html)
+        self.assertIn("Recognition Candidates", html)
+
 
 class SchemaDriftTest(unittest.TestCase):
     def test_in_code_schema_matches_the_published_json_schema(self) -> None:
