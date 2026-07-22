@@ -396,7 +396,7 @@ def build_region_request(
     region_image: Path,
     candidate: dict[str, Any],
     page_response: dict[str, Any],
-    max_completion_tokens: int = 1024,
+    max_completion_tokens: int = 4096,
 ) -> dict[str, Any]:
     candidate_type = str(candidate.get("type"))
     page_view = _page_region_view(candidate, page_response)
