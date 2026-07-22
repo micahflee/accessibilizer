@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Least privilege: the workflow only needs to read the repository. No other
+# token scopes are granted to any job.
+permissions:
+  contents: read
+
+# Cancel a pull request's superseded in-flight run when a newer commit lands,
+# but never cancel a run on main (each push there gets its own group).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.10
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Run strict mypy
+        run: make typecheck
+
+  browser-tests:
+    name: browser-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.10
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      # The report fixture is rendered by the real Python renderer via `uv run`
+      # in global-setup.js, so the browser job needs uv too.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+      - name: Install browser dependencies (npm ci + Chromium)
+        run: make browser-install
+      - name: Run Playwright tests
+        run: make browser-tests
+      - name: Upload Playwright report and results on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            tests/browser/playwright-report/
+            tests/browser/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  conversion-tests:
+    name: conversion-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python 3.10
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      # Rebuild the canonical image from the committed Dockerfile every run (this
+      # also verifies the Java PDF author package still builds), loading it into
+      # the local daemon as accessibilizer:test and caching layers via the GHA
+      # BuildKit cache. No registry push and no repository secret required.
+      - name: Build canonical Docker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          load: true
+          tags: accessibilizer:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Run every Python test with the pinned real-PaddleOCR acceptance test
+      # opted in, so it runs rather than skips. Uses the accessibilizer:test
+      # image built above and needs no model download or provider credential.
+      - name: Run Python tests with real PaddleOCR
+        run: make test-real-ocr

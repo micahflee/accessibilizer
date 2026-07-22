@@ -10,5 +10,5 @@ java/**/target/
 .venv/
 node_modules/
 tests/browser/.fixture/
-tests/browser/package-lock.json
 tests/browser/test-results/
+tests/browser/playwright-report/
