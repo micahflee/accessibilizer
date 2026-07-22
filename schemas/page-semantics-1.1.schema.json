@@ -14,14 +14,15 @@
     "language": {"type": "string", "minLength": 1},
     "semantic_layer": {
       "type": "array",
-      "prefixItems": [
-        {"$ref": "#/$defs/heading"},
-        {"$ref": "#/$defs/paragraph"},
-        {"$ref": "#/$defs/formula"},
-        {"$ref": "#/$defs/figure"},
-        {"$ref": "#/$defs/table"}
-      ],
-      "items": false
+      "items": {
+        "anyOf": [
+          {"$ref": "#/$defs/heading"},
+          {"$ref": "#/$defs/paragraph"},
+          {"$ref": "#/$defs/formula"},
+          {"$ref": "#/$defs/figure"},
+          {"$ref": "#/$defs/table"}
+        ]
+      }
     },
     "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
     "reconstruction": {"$ref": "#/$defs/reconstruction"}

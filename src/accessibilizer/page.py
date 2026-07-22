@@ -1,8 +1,9 @@
 """Reconstruct one page's ordered Semantic Layer from independent evidence.
 
 A single page-level vision call reconstructs the page's meaning — its title,
-language, and the ordered heading, paragraph, Formula, Figure, and Semantic Table
-Semantic Layer in Logical Reading Order. Required high-resolution crop calls verify
+language, and a Semantic Layer containing an ordered collection of headings,
+paragraphs, Formulas, Informative Figures, and Semantic Tables in Logical Reading
+Order. Required high-resolution crop calls verify
 the Formula, Semantic Table, and Informative Figure regions. The existing PDF text
 layer and the specialized-recognition candidates are independent, *non-authoritative*
 evidence: they are reconciled against the reconstruction, and any disagreement,
@@ -36,15 +37,15 @@ from accessibilizer.provider import (
 _T = TypeVar("_T")
 
 
-PAGE_PROMPT_VERSION = "1.4"
-PAGE_SCHEMA_VERSION = "1.2"
+PAGE_PROMPT_VERSION = "1.5"
+PAGE_SCHEMA_VERSION = "1.3"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
 PAGE_SEMANTICS_CONTRACT_VERSION = "1.1"
-RECONSTRUCTION_ORCHESTRATION_VERSION = "1.1"
+RECONSTRUCTION_ORCHESTRATION_VERSION = "1.2"
 
-# This version authors exactly one representative node of each type in this order;
-# richer document trees are a later slice (issue #1, Milestone 6).
+# Supported Semantic Layer node types. Their order here is only the schema's stable
+# variant order; each page response's nodes array carries the Logical Reading Order.
 CANONICAL_READING_ORDER: tuple[str, ...] = (
     "heading",
     "paragraph",
@@ -92,9 +93,12 @@ PAGE_INSTRUCTIONS = (
     "Reconstruct the meaning of this page, then report it as the required JSON. "
     "Determine the page title and BCP-47 language, decide whether it is primarily "
     "English STEM instructional material, and infer the single Logical Reading Order "
-    "from authorial meaning rather than page coordinates. Provide one representative "
-    "heading, paragraph, Formula, Informative Figure, and Semantic Table. For the "
-    "Table, preserve its meaning: set caption to the table's caption or null, and give "
+    "from authorial meaning rather than page coordinates. Return nodes as an ordered "
+    "array containing every semantic node actually present on the page. A type may "
+    "occur more than once, and absent types must be omitted; never fabricate content "
+    "to provide one of each type. For every node, set type to heading, paragraph, "
+    "formula, figure, or table. For each Semantic Table, preserve its meaning: set "
+    "caption to the table's caption or null, and give "
     "rows of cells top to bottom, left to right. Set each cell's kind to \"header\" or "
     "\"data\", its text to the cell contents, and row_span and col_span to how many "
     "rows and columns the cell covers (1 when it is not merged). Emit each cell once, "
@@ -118,9 +122,9 @@ PAGE_INSTRUCTIONS = (
     "it; report any apparent mistake in suspected_source_errors instead. Set "
     "spoken_math_alternative to concise mathematical English a screen-reader user can "
     "follow (for example \"I equals Q divided by delta t\"), never raw LaTeX or a "
-    "character-by-character transcription. Set reading_order to the order in which "
-    "those four appear and reading_order_is_unambiguous to false if more than one "
-    "order is plausible. For every Semantic Layer item, select one or more IDs from "
+    "character-by-character transcription. The nodes array itself is the Logical "
+    "Reading Order; set reading_order_is_unambiguous to false if more than one order "
+    "is plausible. For every Semantic Layer item, select one or more IDs from "
     "the supplied Source Regions as source_regions. Never return coordinates or an "
     "ID not in that list. Select the whole-page fallback only when no tighter "
     "deterministic region supports the item."
@@ -156,6 +160,53 @@ def _source_regions_property(source_region_ids: Sequence[str] | None) -> dict[st
 
 def page_response_schema(source_region_ids: Sequence[str] | None = None) -> dict[str, Any]:
     source_regions = _source_regions_property(source_region_ids)
+    node_schemas = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["type", "level", "text", "source_regions"],
+            "properties": {
+                "type": {"type": "string", "enum": ["heading"]},
+                "level": {"type": "integer", "minimum": 1, "maximum": 6},
+                "text": {"type": "string", "minLength": 1},
+                "source_regions": source_regions,
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["type", "text", "source_regions"],
+            "properties": {
+                "type": {"type": "string", "enum": ["paragraph"]},
+                "text": {"type": "string", "minLength": 1},
+                "source_regions": source_regions,
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["type", "normalized_math", "spoken_math_alternative", "source_regions"],
+            "properties": {
+                "type": {"type": "string", "enum": ["formula"]},
+                "normalized_math": {"type": "string", "minLength": 1},
+                "spoken_math_alternative": {"type": "string", "minLength": 1},
+                "source_regions": source_regions,
+            },
+        },
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["type", "complexity", "figure_alternative", "detailed_figure_description", "source_regions"],
+            "properties": {
+                "type": {"type": "string", "enum": ["figure"]},
+                "complexity": {"type": "string", "enum": list(FIGURE_COMPLEXITIES)},
+                "figure_alternative": {"type": "string", "minLength": 1},
+                "detailed_figure_description": {"type": ["string", "null"]},
+                "source_regions": source_regions,
+            },
+        },
+        _table_response_schema(source_regions, include_type=True),
+    ]
     return {
         "type": "object",
         "additionalProperties": False,
@@ -164,13 +215,8 @@ def page_response_schema(source_region_ids: Sequence[str] | None = None) -> dict
             "language",
             "primary_language_is_english",
             "document_class",
-            "reading_order",
             "reading_order_is_unambiguous",
-            "heading",
-            "paragraph",
-            "formula",
-            "figure",
-            "table",
+            "nodes",
             "suspected_source_errors",
             "suspected_prompt_injection",
         ],
@@ -179,121 +225,62 @@ def page_response_schema(source_region_ids: Sequence[str] | None = None) -> dict
             "language": {"type": "string", "minLength": 1},
             "primary_language_is_english": {"type": "boolean"},
             "document_class": {"type": "string", "enum": ["stem_instructional", "other"]},
-            "reading_order": {
-                "type": "array",
-                "items": {"type": "string", "enum": list(CANONICAL_READING_ORDER)},
-            },
             "reading_order_is_unambiguous": {"type": "boolean"},
-            "heading": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["level", "text", "source_regions"],
-                "properties": {
-                    # Heading hierarchy: H1 through H6 so a page can contribute a
-                    # section level to the whole-document outline.
-                    "level": {"type": "integer", "minimum": 1, "maximum": 6},
-                    "text": {"type": "string", "minLength": 1},
-                    "source_regions": source_regions,
-                },
-            },
-            "paragraph": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["text", "source_regions"],
-                "properties": {"text": {"type": "string", "minLength": 1}, "source_regions": source_regions},
-            },
-            "formula": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["normalized_math", "spoken_math_alternative", "source_regions"],
-                "properties": {
-                    "normalized_math": {"type": "string", "minLength": 1},
-                    "spoken_math_alternative": {"type": "string", "minLength": 1},
-                    "source_regions": source_regions,
-                },
-            },
-            "figure": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "complexity",
-                    "detailed_figure_description",
-                    "source_regions",
-                    "figure_alternative",
-                ],
-                "properties": {
-                    "complexity": {"type": "string", "enum": list(FIGURE_COMPLEXITIES)},
-                    "figure_alternative": {"type": "string", "minLength": 1},
-                    # Null for a simple figure; a Detailed Figure Description for a
-                    # complex one. Required (with a nullable type) so strict
-                    # structured output still names every property.
-                    "detailed_figure_description": {"type": ["string", "null"]},
-                    "source_regions": source_regions,
-                },
-            },
-            "table": _table_response_schema(source_regions),
+            "nodes": {"type": "array", "items": {"anyOf": node_schemas}},
             "suspected_source_errors": {"type": "array", "items": {"type": "string"}},
             "suspected_prompt_injection": {"type": "boolean"},
         },
     }
 
 
-def _table_response_schema(source_regions: dict[str, Any] | None = None) -> dict[str, Any]:
+def _table_response_schema(
+    source_regions: dict[str, Any] | None = None, *, include_type: bool = False
+) -> dict[str, Any]:
+    required = [
+        "caption", "boundaries_are_uncertain", "headers_are_uncertain", "rows",
+        "source_regions",
+    ]
+    properties: dict[str, Any] = {
+        "caption": {"type": ["string", "null"]},
+        "boundaries_are_uncertain": {"type": "boolean"},
+        "headers_are_uncertain": {"type": "boolean"},
+        "rows": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["cells"],
+                "properties": {
+                    "cells": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["kind", "text", "scope", "row_span", "col_span"],
+                            "properties": {
+                                "kind": {"type": "string", "enum": list(TABLE_CELL_KINDS)},
+                                "text": {"type": "string"},
+                                "scope": {"type": "string", "enum": list(TABLE_SCOPES)},
+                                "row_span": {"type": "integer", "minimum": 1},
+                                "col_span": {"type": "integer", "minimum": 1},
+                            },
+                        },
+                    }
+                },
+            },
+        },
+        "source_regions": source_regions or _source_regions_property(None),
+    }
+    if include_type:
+        required.insert(0, "type")
+        properties["type"] = {"type": "string", "enum": ["table"]}
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": [
-            "caption",
-            "boundaries_are_uncertain",
-            "headers_are_uncertain",
-            "rows",
-            "source_regions",
-        ],
-        "properties": {
-            # Null when the table has no caption; a string otherwise. Required with a
-            # nullable type so strict structured output still names every property.
-            "caption": {"type": ["string", "null"]},
-            "boundaries_are_uncertain": {"type": "boolean"},
-            "headers_are_uncertain": {"type": "boolean"},
-            "rows": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["cells"],
-                    "properties": {
-                        "cells": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": [
-                                    "kind",
-                                    "text",
-                                    "scope",
-                                    "row_span",
-                                    "col_span",
-                                ],
-                                "properties": {
-                                    "kind": {
-                                        "type": "string",
-                                        "enum": list(TABLE_CELL_KINDS),
-                                    },
-                                    "text": {"type": "string"},
-                                    "scope": {
-                                        "type": "string",
-                                        "enum": list(TABLE_SCOPES),
-                                    },
-                                    "row_span": {"type": "integer", "minimum": 1},
-                                    "col_span": {"type": "integer", "minimum": 1},
-                                },
-                            },
-                        }
-                    },
-                },
-            },
-            "source_regions": source_regions or _source_regions_property(None),
-        },
+        "required": required,
+        "properties": properties,
     }
 
 
@@ -388,7 +375,7 @@ def build_region_request(
     max_completion_tokens: int = 1024,
 ) -> dict[str, Any]:
     candidate_type = str(candidate.get("type"))
-    page_view = _page_region_view(candidate_type, page_response)
+    page_view = _page_region_view(candidate, page_response)
     return {
         "model": model,
         "messages": [
@@ -415,13 +402,16 @@ def build_region_request(
     }
 
 
-def _page_region_view(candidate_type: str, page_response: dict[str, Any]) -> Any:
-    if candidate_type == "formula":
-        return page_response.get("formula")
-    if candidate_type == "figure":
-        return page_response.get("figure")
-    if candidate_type == "table":
-        return page_response.get("table")
+def _page_region_view(candidate: dict[str, Any], page_response: dict[str, Any]) -> Any:
+    candidate_type = candidate.get("type")
+    candidate_id = candidate.get("id")
+    matches = [
+        node for node in page_response.get("nodes", [])
+        if node.get("type") == candidate_type
+        and candidate_id in node.get("source_regions", [])
+    ]
+    if matches:
+        return matches[0] if len(matches) == 1 else matches
     # Any other detected region has no authored node, so the reconstruction cannot
     # represent it; the model marks disagreement when the crop holds real content,
     # turning otherwise-silent loss into a warning.
@@ -480,56 +470,38 @@ def validate_page_response(
         response.get("document_class") in {"stem_instructional", "other"},
         "document_class must be stem_instructional or other",
     )
-    order = response.get("reading_order")
-    _require(
-        isinstance(order, list)
-        and all(item in CANONICAL_READING_ORDER for item in order),
-        "reading_order must list supported node types",
-    )
     _require_bool(
         response, "reading_order_is_unambiguous", "reading_order_is_unambiguous must be boolean"
     )
-    heading = response.get("heading")
-    _require(
-        isinstance(heading, dict)
-        and isinstance(heading.get("level"), int)
-        and not isinstance(heading.get("level"), bool)
-        and 1 <= heading["level"] <= 6,
-        "heading.level must be an integer from 1 to 6",
-    )
-    assert isinstance(heading, dict)
-    validate_source_regions(heading, "heading")
-    _require_str(heading, "text", "heading.text must be a non-empty string")
-    paragraph = response.get("paragraph")
-    _require(isinstance(paragraph, dict), "paragraph must be an object")
-    assert isinstance(paragraph, dict)
-    validate_source_regions(paragraph, "paragraph")
-    _require_str(paragraph, "text", "paragraph.text must be a non-empty string")
-    formula = response.get("formula")
-    _require(isinstance(formula, dict), "formula must be an object")
-    assert isinstance(formula, dict)
-    validate_source_regions(formula, "formula")
-    _require_str(formula, "normalized_math", "formula.normalized_math must be a non-empty string")
-    _require_str(
-        formula, "spoken_math_alternative", "formula.spoken_math_alternative must be non-empty"
-    )
-    figure = response.get("figure")
-    _require(isinstance(figure, dict), "figure must be an object")
-    assert isinstance(figure, dict)
-    validate_source_regions(figure, "figure")
-    _require(
-        figure.get("complexity") in FIGURE_COMPLEXITIES,
-        "figure.complexity must be simple or complex",
-    )
-    _require_str(figure, "figure_alternative", "figure.figure_alternative must be a non-empty string")
-    if figure.get("complexity") == "complex":
-        _require_str(
-            figure,
-            "detailed_figure_description",
-            "a complex figure requires a non-empty detailed_figure_description",
-        )
-    _validate_table_response(response.get("table"))
-    validate_source_regions(response.get("table"), "table")
+    nodes = response.get("nodes")
+    _require(isinstance(nodes, list), "nodes must be an array")
+    assert isinstance(nodes, list)
+    for index, node in enumerate(nodes):
+        name = f"nodes[{index}]"
+        _require(isinstance(node, dict), f"{name} must be an object")
+        assert isinstance(node, dict)
+        node_type = node.get("type")
+        _require(node_type in CANONICAL_READING_ORDER, f"{name}.type must be supported")
+        validate_source_regions(node, name)
+        if node_type == "heading":
+            level = node.get("level")
+            _require(
+                isinstance(level, int) and not isinstance(level, bool) and 1 <= level <= 6,
+                f"{name}.level must be an integer from 1 to 6",
+            )
+            _require_str(node, "text", f"{name}.text must be a non-empty string")
+        elif node_type == "paragraph":
+            _require_str(node, "text", f"{name}.text must be a non-empty string")
+        elif node_type == "formula":
+            _require_str(node, "normalized_math", f"{name}.normalized_math must be non-empty")
+            _require_str(node, "spoken_math_alternative", f"{name}.spoken_math_alternative must be non-empty")
+        elif node_type == "figure":
+            _require(node.get("complexity") in FIGURE_COMPLEXITIES, f"{name}.complexity must be simple or complex")
+            _require_str(node, "figure_alternative", f"{name}.figure_alternative must be non-empty")
+            if node.get("complexity") == "complex":
+                _require_str(node, "detailed_figure_description", f"{name} complex figure requires a detailed description")
+        else:
+            _validate_table_response(node)
     errors = response.get("suspected_source_errors")
     _require(
         isinstance(errors, list) and all(isinstance(item, str) for item in errors),
@@ -670,7 +642,7 @@ def _looks_like_unspoken_math(normalized_math: str, spoken: str) -> bool:
 
 
 def _reconcile_formula(
-    page_response: dict[str, Any], candidates: Sequence[dict[str, Any]]
+    formula: dict[str, Any], candidates: Sequence[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Reconcile the reconstructed Formula against specialized recognition.
 
@@ -679,7 +651,6 @@ def _reconcile_formula(
     with the reconstructed normalized math, or when the Spoken Math Alternative
     does not read as spoken English, an unresolved Conversion Warning is raised.
     """
-    formula = page_response["formula"]
     normalized_math = formula["normalized_math"]
     warnings: list[dict[str, Any]] = []
 
@@ -697,7 +668,10 @@ def _reconcile_formula(
 
     normalized_tokens = _formula_tokens(normalized_math)
     for candidate in candidates:
-        if candidate.get("type") != "formula":
+        if (
+            candidate.get("type") != "formula"
+            or candidate.get("id") not in formula["source_regions"]
+        ):
             continue
         candidate_tokens = _formula_tokens(str(candidate.get("text") or ""))
         if len(candidate_tokens) < FORMULA_CANDIDATE_MIN_TOKENS:
@@ -738,7 +712,7 @@ def _looks_like_thin_figure_detail(alternative: str, detailed: str | None) -> bo
 
 
 def _reconcile_figure(
-    page_response: dict[str, Any],
+    figure: dict[str, Any],
     region_verifications: Sequence[tuple[dict[str, Any], dict[str, Any]]],
 ) -> list[dict[str, Any]]:
     """Reconcile the reconstructed Informative Figure against its crop evidence.
@@ -750,7 +724,6 @@ def _reconcile_figure(
     description raises an unresolved Conversion Warning rather than passing
     unverified figure semantics through to assistive technology.
     """
-    figure = page_response["figure"]
     if figure["complexity"] != "complex":
         return []
 
@@ -775,7 +748,9 @@ def _reconcile_figure(
     # check in reconcile_page, so both spec triggers — weak grounding and
     # disagreement — become Conversion Warnings.
     grounded = any(
-        candidate.get("type") == "figure" for candidate, _ in region_verifications
+        candidate.get("type") == "figure"
+        and candidate.get("id") in figure["source_regions"]
+        for candidate, _ in region_verifications
     )
     if not grounded:
         warnings.append(
@@ -819,7 +794,7 @@ def _table_layer_node(table: dict[str, Any]) -> dict[str, Any]:
     return node
 
 
-def _reconcile_table(page_response: dict[str, Any]) -> list[dict[str, Any]]:
+def _reconcile_table(table: dict[str, Any]) -> list[dict[str, Any]]:
     """Surface a Semantic Table's uncertain structure as Conversion Warnings.
 
     A Semantic Table preserves its caption, headers, cells, and header associations,
@@ -828,7 +803,6 @@ def _reconcile_table(page_response: dict[str, Any]) -> list[dict[str, Any]]:
     assistive technology. (A crop that contradicts the page-level table is caught by
     the generic recognition-disagreement check in ``reconcile_page``.)
     """
-    table = page_response["table"]
     cells = [cell for row in table["rows"] for cell in row["cells"]]
     warnings: list[dict[str, Any]] = []
 
@@ -880,32 +854,31 @@ def reconcile_page(
     ambiguity, unsupported input, suspected source error, or suspected prompt
     injection becomes an unresolved (non-bypassable) Conversion Warning.
     """
-    heading = page_response["heading"]
-    paragraph = page_response["paragraph"]
-    formula = page_response["formula"]
-    figure = page_response["figure"]
-    # A simple Informative Figure exposes only its concise Figure Alternative; a
-    # complex one also exposes its Detailed Figure Description.
-    figure_node: dict[str, Any] = {
-        "type": "figure",
-        "complexity": figure["complexity"],
-        "figure_alternative": figure["figure_alternative"],
-        "source_regions": list(figure["source_regions"]),
-    }
-    if figure["complexity"] == "complex":
-        figure_node["detailed_figure_description"] = figure["detailed_figure_description"]
-    semantic_layer: list[dict[str, Any]] = [
-        {"type": "heading", "level": heading["level"], "text": heading["text"], "source_regions": list(heading["source_regions"])},
-        {"type": "paragraph", "text": paragraph["text"], "source_regions": list(paragraph["source_regions"])},
-        {
-            "type": "formula",
-            "normalized_math": formula["normalized_math"],
-            "spoken_math_alternative": formula["spoken_math_alternative"],
-            "source_regions": list(formula["source_regions"]),
-        },
-        figure_node,
-        {**_table_layer_node(page_response["table"]), "source_regions": list(page_response["table"]["source_regions"])},
-    ]
+    semantic_layer: list[dict[str, Any]] = []
+    for node in page_response["nodes"]:
+        node_type = node["type"]
+        if node_type == "heading":
+            authored = {"type": "heading", "level": node["level"], "text": node["text"]}
+        elif node_type == "paragraph":
+            authored = {"type": "paragraph", "text": node["text"]}
+        elif node_type == "formula":
+            authored = {
+                "type": "formula",
+                "normalized_math": node["normalized_math"],
+                "spoken_math_alternative": node["spoken_math_alternative"],
+            }
+        elif node_type == "figure":
+            authored = {
+                "type": "figure",
+                "complexity": node["complexity"],
+                "figure_alternative": node["figure_alternative"],
+            }
+            if node["complexity"] == "complex":
+                authored["detailed_figure_description"] = node["detailed_figure_description"]
+        else:
+            authored = _table_layer_node(node)
+        authored["source_regions"] = list(node["source_regions"])
+        semantic_layer.append(authored)
 
     warnings: list[dict[str, Any]] = []
 
@@ -926,20 +899,11 @@ def reconcile_page(
             )
         )
 
-    order = list(page_response["reading_order"])
     if not page_response["reading_order_is_unambiguous"]:
         warnings.append(
             _warning(
                 "ambiguous-reading-order",
                 "More than one Logical Reading Order is plausible for this page.",
-            )
-        )
-    elif order != list(CANONICAL_READING_ORDER):
-        warnings.append(
-            _warning(
-                "ambiguous-reading-order",
-                "The reconstructed reading order differs from the authored order.",
-                reading_order=order,
             )
         )
 
@@ -968,20 +932,26 @@ def reconcile_page(
 
     # Reconcile the required high-resolution Formula reconstruction against the
     # independent specialized recognition, and check the Spoken Math Alternative.
-    warnings.extend(_reconcile_formula(page_response, candidates))
+    for formula in (node for node in page_response["nodes"] if node["type"] == "formula"):
+        warnings.extend(_reconcile_formula(formula, candidates))
 
     # Reconcile a complex Informative Figure against its independent crop-level
     # interpretation, and check that its Detailed Figure Description adds real detail.
-    warnings.extend(_reconcile_figure(page_response, region_verifications))
+    for figure in (node for node in page_response["nodes"] if node["type"] == "figure"):
+        warnings.extend(_reconcile_figure(figure, region_verifications))
 
     # Surface a Semantic Table's uncertain boundaries, merged cells, or ambiguous
     # headers as Conversion Warnings.
-    warnings.extend(_reconcile_table(page_response))
+    for table in (node for node in page_response["nodes"] if node["type"] == "table"):
+        warnings.extend(_reconcile_table(table))
 
     # Ground the reconstructed prose in recognized content: measure how much of
     # the reconstructed wording is actually present in the independent evidence,
     # so a paraphrased summary still grounds while an invented one disagrees.
-    reconstructed = _tokens(heading["text"]) | _tokens(paragraph["text"])
+    reconstructed: set[str] = set()
+    for node in page_response["nodes"]:
+        if node["type"] in {"heading", "paragraph"}:
+            reconstructed |= _tokens(node["text"])
     evidence_text = " ".join(
         [str(word.get("text", "")) for word in pdf_words]
         + [
@@ -1050,7 +1020,7 @@ def build_page_semantics_document(
             "primary_language_is_english": page_response["primary_language_is_english"],
             "provider_endpoint": config.base_url,
             "provider_model": config.model,
-            "reading_order": list(page_response["reading_order"]),
+            "reading_order": [node["type"] for node in page_response["nodes"]],
             "reading_order_is_unambiguous": page_response["reading_order_is_unambiguous"],
             "region_prompt_version": REGION_PROMPT_VERSION,
             "region_schema_version": REGION_SCHEMA_VERSION,
@@ -1094,21 +1064,27 @@ def _region_verification_targets(
         for candidate in candidates
         if candidate.get("type") in REGION_VERIFY_TYPES
     ]
-    covered_types = {target.get("type") for target in targets}
+    covered_regions = {
+        (target.get("type"), target.get("id")) for target in targets
+    }
     candidates_by_id = {
         candidate.get("id"): candidate
         for candidate in candidates
         if isinstance(candidate.get("id"), str)
     }
-    for semantic_type in CANONICAL_READING_ORDER:
-        if semantic_type not in REGION_VERIFY_TYPES or semantic_type in covered_types:
+    for node in page_response["nodes"]:
+        semantic_type = node["type"]
+        if semantic_type not in REGION_VERIFY_TYPES:
             continue
-        region_id = page_response[semantic_type]["source_regions"][0]
+        region_id = node["source_regions"][0]
+        if (semantic_type, region_id) in covered_regions:
+            continue
         targets.append({
             **candidates_by_id.get(region_id, {}),
             "id": region_id,
             "type": semantic_type,
         })
+        covered_regions.add((semantic_type, region_id))
     return targets
 
 
