@@ -5,7 +5,8 @@ These tests do not compare model output; they guard the *oracle itself* so it
 cannot silently drift away from the schema, the sample it describes, or the
 internal semantic invariants that a conforming conversion must satisfy. The
 record was approved as gold by the maintainer (ADR 0020) and must keep
-validating exactly as any Review Record produced by the pipeline does.
+describing the approved content while issue #41 migrates its source evidence to
+Review Record 3.0. The legacy fixture is deliberately not accepted by the runtime.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import unittest
 from accessibilizer.checkpoint import file_sha256
 from accessibilizer.review import (
     REVIEW_RECORD_SCHEMA_VERSION,
+    ReviewRecordError,
     load_yaml,
     validate_review_record,
 )
@@ -28,8 +30,7 @@ GOLD = ROOT / "testdata" / "gold-review-record.yaml"
 
 EXPECTED_PAGES = list(range(1, 12))
 
-# Mirror of the id patterns in schemas/review-record-2.0.schema.json; kept here so
-# a schema tightening that these no longer satisfy surfaces as a test failure.
+# Legacy identity patterns retained until issue #41 migrates the gold fixture.
 REGION_ID = re.compile(r"^page-[0-9]+-r[0-9]{4,}$")
 WARNING_ID = re.compile(r"^w[0-9]{4,}$")
 # The page-6 copper resistivity is defined with this exponent but substituted with
@@ -46,9 +47,11 @@ class GoldReviewRecordTests(unittest.TestCase):
         cls.record = load_yaml(GOLD.read_text(encoding="utf-8"))
         cls.candidates_by_id = {c["id"]: c for c in cls.record["candidates"]}
 
-    def test_gold_record_validates_against_the_canonical_schema(self) -> None:
-        validate_review_record(self.record)
-        self.assertEqual(self.record["schema_version"], REVIEW_RECORD_SCHEMA_VERSION)
+    def test_legacy_gold_record_is_not_accepted_as_review_record_3(self) -> None:
+        self.assertEqual(self.record["schema_version"], "2.0")
+        self.assertEqual(REVIEW_RECORD_SCHEMA_VERSION, "3.0")
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(self.record)
 
     def test_gold_record_describes_every_sample_page(self) -> None:
         self.assertEqual(self.record["pages"], EXPECTED_PAGES)

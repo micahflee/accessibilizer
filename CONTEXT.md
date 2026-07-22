@@ -13,11 +13,11 @@ The PDF supplied to Accessibilizer for conversion, whether it contains page imag
 _Avoid_: Input scan, original
 
 **Source Region**:
-A stably identified area of a Source PDF page that serves as visual evidence independently of any interpretation of that area. A Semantic Layer node may reference one or more Source Regions, and a Source Region may support more than one node.
+A stably identified area of a Source PDF page that serves as visual evidence independently of any interpretation of that area. Its `page-N-rNNNN` identity and `[x0, y0, x1, y1]` bounding box use displayed-page PDF points after crop and rotation, with a top-left origin and Y increasing downward. A Semantic Layer node references one or more same-page Source Regions, and a Source Region may support more than one node. Derived crops live at `regions/<source-region-id>.png`; crop paths are not Review Record data.
 _Avoid_: Crop, candidate, bounding box
 
 **Recognition Candidate**:
-A non-authoritative interpretation of a Source Region produced by a recognition backend and retained as evidence for reconciliation and review.
+A non-authoritative interpretation of exactly one Source Region produced by a recognition backend and retained as evidence for reconciliation and review. Its distinct stable identity uses `page-N-cNNNN`; a Candidate ID is never a Source Region ID.
 _Avoid_: Source Region, Semantic Layer node, recognized truth
 
 **Supported Source PDF**:
@@ -29,7 +29,7 @@ The preserved visible appearance of each Source PDF page. Accessibilization does
 _Avoid_: Background image, original layer
 
 **Semantic Layer**:
-The ordered document structure, text, mathematical alternatives, and figure descriptions exposed to assistive technology independently of the Visual Layer.
+The ordered document structure, text, mathematical alternatives, and figure descriptions exposed to assistive technology independently of the Visual Layer. Every node has a stable `page-N-sNNNN` identity and references one or more same-page Source Regions; those review-only fields do not cross the PDF-authoring boundary.
 _Avoid_: OCR layer, invisible text
 
 **Formula**:
@@ -77,7 +77,7 @@ Visual material that adds no distinct instructional meaning and is omitted from 
 _Avoid_: Decorative figure, empty alt text
 
 **Conversion Warning**:
-A specific unresolved concern, supported by failed verification, disagreement, or ambiguity, about the correctness or completeness of a generated Semantic Layer. It is resolved only when a Reviewer explicitly corrects it, accepts the candidate as accurate, or marks it inapplicable with a reason; model self-confidence alone does not resolve a concern.
+A specific unresolved concern, supported by failed verification, disagreement, or ambiguity, about the correctness or completeness of a generated Semantic Layer. It may reference affected Semantic Layer nodes and Source Regions; page- or document-wide warnings may have no references. It is resolved only when a Reviewer explicitly corrects it, accepts the candidate as accurate, or marks it inapplicable with a reason; model self-confidence alone does not resolve a concern.
 _Avoid_: Error, validation failure
 
 **Review-Required PDF**:

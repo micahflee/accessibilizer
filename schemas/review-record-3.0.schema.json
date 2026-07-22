@@ -1,0 +1,784 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/review-record-3.0.schema.json",
+  "title": "Accessibilizer Review Record 3.0",
+  "description": "The human-editable, durable account of a whole document's reconstructed Semantic Layer, canonical Source Regions, non-authoritative Recognition Candidates, and Conversion Warnings with their resolution history. Semantic Layer nodes, Candidates, and Source Regions have distinct stable identities joined by explicit same-page references. Source Region geometry uses displayed-page PDF points; crops are derived and are not stored. Review-only identity and evidence fields do not cross the PDF-authoring boundary. Finalization is blocked while any warning is unresolved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidates",
+    "language",
+    "page_dimensions",
+    "pages",
+    "reconstruction",
+    "schema_version",
+    "semantic_layer",
+    "source_sha256",
+    "source_regions",
+    "title",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "3.0"
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "page_dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/page_dimensions"
+      }
+    },
+    "source_regions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source_region"
+      }
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1
+    },
+    "semantic_layer": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/heading"
+          },
+          {
+            "$ref": "#/$defs/paragraph"
+          },
+          {
+            "$ref": "#/$defs/formula"
+          },
+          {
+            "$ref": "#/$defs/figure"
+          },
+          {
+            "$ref": "#/$defs/link"
+          },
+          {
+            "$ref": "#/$defs/table"
+          }
+        ]
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "reconstruction": {
+      "$ref": "#/$defs/reconstruction"
+    }
+  },
+  "$defs": {
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "level",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "heading"
+        }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "paragraph"
+        }
+      }
+    },
+    "formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "normalized_math",
+        "spoken_math_alternative",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "normalized_math": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spoken_math_alternative": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "formula"
+        }
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "complexity",
+        "figure_alternative",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "complexity": {
+          "enum": [
+            "simple",
+            "complex"
+          ]
+        },
+        "detailed_figure_description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "figure_alternative": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "figure"
+        }
+      },
+      "if": {
+        "properties": {
+          "complexity": {
+            "const": "complex"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "detailed_figure_description"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "detailed_figure_description"
+          ]
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "href",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "link"
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "page",
+        "source_regions",
+        "rows",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "caption": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cells"
+            ],
+            "properties": {
+              "cells": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/table_cell"
+                }
+              }
+            }
+          }
+        },
+        "type": {
+          "const": "table"
+        }
+      }
+    },
+    "table_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "col_span",
+        "kind",
+        "row_span",
+        "scope",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "header",
+            "data"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "col",
+            "row",
+            "both",
+            "none"
+          ]
+        },
+        "row_span": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "col_span": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "data"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "const": "none"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "scope": {
+            "enum": [
+              "col",
+              "row",
+              "both"
+            ]
+          }
+        }
+      }
+    },
+    "page_dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "height_points",
+        "page",
+        "width_points"
+      ],
+      "properties": {
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width_points": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height_points": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "source_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bbox_points",
+        "id",
+        "page"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bbox_points": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ],
+          "items": false,
+          "minItems": 4
+        }
+      }
+    },
+    "page_reconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_class",
+        "page",
+        "primary_language_is_english",
+        "reading_order",
+        "reading_order_is_unambiguous",
+        "verified_regions"
+      ],
+      "properties": {
+        "document_class": {
+          "enum": [
+            "stem_instructional",
+            "other"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "primary_language_is_english": {
+          "type": "boolean"
+        },
+        "reading_order": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "heading",
+              "paragraph",
+              "formula",
+              "figure",
+              "table"
+            ]
+          }
+        },
+        "reading_order_is_unambiguous": {
+          "type": "boolean"
+        },
+        "verified_regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agrees_with_page",
+              "source_region",
+              "type"
+            ],
+            "properties": {
+              "agrees_with_page": {
+                "type": "boolean"
+              },
+              "source_region": {
+                "type": "string",
+                "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+              },
+              "type": {
+                "enum": [
+                  "formula",
+                  "table",
+                  "figure"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "reconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_prompt_version",
+        "page_schema_version",
+        "pages",
+        "provider_endpoint",
+        "provider_model",
+        "region_prompt_version",
+        "region_schema_version"
+      ],
+      "properties": {
+        "page_prompt_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_endpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region_prompt_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/page_reconstruction"
+          }
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source_region",
+        "text",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-c[0-9]{4,}$"
+        },
+        "source_region": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "handwriting",
+            "formula",
+            "table",
+            "figure",
+            "document_structure"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer",
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "corrected",
+            "accepted",
+            "not_applicable"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "type": "string"
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "not_applicable"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "history",
+        "id",
+        "message",
+        "page",
+        "resolution",
+        "semantic_nodes",
+        "source_regions"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^w[0-9]{4,}$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "semantic_nodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-s[0-9]{4,}$"
+          }
+        },
+        "source_regions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+          }
+        },
+        "resolution": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/resolution"
+            }
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resolution"
+          }
+        }
+      }
+    }
+  }
+}

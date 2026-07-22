@@ -86,7 +86,7 @@ The generated protected directory contains:
 
 - `source.pdf`: immutable copy of the Source PDF
 - `output.pdf`: whole-document PDF/UA-1 output
-- `review-record.yaml`: the human-editable, whole-document Review Record — the flat Semantic Layer (each node tagged with its source page), the retained recognition candidates, the Conversion Warnings (each carrying its page) with their resolution history, and reconstruction provenance. It validates against `schemas/review-record-2.0.schema.json`.
+- `review-record.yaml`: the human-editable, whole-document Review Record — canonical Source Regions and displayed-page dimensions, the flat Semantic Layer with stable node identities and explicit evidence references, distinct Recognition Candidates, Conversion Warnings with node/region references and resolution history, and reconstruction provenance. It validates against `schemas/review-record-3.0.schema.json`; derived crops live at `regions/<source-region-id>.png` and are not stored as record paths.
 - `review-baseline.json`: the last tool-committed snapshot of the Review Record, used to detect changed resolutions and preserve history; not meant for editing
 - `review-report.html`: WCAG 2.2 AA presentation of the Review Record, pairing source-region context with the generated interpretations, warnings, and resolutions
 - `page-semantics/page-N.json`: each page's reconstructed Semantic Layer and warnings the Review Record is built from

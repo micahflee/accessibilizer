@@ -4,9 +4,12 @@ A Review Record is the durable, editable account of a whole document's
 reconstructed Semantic Layer, the original recognition candidates, the Conversion
 Warnings, and their resolution history. It spans every converted page: the
 Semantic Layer is a single flat list in document Logical Reading Order whose nodes
-each carry their source ``page``, and every warning carries the page it concerns.
-It is serialized as human-editable YAML, validated against the canonical versioned
-JSON Schema in ``schemas/review-record-2.0.schema.json`` (mirrored by
+each carry a stable identity, their source ``page``, and explicit Source Region
+references. Recognition Candidates have distinct identities and each reference
+exactly one Source Region. Every warning carries the page it concerns and may
+reference affected nodes and regions. It is serialized as human-editable YAML,
+validated against the canonical versioned JSON Schema in
+``schemas/review-record-3.0.schema.json`` (mirrored by
 :func:`review_record_schema`), and finalized only once every warning is resolved.
 
 A warning is resolved exactly one of three ways — ``corrected``, ``accepted``, or
@@ -19,13 +22,15 @@ from __future__ import annotations
 
 import copy
 import html
-from typing import Any, Sequence
+import math
+import re
+from typing import Any, NoReturn, Sequence
 
 import yaml
 from jsonschema import Draft202012Validator
 
 
-REVIEW_RECORD_SCHEMA_VERSION = "2.0"
+REVIEW_RECORD_SCHEMA_VERSION = "3.0"
 REVIEW_REPORT_VERSION = "3.0"
 
 RESOLUTION_STATUSES: tuple[str, ...] = ("corrected", "accepted", "not_applicable")
@@ -54,6 +59,25 @@ class ReviewRecordError(Exception):
 # A node's source page is required on every Semantic Layer node so a whole-document
 # record stays flat while remaining unambiguous about where each node belongs.
 _PAGE_PROPERTY = {"type": "integer", "minimum": 1}
+_SOURCE_REGION_ID = "^page-[0-9]+-r[0-9]{4,}$"
+_SEMANTIC_NODE_ID = "^page-[0-9]+-s[0-9]{4,}$"
+_CANDIDATE_ID = "^page-[0-9]+-c[0-9]{4,}$"
+
+
+def _node_properties() -> dict[str, Any]:
+    return {
+        "id": {"type": "string", "pattern": _SEMANTIC_NODE_ID},
+        "page": _PAGE_PROPERTY,
+        "source_regions": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": True,
+            "items": {"type": "string", "pattern": _SOURCE_REGION_ID},
+        },
+    }
+
+
+_NODE_REQUIRED = ["id", "page", "source_regions"]
 
 
 def _semantic_layer_defs() -> dict[str, Any]:
@@ -61,11 +85,11 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "heading": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["level", "page", "text", "type"],
+            "required": [*_NODE_REQUIRED, "level", "text", "type"],
             "properties": {
+                **_node_properties(),
                 # Heading hierarchy: H1 through H6 so section structure survives.
                 "level": {"type": "integer", "minimum": 1, "maximum": 6},
-                "page": _PAGE_PROPERTY,
                 "text": {"type": "string", "minLength": 1},
                 "type": {"const": "heading"},
             },
@@ -73,9 +97,9 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "paragraph": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["page", "text", "type"],
+            "required": [*_NODE_REQUIRED, "text", "type"],
             "properties": {
-                "page": _PAGE_PROPERTY,
+                **_node_properties(),
                 "text": {"type": "string", "minLength": 1},
                 "type": {"const": "paragraph"},
             },
@@ -83,10 +107,10 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "formula": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["normalized_math", "page", "spoken_math_alternative", "type"],
+            "required": [*_NODE_REQUIRED, "normalized_math", "spoken_math_alternative", "type"],
             "properties": {
+                **_node_properties(),
                 "normalized_math": {"type": "string", "minLength": 1},
-                "page": _PAGE_PROPERTY,
                 "spoken_math_alternative": {"type": "string", "minLength": 1},
                 "type": {"const": "formula"},
             },
@@ -94,12 +118,12 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "figure": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["complexity", "figure_alternative", "page", "type"],
+            "required": [*_NODE_REQUIRED, "complexity", "figure_alternative", "type"],
             "properties": {
+                **_node_properties(),
                 "complexity": {"enum": ["simple", "complex"]},
                 "detailed_figure_description": {"type": "string", "minLength": 1},
                 "figure_alternative": {"type": "string", "minLength": 1},
-                "page": _PAGE_PROPERTY,
                 "type": {"const": "figure"},
             },
             # A complex Informative Figure carries a Detailed Figure Description; a
@@ -111,12 +135,12 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "link": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["href", "page", "text", "type"],
+            "required": [*_NODE_REQUIRED, "href", "text", "type"],
             "properties": {
+                **_node_properties(),
                 # A reconstructable link exposes its announced text and its
                 # destination so assistive technology can follow it.
                 "href": {"type": "string", "minLength": 1},
-                "page": _PAGE_PROPERTY,
                 "text": {"type": "string", "minLength": 1},
                 "type": {"const": "link"},
             },
@@ -124,11 +148,11 @@ def _semantic_layer_defs() -> dict[str, Any]:
         "table": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["page", "rows", "type"],
+            "required": [*_NODE_REQUIRED, "rows", "type"],
             "properties": {
+                **_node_properties(),
                 # Present only when the table has a caption.
                 "caption": {"type": "string", "minLength": 1},
-                "page": _PAGE_PROPERTY,
                 "rows": {
                     "type": "array",
                     "minItems": 1,
@@ -195,10 +219,10 @@ def _page_reconstruction_schema() -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["agrees_with_page", "id", "type"],
+                    "required": ["agrees_with_page", "source_region", "type"],
                     "properties": {
                         "agrees_with_page": {"type": "boolean"},
-                        "id": {"type": "string", "pattern": "^page-[0-9]+-r[0-9]{4,}$"},
+                        "source_region": {"type": "string", "pattern": _SOURCE_REGION_ID},
                         "type": {"enum": ["formula", "table", "figure"]},
                     },
                 },
@@ -240,44 +264,55 @@ def _reconstruction_schema() -> dict[str, Any]:
 def review_record_schema() -> dict[str, Any]:
     """Return the canonical Review Record JSON Schema as a dict.
 
-    This is the runtime source of truth; ``schemas/review-record-1.0.schema.json``
+    This is the runtime source of truth; ``schemas/review-record-3.0.schema.json``
     mirrors it, and a drift test keeps the two in sync.
     """
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://accessibilizer.org/schemas/review-record-2.0.schema.json",
-        "title": "Accessibilizer Review Record 2.0",
+        "$id": "https://accessibilizer.org/schemas/review-record-3.0.schema.json",
+        "title": "Accessibilizer Review Record 3.0",
         "description": (
             "The human-editable, durable account of a whole document's reconstructed "
-            "Semantic Layer, the original recognition candidates, and the Conversion "
-            "Warnings with their resolution history. The Semantic Layer is a single "
-            "flat list in document Logical Reading Order whose nodes each carry their "
-            "source page, and every warning carries the page it concerns. A warning is "
-            "resolved only as corrected, accepted, or not_applicable (with a reason), "
-            "attributed to a Reviewer. Finalization is blocked while any warning is "
-            "unresolved."
+            "Semantic Layer, canonical Source Regions, non-authoritative Recognition "
+            "Candidates, and Conversion Warnings with their resolution history. "
+            "Semantic Layer nodes, Candidates, and Source Regions have distinct stable "
+            "identities joined by explicit same-page references. Source Region geometry "
+            "uses displayed-page PDF points; crops are derived and are not stored. "
+            "Review-only identity and evidence fields do not cross the PDF-authoring "
+            "boundary. Finalization is blocked while any warning is unresolved."
         ),
         "type": "object",
         "additionalProperties": False,
         "required": [
             "candidates",
             "language",
+            "page_dimensions",
             "pages",
             "reconstruction",
             "schema_version",
             "semantic_layer",
             "source_sha256",
+            "source_regions",
             "title",
             "warnings",
         ],
         "properties": {
-            "schema_version": {"const": "2.0"},
+            "schema_version": {"const": "3.0"},
             "pages": {
                 "type": "array",
                 "minItems": 1,
                 "items": {"type": "integer", "minimum": 1},
             },
             "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "page_dimensions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"$ref": "#/$defs/page_dimensions"},
+            },
+            "source_regions": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/source_region"},
+            },
             "title": {"type": "string", "minLength": 1},
             "language": {"type": "string", "minLength": 1},
             "semantic_layer": {
@@ -299,17 +334,47 @@ def review_record_schema() -> dict[str, Any]:
         },
         "$defs": {
             **_semantic_layer_defs(),
+            "page_dimensions": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["height_points", "page", "width_points"],
+                "properties": {
+                    "page": _PAGE_PROPERTY,
+                    "width_points": {"type": "number", "exclusiveMinimum": 0},
+                    "height_points": {"type": "number", "exclusiveMinimum": 0},
+                },
+            },
+            "source_region": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["bbox_points", "id", "page"],
+                "properties": {
+                    "id": {"type": "string", "pattern": _SOURCE_REGION_ID},
+                    "page": _PAGE_PROPERTY,
+                    "bbox_points": {
+                        "type": "array",
+                        "prefixItems": [
+                            {"type": "number", "minimum": 0},
+                            {"type": "number", "minimum": 0},
+                            {"type": "number", "minimum": 0},
+                            {"type": "number", "minimum": 0},
+                        ],
+                        "items": False,
+                        "minItems": 4,
+                    },
+                },
+            },
             "page_reconstruction": _page_reconstruction_schema(),
             "reconstruction": _reconstruction_schema(),
             "candidate": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["crop", "id", "text", "type"],
+                "required": ["id", "source_region", "text", "type"],
                 "properties": {
-                    "id": {"type": "string", "pattern": "^page-[0-9]+-r[0-9]{4,}$"},
+                    "id": {"type": "string", "pattern": _CANDIDATE_ID},
+                    "source_region": {"type": "string", "pattern": _SOURCE_REGION_ID},
                     "type": {"enum": list(CANDIDATE_TYPES)},
                     "text": {"type": ["string", "null"]},
-                    "crop": {"type": "string", "minLength": 1},
                 },
             },
             "resolution": {
@@ -332,14 +397,22 @@ def review_record_schema() -> dict[str, Any]:
                 "type": "object",
                 "additionalProperties": False,
                 "required": [
-                    "code", "history", "id", "message", "page", "region", "resolution"
+                    "code", "history", "id", "message", "page", "resolution",
+                    "semantic_nodes", "source_regions"
                 ],
                 "properties": {
                     "id": {"type": "string", "pattern": "^w[0-9]{4,}$"},
                     "code": {"type": "string", "minLength": 1},
                     "message": {"type": "string", "minLength": 1},
                     "page": {"type": ["integer", "null"], "minimum": 1},
-                    "region": {"type": ["string", "null"]},
+                    "semantic_nodes": {
+                        "type": "array", "uniqueItems": True,
+                        "items": {"type": "string", "pattern": _SEMANTIC_NODE_ID},
+                    },
+                    "source_regions": {
+                        "type": "array", "uniqueItems": True,
+                        "items": {"type": "string", "pattern": _SOURCE_REGION_ID},
+                    },
                     "resolution": {
                         "oneOf": [{"type": "null"}, {"$ref": "#/$defs/resolution"}]
                     },
@@ -382,6 +455,8 @@ def build_review_record(
     an empty history.
     """
     semantic_layer: list[dict[str, Any]] = []
+    page_dimensions: list[dict[str, Any]] = []
+    source_regions: list[dict[str, Any]] = []
     candidates: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     page_reconstructions: list[dict[str, Any]] = []
@@ -390,6 +465,10 @@ def build_review_record(
     for page_document in pages:
         page_number = page_document["page"]
         page_numbers.append(page_number)
+        page_dimensions.append(
+            {"page": page_number, **copy.deepcopy(page_document["page_dimensions"])}
+        )
+        source_regions.extend(copy.deepcopy(page_document["source_regions"]))
         for node in page_document["semantic_layer"]:
             tagged = {"page": page_number, **copy.deepcopy(node)}
             semantic_layer.append(tagged)
@@ -399,7 +478,7 @@ def build_review_record(
                     "id": candidate["id"],
                     "type": candidate["type"],
                     "text": candidate.get("text"),
-                    "crop": candidate["crop"],
+                    "source_region": candidate["source_region"],
                 }
             )
         for warning in page_document.get("warnings", []):
@@ -410,7 +489,8 @@ def build_review_record(
                     "code": warning["code"],
                     "message": warning["message"],
                     "page": page_number,
-                    "region": warning.get("region"),
+                    "semantic_nodes": copy.deepcopy(warning.get("semantic_nodes", [])),
+                    "source_regions": copy.deepcopy(warning.get("source_regions", [])),
                     "resolution": None,
                     "history": [],
                 }
@@ -433,7 +513,9 @@ def build_review_record(
     return {
         "schema_version": REVIEW_RECORD_SCHEMA_VERSION,
         "pages": page_numbers,
+        "page_dimensions": page_dimensions,
         "source_sha256": source_sha256,
+        "source_regions": source_regions,
         "title": title,
         "language": language,
         "semantic_layer": semantic_layer,
@@ -497,6 +579,105 @@ def validate_review_record(record: dict[str, Any]) -> None:
         error = errors[0]
         location = "/".join(str(part) for part in error.path) or "(root)"
         raise ReviewRecordError(f"invalid Review Record at {location}: {error.message}")
+
+    def fail(message: str) -> NoReturn:
+        raise ReviewRecordError(f"invalid Review Record: {message}")
+
+    def unique_by_id(collection: str) -> dict[str, dict[str, Any]]:
+        indexed: dict[str, dict[str, Any]] = {}
+        for item in record[collection]:
+            identifier = item["id"]
+            if identifier in indexed:
+                fail(f"duplicate {collection} id {identifier}")
+            indexed[identifier] = item
+        return indexed
+
+    def id_page(identifier: str) -> int:
+        match = re.match(r"^page-([0-9]+)-[rsc][0-9]{4,}$", identifier)
+        if match is None:
+            fail(f"invalid page-scoped id {identifier}")
+        return int(match.group(1))
+
+    pages = record["pages"]
+    if len(pages) != len(set(pages)):
+        fail("pages must be unique")
+    page_set = set(pages)
+    dimensions: dict[int, tuple[float, float]] = {}
+    for entry in record["page_dimensions"]:
+        page_number = entry["page"]
+        if page_number in dimensions:
+            fail(f"duplicate page dimensions for page {page_number}")
+        width = float(entry["width_points"])
+        height = float(entry["height_points"])
+        if not math.isfinite(width) or not math.isfinite(height):
+            fail(f"page {page_number} dimensions must be finite")
+        dimensions[page_number] = (width, height)
+    if set(dimensions) != page_set:
+        fail("page_dimensions must describe every converted page exactly once")
+
+    regions = unique_by_id("source_regions")
+    for identifier, region in regions.items():
+        page_number = region["page"]
+        if page_number not in page_set:
+            fail(f"Source Region {identifier} names an unconverted page")
+        if id_page(identifier) != page_number:
+            fail(f"Source Region {identifier} id does not agree with page {page_number}")
+        x0, y0, x1, y1 = (float(value) for value in region["bbox_points"])
+        if not all(math.isfinite(value) for value in (x0, y0, x1, y1)):
+            fail(f"Source Region {identifier} bounds must be finite")
+        width, height = dimensions[page_number]
+        if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
+            fail(f"Source Region {identifier} bounds must be ordered and contained by page")
+
+    nodes = unique_by_id("semantic_layer")
+    for identifier, node in nodes.items():
+        page_number = node["page"]
+        if page_number not in page_set or id_page(identifier) != page_number:
+            fail(f"Semantic Layer node {identifier} does not agree with its page")
+        for reference in node["source_regions"]:
+            referenced_region = regions.get(reference)
+            if referenced_region is None:
+                fail(f"Semantic Layer node {identifier} references unknown Source Region {reference}")
+            if referenced_region["page"] != page_number:
+                fail(f"Semantic Layer node {identifier} references a different-page Source Region")
+
+    candidates = unique_by_id("candidates")
+    for identifier, candidate in candidates.items():
+        reference = candidate["source_region"]
+        candidate_region = regions.get(reference)
+        if candidate_region is None:
+            fail(f"Recognition Candidate {identifier} references unknown Source Region {reference}")
+        if id_page(identifier) != candidate_region["page"]:
+            fail(f"Recognition Candidate {identifier} and its Source Region disagree on page")
+
+    unique_by_id("warnings")
+    for warning in record["warnings"]:
+        warning_page = warning["page"]
+        if warning_page is not None and warning_page not in page_set:
+            fail(f"warning {warning['id']} names an unconverted page")
+        for reference in warning["semantic_nodes"]:
+            warning_node = nodes.get(reference)
+            if warning_node is None:
+                fail(f"warning {warning['id']} references unknown Semantic Layer node {reference}")
+            if warning_page is not None and warning_node["page"] != warning_page:
+                fail(f"warning {warning['id']} references a different-page Semantic Layer node")
+        for reference in warning["source_regions"]:
+            warning_region = regions.get(reference)
+            if warning_region is None:
+                fail(f"warning {warning['id']} references unknown Source Region {reference}")
+            if warning_page is not None and warning_region["page"] != warning_page:
+                fail(f"warning {warning['id']} references a different-page Source Region")
+
+    for reconstruction in record["reconstruction"]["pages"]:
+        page_number = reconstruction["page"]
+        for verified in reconstruction["verified_regions"]:
+            reference = verified["source_region"]
+            verified_region = regions.get(reference)
+            if verified_region is None or verified_region["page"] != page_number:
+                fail(
+                    f"page {page_number} verification references an unknown or different-page "
+                    f"Source Region {reference}"
+                )
     for warning in record["warnings"]:
         resolution = warning["resolution"]
         if resolution is None:
@@ -611,18 +792,21 @@ def _semantic_layer_items(record: dict[str, Any]) -> str:
     return "".join(items)
 
 
-def _warning_row(warning: dict[str, Any], crops: dict[str, dict[str, Any]]) -> str:
+def _warning_row(
+    warning: dict[str, Any], candidates_by_region: dict[str, dict[str, Any]]
+) -> str:
     identifier = html.escape(str(warning.get("id", "")))
     code = html.escape(str(warning.get("code", "")))
     message = html.escape(str(warning.get("message", "")))
     page = warning.get("page")
     page_cell = f"Page {html.escape(str(page))}" if page is not None else "Document"
-    region = warning.get("region")
-    if region and region in crops:
-        crop = crops[region]
-        source = html.escape(str(crop.get("crop", "")), quote=True)
-        region_type = html.escape(str(crop.get("type", "region")))
-        recognized = crop.get("text")
+    source_regions = warning.get("source_regions", [])
+    region = source_regions[0] if source_regions else None
+    if region:
+        candidate = candidates_by_region.get(str(region), {})
+        source = html.escape(f"regions/{region}.png", quote=True)
+        region_type = html.escape(str(candidate.get("type", "region")))
+        recognized = candidate.get("text")
         recognized_cell = (
             f"<span>Recognized text: {html.escape(str(recognized))}</span>"
             if recognized
@@ -634,8 +818,6 @@ def _warning_row(warning: dict[str, Any], crops: dict[str, dict[str, Any]]) -> s
             f"<span> Region {html.escape(str(region))} ({region_type})</span>"
             f"{recognized_cell}"
         )
-    elif region:
-        region_cell = f"Region {html.escape(str(region))}"
     else:
         region_cell = "Whole page"
     resolution = warning.get("resolution")
@@ -665,15 +847,17 @@ def render_review_report(record: dict[str, Any]) -> str:
     """
     language = html.escape(str(record.get("language", "en")), quote=True)
     title = html.escape(str(record.get("title", "Untitled")))
-    crops = {
-        candidate["id"]: candidate
+    candidates_by_region = {
+        candidate["source_region"]: candidate
         for candidate in record.get("candidates", [])
-        if isinstance(candidate, dict) and "id" in candidate
+        if isinstance(candidate, dict) and "source_region" in candidate
     }
     warnings = record.get("warnings", [])
     if warnings:
         unresolved = sum(1 for warning in warnings if warning.get("resolution") is None)
-        rows = "".join(_warning_row(warning, crops) for warning in warnings)
+        rows = "".join(
+            _warning_row(warning, candidates_by_region) for warning in warnings
+        )
         warnings_body = (
             f"<p>{len(warnings)} Conversion Warning(s); {unresolved} not yet resolved.</p>"
             "<table><caption>Conversion Warnings and their resolutions</caption>"
