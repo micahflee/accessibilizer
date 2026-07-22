@@ -60,6 +60,9 @@ REGION_VERIFY_TYPES = frozenset({"formula", "table", "figure"})
 # A reconstruction grounds when at least this fraction of its prose
 # tokens also appear in the independent recognized content on the page.
 GROUNDING_MIN_OVERLAP = 0.2
+# The inverse check catches severe omissions: even supported emitted wording is
+# incomplete when it covers almost none of the independently recognized prose.
+GROUNDING_MIN_EVIDENCE_COVERAGE = 0.1
 
 # A specialized Formula candidate corroborates the reconstruction when at least
 # this fraction of the tokens it recognized also appear in the reconstructed
@@ -895,11 +898,15 @@ def reconcile_page(
     )
     evidence_tokens = _tokens(evidence_text)
     if evidence_tokens:
-        grounded = (
+        reconstruction_support = (
             len(evidence_tokens & reconstructed) / len(reconstructed)
             if reconstructed else 0.0
         )
-        if grounded < GROUNDING_MIN_OVERLAP:
+        evidence_coverage = len(evidence_tokens & reconstructed) / len(evidence_tokens)
+        if (
+            reconstruction_support < GROUNDING_MIN_OVERLAP
+            or evidence_coverage < GROUNDING_MIN_EVIDENCE_COVERAGE
+        ):
             warnings.append(
                 _warning(
                     "recognition-disagreement",

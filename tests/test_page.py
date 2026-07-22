@@ -504,6 +504,28 @@ class ReconciliationTest(unittest.TestCase):
 
         self.assertIn("recognition-disagreement", self.codes(warnings))
 
+    def test_one_supported_word_does_not_hide_substantial_omitted_prose(self) -> None:
+        response = valid_page_response(
+            nodes=[
+                {
+                    "type": "paragraph",
+                    "text": "Current",
+                    "source_regions": ["page-1-r0001"],
+                }
+            ]
+        )
+        evidence = (
+            "Current is the rate of flow of electric charge through a conducting "
+            "material measured in amperes over a specified interval of time"
+        )
+
+        _, warnings = self.reconcile(
+            page_response=response,
+            pdf_words=[{"text": evidence}],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
+
     def test_warnings_are_unresolved_and_thus_non_bypassable(self) -> None:
         _, warnings = self.reconcile(
             page_response=valid_page_response(reading_order_is_unambiguous=False)
