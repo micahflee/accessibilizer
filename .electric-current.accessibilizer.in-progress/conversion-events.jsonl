@@ -1,5 +1,0 @@
-{"endpoint": "https://api.openai.com/v1", "model": "gpt-5.6-sol", "purpose": "capability-check", "request": 1, "request_total": 1, "schema_version": "1.0", "stage": "provider-capability", "state": "started", "timestamp": "2026-07-22T04:21:42Z"}
-{"elapsed_seconds": 2.452, "endpoint": "https://api.openai.com/v1", "model": "gpt-5.6-sol", "purpose": "capability-check", "request": 1, "request_total": 1, "schema_version": "1.0", "stage": "provider-capability", "state": "completed", "timestamp": "2026-07-22T04:21:44Z", "token_usage": {"completion_tokens": 38, "prompt_tokens": 55, "total_tokens": 93}}
-{"schema_version": "1.0", "stage": "source-preflight", "state": "started", "timestamp": "2026-07-22T04:21:44Z"}
-{"elapsed_seconds": 0.186, "schema_version": "1.0", "stage": "source-preflight", "state": "completed", "timestamp": "2026-07-22T04:21:44Z"}
-{"page": 1, "page_count": 11, "schema_version": "1.0", "stage": "page-recognition", "state": "started", "timestamp": "2026-07-22T04:21:46Z"}
