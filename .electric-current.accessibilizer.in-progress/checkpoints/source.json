@@ -1,0 +1,12 @@
+{
+  "artifact_sha256": {
+    "source.pdf": "fe203e79ddc803a7eaa4e401222a186b861c6b04ed632c865a2eaad858f2c077",
+    "validation/preflight.json": "a80407b562b16a2937c5b5dc5815c8286fcea46b90d1cc47f16490a3dd34f341"
+  },
+  "artifacts": [
+    "source.pdf",
+    "validation/preflight.json"
+  ],
+  "dependency_key": "0307d5d3b008103bdec13f7bb08d38c258fa1e42d5ea73c3321efdb92d04a533",
+  "stage": "source"
+}

@@ -1,0 +1,10 @@
+{
+  "artifact_sha256": {
+    "regions/page-1.png": "36d3d60310df23b54d17671c84c69c5e3e177a5deb702fb11890d6ce40e8b6bb"
+  },
+  "artifacts": [
+    "regions/page-1.png"
+  ],
+  "dependency_key": "d1fac91a610bd7248f309986801d84526baca609d2cf8cbd8bc6a768d7356fdb",
+  "stage": "region-page-1"
+}
