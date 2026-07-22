@@ -12,6 +12,14 @@ _Avoid_: OCRed PDF, searchable PDF, screen-reader-friendly PDF
 The PDF supplied to Accessibilizer for conversion, whether it contains page images, unreliable embedded text, or both.
 _Avoid_: Input scan, original
 
+**Source Region**:
+A stably identified area of a Source PDF page that serves as visual evidence independently of any interpretation of that area. A Semantic Layer node may reference one or more Source Regions, and a Source Region may support more than one node.
+_Avoid_: Crop, candidate, bounding box
+
+**Recognition Candidate**:
+A non-authoritative interpretation of a Source Region produced by a recognition backend and retained as evidence for reconciliation and review.
+_Avoid_: Source Region, Semantic Layer node, recognized truth
+
 **Supported Source PDF**:
 An English-language, static STEM lecture note or instructional document containing printed or handwritten prose, equations, diagrams, and tables. Encrypted, digitally signed, scripted, form-based, embedded-media, or otherwise interactive PDFs are not Supported Source PDFs; other static document classes are experimental and require an unsupported-input Conversion Warning.
 _Avoid_: Any scanned PDF, arbitrary PDF
