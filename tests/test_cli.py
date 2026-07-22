@@ -13,41 +13,55 @@ from accessibilizer.cli import (
 
 
 def page_document(page: int) -> dict[str, Any]:
+    region_ids = [f"page-{page}-r{index:04d}" for index in range(1, 6)]
+    nodes: list[dict[str, Any]] = [
+        {"type": "heading", "level": 1, "text": "Electric Current"},
+        {"type": "paragraph", "text": "Electric current is the rate charge flows."},
+        {
+            "type": "formula",
+            "normalized_math": "I = Q / delta t",
+            "spoken_math_alternative": "I equals Q divided by delta t.",
+        },
+        {
+            "type": "figure",
+            "complexity": "complex",
+            "figure_alternative": "A wire carrying current.",
+            "detailed_figure_description": "A wire passes through a surface.",
+        },
+        {
+            "type": "table",
+            "caption": "Resistivity",
+            "rows": [
+                {"cells": [
+                    {"kind": "header", "text": "Material", "scope": "col",
+                     "row_span": 1, "col_span": 1},
+                ]},
+            ],
+        },
+    ]
     return {
         "schema_version": "1.0",
         "page": page,
         "source_sha256": "a" * 64,
         "title": "Electric Current",
         "language": "en-US",
+        "page_dimensions": {"width_points": 612, "height_points": 792},
+        "source_regions": [
+            {"id": identifier, "page": page, "bbox_points": [10, 10, 600, 780]}
+            for identifier in region_ids
+        ],
         "semantic_layer": [
-            {"type": "heading", "level": 1, "text": "Electric Current"},
-            {"type": "paragraph", "text": "Electric current is the rate charge flows."},
             {
-                "type": "formula",
-                "normalized_math": "I = Q / delta t",
-                "spoken_math_alternative": "I equals Q divided by delta t.",
-            },
-            {
-                "type": "figure",
-                "complexity": "complex",
-                "figure_alternative": "A wire carrying current.",
-                "detailed_figure_description": "A wire passes through a surface.",
-            },
-            {
-                "type": "table",
-                "caption": "Resistivity",
-                "rows": [
-                    {"cells": [
-                        {"kind": "header", "text": "Material", "scope": "col",
-                         "row_span": 1, "col_span": 1},
-                    ]},
-                ],
-            },
+                **node,
+                "id": f"page-{page}-s{index:04d}",
+                "source_regions": [region_ids[index - 1]],
+            }
+            for index, node in enumerate(nodes, start=1)
         ],
         "warnings": [],
         "candidates": [
-            {"id": f"page-{page}-r0003", "type": "formula", "text": None,
-             "crop": f"regions/page-{page}-r0003.png"},
+            {"id": f"page-{page}-c0001", "type": "formula", "text": None,
+             "source_region": f"page-{page}-r0003"},
         ],
         "reconstruction": {
             "document_class": "stem_instructional",
@@ -61,9 +75,9 @@ def page_document(page: int) -> dict[str, Any]:
             "region_prompt_version": "1.0",
             "region_schema_version": "1.0",
             "verified_regions": [
-                {"agrees_with_page": True, "id": f"page-{page}-r0003", "type": "formula"},
-                {"agrees_with_page": True, "id": f"page-{page}-r0004", "type": "figure"},
-                {"agrees_with_page": True, "id": f"page-{page}-r0005", "type": "table"},
+                {"agrees_with_page": True, "source_region": f"page-{page}-r0003", "type": "formula"},
+                {"agrees_with_page": True, "source_region": f"page-{page}-r0004", "type": "figure"},
+                {"agrees_with_page": True, "source_region": f"page-{page}-r0005", "type": "table"},
             ],
         },
     }
@@ -114,13 +128,21 @@ class PageSelectionTest(unittest.TestCase):
 
 
 class AuthoringContractTest(unittest.TestCase):
-    def test_groups_flat_layer_by_page_and_strips_the_page_tag(self) -> None:
+    def test_projects_only_pdf_authoring_fields(self) -> None:
         contract = _authoring_contract(record_for([1, 2]))
         self.assertEqual(contract["schema_version"], "2.0")
         self.assertEqual([p["source_page"] for p in contract["pages"]], [1, 2])
         for grouped in contract["pages"]:
             self.assertEqual(len(grouped["semantic_layer"]), 5)
-            self.assertTrue(all("page" not in node for node in grouped["semantic_layer"]))
+            self.assertTrue(
+                all(
+                    not {"page", "id", "source_regions"}.intersection(node)
+                    for node in grouped["semantic_layer"]
+                )
+            )
+        self.assertFalse(
+            {"source_regions", "candidates", "warnings", "page_dimensions"}.intersection(contract)
+        )
         self.assertEqual(contract["pages"][0]["semantic_layer"][0]["type"], "heading")
 
 
@@ -180,11 +202,12 @@ class InternalChecksTest(unittest.TestCase):
         result = _internal_checks(record, self.extracted(record))
         self.assertFalse(result["categories"]["recognition-agreement"])
 
-    def test_a_warning_region_without_a_candidate_fails_coverage(self) -> None:
+    def test_a_warning_reference_without_a_source_region_fails_coverage(self) -> None:
         record = record_for([1])
         record["warnings"].append({
             "id": "w0001", "code": "recognition-disagreement", "message": "x",
-            "page": 1, "region": "page-1-r9999", "resolution": None, "history": [],
+            "page": 1, "semantic_nodes": [], "source_regions": ["page-1-r9999"],
+            "resolution": None, "history": [],
         })
         result = _internal_checks(record, self.extracted(record))
         self.assertFalse(result["categories"]["source-region-coverage"])

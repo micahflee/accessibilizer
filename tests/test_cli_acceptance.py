@@ -216,7 +216,7 @@ class ConversionTest(unittest.TestCase):
             self.assertTrue((bundle / "output.pdf").is_file())
             self.assertEqual(stat.S_IMODE((bundle / "source.pdf").stat().st_mode), 0o400)
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(review_record["schema_version"], "2.0")
+            self.assertEqual(review_record["schema_version"], "3.0")
             warning_codes = {warning["code"] for warning in review_record["warnings"]}
             self.assertIn("ambiguous-reading-order", warning_codes)
             # A freshly converted record starts with every warning unresolved.
@@ -224,6 +224,12 @@ class ConversionTest(unittest.TestCase):
                 all(warning["resolution"] is None for warning in review_record["warnings"])
             )
             self.assertTrue(all("id" in warning for warning in review_record["warnings"]))
+            self.assertTrue(
+                all(
+                    "semantic_nodes" in warning and "source_regions" in warning
+                    for warning in review_record["warnings"]
+                )
+            )
             self.assertIn(
                 "Conversion Warnings", (bundle / "review-report.html").read_text()
             )
@@ -786,14 +792,26 @@ class ConversionTest(unittest.TestCase):
 
             # The Semantic Layer is reconstructed by the provider, not supplied.
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
-            self.assertEqual(review_record["schema_version"], "2.0")
+            self.assertEqual(review_record["schema_version"], "3.0")
             self.assertEqual(review_record["pages"], [1])
+            self.assertEqual(review_record["page_dimensions"][0]["page"], 1)
+            self.assertEqual(
+                review_record["page_dimensions"][0],
+                {"page": 1, "width_points": 612.0, "height_points": 803.25},
+            )
+            self.assertTrue(review_record["source_regions"])
             self.assertEqual(
                 [node["type"] for node in review_record["semantic_layer"]],
                 ["heading", "paragraph", "formula", "figure", "table"],
             )
             # Every node is tagged with its source page.
             self.assertTrue(all(node["page"] == 1 for node in review_record["semantic_layer"]))
+            self.assertTrue(
+                all(node["id"].startswith("page-1-s") for node in review_record["semantic_layer"])
+            )
+            self.assertTrue(
+                all(node["source_regions"] for node in review_record["semantic_layer"])
+            )
             self.assertIn("spoken_math_alternative", review_record["semantic_layer"][2])
             # The default reconstruction is a complex Informative Figure, so it
             # carries both its concise Alternative and its Detailed Description.
@@ -806,9 +824,14 @@ class ConversionTest(unittest.TestCase):
             self.assertTrue(table["caption"])
             self.assertEqual(table["rows"][0]["cells"][0]["scope"], "col")
             self.assertEqual(review_record["warnings"], [])
-            # The original recognition candidates are retained for source context.
+            # Recognition Candidates retain source context under identities distinct
+            # from the canonical Source Regions; crop paths are derived, not stored.
             self.assertTrue(review_record["candidates"])
-            self.assertTrue(all("crop" in c for c in review_record["candidates"]))
+            self.assertTrue(all("crop" not in c for c in review_record["candidates"]))
+            self.assertTrue(
+                all(candidate["id"].startswith("page-1-c") for candidate in review_record["candidates"])
+            )
+            self.assertTrue(all(c["source_region"] for c in review_record["candidates"]))
             self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.3")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
@@ -824,11 +847,17 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(baseline["semantic_layer"], review_record["semantic_layer"])
 
             page_semantics = json.loads((bundle / "page-semantics" / "page-1.json").read_text())
-            # The per-page Semantic Layer matches the record once each node is tagged
-            # with its page.
+            # Review-only identity and source evidence are added after page semantics.
             self.assertEqual(
-                [{**node, "page": 1} for node in page_semantics["semantic_layer"]],
-                review_record["semantic_layer"],
+                page_semantics["semantic_layer"],
+                [
+                    {
+                        key: value
+                        for key, value in node.items()
+                        if key not in {"id", "page", "source_regions"}
+                    }
+                    for node in review_record["semantic_layer"]
+                ],
             )
             self.assertEqual(page_semantics["title"], review_record["title"])
 

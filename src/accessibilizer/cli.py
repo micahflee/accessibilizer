@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import ctypes
 from datetime import datetime, timezone
 import json
@@ -389,6 +390,30 @@ def _pdf_page_count(pdf: Path) -> int:
     raise RuntimeError("could not read the Source PDF page count")
 
 
+def _displayed_page_dimensions(pdf: Path, page_number: int) -> tuple[float, float]:
+    """Read the cropped, rotated displayed-page size in canonical PDF points."""
+    info = _run(
+        ["pdfinfo", "-f", str(page_number), "-l", str(page_number), "-box", str(pdf)]
+    )
+    if info.returncode:
+        raise RuntimeError(
+            f"could not read Source PDF page {page_number} dimensions: "
+            f"{info.stderr.strip()}"
+        )
+    for line in info.stdout.splitlines():
+        fields = line.split()
+        if (
+            len(fields) == 7
+            and fields[0] == "Page"
+            and fields[1] == str(page_number)
+            and fields[2] == "size:"
+            and fields[4] == "x"
+            and fields[6] == "pts"
+        ):
+            return float(fields[3]), float(fields[5])
+    raise RuntimeError(f"could not read Source PDF page {page_number} dimensions")
+
+
 def _parse_page_selection(spec: str | None, total: int) -> list[int]:
     """Resolve a --page subset spec against a document's page count.
 
@@ -436,7 +461,11 @@ def _authoring_contract(record: dict[str, Any]) -> dict[str, Any]:
     for node in record["semantic_layer"]:
         page = node["page"]
         grouped.setdefault(page, []).append(
-            {key: value for key, value in node.items() if key != "page"}
+            {
+                key: value
+                for key, value in node.items()
+                if key not in {"id", "page", "source_regions"}
+            }
         )
     return {
         "schema_version": "2.0",
@@ -447,6 +476,97 @@ def _authoring_contract(record: dict[str, Any]) -> dict[str, Any]:
             for page in record["pages"]
         ],
     }
+
+
+def _review_page_document(
+    page_document: dict[str, Any],
+    recognition_document: dict[str, Any],
+    page_render: Path,
+    page_dimensions: tuple[float, float],
+) -> dict[str, Any]:
+    """Project deterministic recognition evidence into Review Record 3.0 inputs.
+
+    This adapter keeps the page-semantics and recognition stage contracts separate:
+    it gives their existing objects Review Record identities without treating a
+    Recognition Candidate ID as a Source Region ID. Issue #39 will move exact
+    Source Region selection into page reconstruction; until then nodes are grounded
+    in deterministic regions of the corresponding evidence type rather than
+    associated by position.
+    """
+    document = copy.deepcopy(page_document)
+    page_number = document["page"]
+    dpi = recognition_document["rendering"]["dpi"]
+    width_pixels, height_pixels = recognition.png_size(page_render)
+    width_points, height_points = page_dimensions
+    document["page_dimensions"] = {
+        "width_points": width_points,
+        "height_points": height_points,
+    }
+
+    raw_candidates = recognition_document["candidates"]
+    source_regions: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    for index, candidate in enumerate(raw_candidates, start=1):
+        region_id = candidate["id"]
+        bbox_pixels = recognition.clamp_bbox_to_page(
+            candidate["bbox_pixels"], (width_pixels, height_pixels)
+        )
+        point_x0, point_y0, point_x1, point_y1 = recognition.pixels_to_points(
+            bbox_pixels, dpi
+        )
+        bbox_points = [
+            max(0.0, min(point_x0, width_points)),
+            max(0.0, min(point_y0, height_points)),
+            max(0.0, min(point_x1, width_points)),
+            max(0.0, min(point_y1, height_points)),
+        ]
+        source_regions.append(
+            {
+                "id": region_id,
+                "page": page_number,
+                "bbox_points": bbox_points,
+            }
+        )
+        candidates.append(
+            {
+                "id": f"page-{page_number}-c{index:04d}",
+                "source_region": region_id,
+                "type": candidate["type"],
+                "text": candidate.get("text"),
+            }
+        )
+    document["source_regions"] = source_regions
+    document["candidates"] = candidates
+
+    regions_by_type: dict[str, list[str]] = {}
+    for candidate in candidates:
+        regions_by_type.setdefault(candidate["type"], []).append(
+            candidate["source_region"]
+        )
+    evidence_type = {
+        "heading": "document_structure",
+        "paragraph": "text",
+        "formula": "formula",
+        "figure": "figure",
+        "table": "table",
+        "link": "text",
+    }
+    for index, node in enumerate(document["semantic_layer"], start=1):
+        node["id"] = f"page-{page_number}-s{index:04d}"
+        node["source_regions"] = list(
+            regions_by_type.get(evidence_type[node["type"]], [])
+        )
+    for warning in document["warnings"]:
+        region = warning.pop("region", None)
+        warning["semantic_nodes"] = [
+            node["id"]
+            for node in document["semantic_layer"]
+            if region and region in node["source_regions"]
+        ]
+        warning["source_regions"] = [region] if region else []
+    for verified in document["reconstruction"]["verified_regions"]:
+        verified["source_region"] = verified.pop("id")
+    return document
 
 
 def _read_ppm(path: Path) -> tuple[int, int, bytes]:
@@ -574,16 +694,28 @@ def _internal_checks(
     check("reading-order", actual_layers == expected_layers,
           "the output PDF structure tree does not match the Logical Reading Order")
 
-    # Source-region coverage: every warning that names a source region resolves to
-    # a retained candidate crop, so each warning can be checked against evidence.
-    candidate_ids = {candidate["id"] for candidate in record.get("candidates", [])}
-    uncovered = [
-        warning["region"]
-        for warning in record.get("warnings", [])
-        if warning.get("region") and warning["region"] not in candidate_ids
+    # Source-region coverage: every node, candidate, and warning reference resolves
+    # to canonical visual evidence. Crops are derived from these Source Regions;
+    # Recognition Candidates are not required for a crop to exist.
+    region_ids = {region["id"] for region in record.get("source_regions", [])}
+    references = [
+        reference
+        for node in record.get("semantic_layer", [])
+        for reference in node.get("source_regions", [])
     ]
+    references.extend(
+        candidate["source_region"]
+        for candidate in record.get("candidates", [])
+        if candidate.get("source_region")
+    )
+    references.extend(
+        reference
+        for warning in record.get("warnings", [])
+        for reference in warning.get("source_regions", [])
+    )
+    uncovered = [reference for reference in references if reference not in region_ids]
     check("source-region-coverage", not uncovered,
-          f"warnings reference source regions with no retained crop: {uncovered}")
+          f"Review Record references unknown Source Regions: {uncovered}")
 
     # Alternatives: every Formula, Informative Figure, and link exposes its
     # required alternative text.
@@ -842,6 +974,7 @@ def _convert(args: argparse.Namespace) -> int:
     # page-semantics dependency key so the whole conversion's request estimate is
     # known before any reconstruction call is made.
     recognition_keys: dict[int, str] = {}
+    recognition_documents: dict[int, dict[str, Any]] = {}
     page_candidates: dict[int, list[dict[str, Any]]] = {}
     page_words: dict[int, list[dict[str, Any]]] = {}
     page_semantics_keys: dict[int, str] = {}
@@ -857,6 +990,7 @@ def _convert(args: argparse.Namespace) -> int:
         recognition_document: dict[str, Any] = json.loads(
             (recognition_directory / f"page-{page_number}.json").read_text(encoding="utf-8")
         )
+        recognition_documents[page_number] = recognition_document
         candidates = recognition_document["candidates"]
         page_candidates[page_number] = candidates
         page_words[page_number] = recognition_document["pdf_text_evidence"]["words"]
@@ -926,8 +1060,14 @@ def _convert(args: argparse.Namespace) -> int:
         document = json.loads(
             (page_semantics_dir / f"page-{page_number}.json").read_text(encoding="utf-8")
         )
-        document["candidates"] = page_candidates[page_number]
-        page_documents.append(document)
+        page_documents.append(
+            _review_page_document(
+                document,
+                recognition_documents[page_number],
+                regions / f"page-{page_number}-recognition.png",
+                _displayed_page_dimensions(source_copy, page_number),
+            )
+        )
     first = page_documents[0]
     record = review.build_review_record(
         source_sha256=source_sha256,

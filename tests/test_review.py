@@ -78,10 +78,20 @@ PAGE_RECONSTRUCTION = {
 
 def candidates_for(page: int) -> list[dict[str, Any]]:
     return [
-        {"id": f"page-{page}-r0001", "type": "text", "text": "current",
-         "crop": f"regions/page-{page}-r0001.png"},
-        {"id": f"page-{page}-r0003", "type": "formula", "text": None,
-         "crop": f"regions/page-{page}-r0003.png"},
+        {"id": f"page-{page}-c0001", "type": "text", "text": "current",
+         "source_region": f"page-{page}-r0001"},
+        {"id": f"page-{page}-c0002", "type": "formula", "text": None,
+         "source_region": f"page-{page}-r0003"},
+    ]
+
+
+def source_regions_for(page: int) -> list[dict[str, Any]]:
+    return [
+        {"id": f"page-{page}-r0001", "page": page, "bbox_points": [10, 10, 590, 120]},
+        {"id": f"page-{page}-r0002", "page": page, "bbox_points": [10, 130, 590, 250]},
+        {"id": f"page-{page}-r0003", "page": page, "bbox_points": [10, 260, 590, 360]},
+        {"id": f"page-{page}-r0004", "page": page, "bbox_points": [10, 370, 590, 520]},
+        {"id": f"page-{page}-r0005", "page": page, "bbox_points": [10, 530, 590, 780]},
     ]
 
 
@@ -95,19 +105,30 @@ WARNINGS: list[dict[str, Any]] = [
         "code": "recognition-disagreement",
         "message": "The formula region disagrees.",
         "status": "unresolved",
-        "region": "page-1-r0003",
+        "semantic_nodes": ["page-1-s0003"],
+        "source_regions": ["page-1-r0003"],
     },
 ]
 
 
 def page_document(page: int = 1, **overrides: Any) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = [HEADING, PARAGRAPH, FORMULA, FIGURE, TABLE]
     document: dict[str, Any] = {
         "schema_version": "1.0",
         "page": page,
         "source_sha256": "a" * 64,
         "title": "Electric Current",
         "language": "en-US",
-        "semantic_layer": [HEADING, PARAGRAPH, FORMULA, FIGURE, TABLE],
+        "page_dimensions": {"width_points": 612, "height_points": 792},
+        "source_regions": source_regions_for(page),
+        "semantic_layer": [
+            {
+                **node,
+                "id": f"page-{page}-s{index:04d}",
+                "source_regions": [f"page-{page}-r{index:04d}"],
+            }
+            for index, node in enumerate(nodes, start=1)
+        ],
         "warnings": [],
         "candidates": candidates_for(page),
         "reconstruction": PAGE_RECONSTRUCTION,
@@ -143,11 +164,22 @@ def resolve(record: dict[str, Any], index: int, **fields: Any) -> dict[str, Any]
     return record
 
 
+def semantic_node(node: dict[str, Any], index: int, page: int = 1) -> dict[str, Any]:
+    return {
+        **copy.deepcopy(node),
+        "id": f"page-{page}-s{index:04d}",
+        "page": page,
+        "source_regions": [f"page-{page}-r0001"],
+    }
+
+
 class BuildRecordTest(unittest.TestCase):
     def test_record_carries_identity_layer_candidates_and_provenance(self) -> None:
         record = built_record()
         self.assertEqual(record["schema_version"], REVIEW_RECORD_SCHEMA_VERSION)
         self.assertEqual(record["pages"], [1])
+        self.assertEqual(record["page_dimensions"][0]["width_points"], 612)
+        self.assertEqual(record["source_regions"], source_regions_for(1))
         self.assertEqual(record["source_sha256"], "a" * 64)
         self.assertEqual([node["type"] for node in record["semantic_layer"]],
                          ["heading", "paragraph", "formula", "figure", "table"])
@@ -166,13 +198,15 @@ class BuildRecordTest(unittest.TestCase):
         self.assertTrue(all(w["resolution"] is None for w in record["warnings"]))
         self.assertTrue(all(w["history"] == [] for w in record["warnings"]))
         self.assertTrue(all(w["page"] == 1 for w in record["warnings"]))
-        self.assertIsNone(record["warnings"][0]["region"])
-        self.assertEqual(record["warnings"][1]["region"], "page-1-r0003")
+        self.assertEqual(record["warnings"][0]["semantic_nodes"], [])
+        self.assertEqual(record["warnings"][0]["source_regions"], [])
+        self.assertEqual(record["warnings"][1]["semantic_nodes"], ["page-1-s0003"])
+        self.assertEqual(record["warnings"][1]["source_regions"], ["page-1-r0003"])
 
     def test_multiple_pages_flatten_into_one_ordered_document(self) -> None:
         record = build([
             page_document(1, warnings=[copy.deepcopy(WARNINGS[0])]),
-            page_document(2, warnings=[copy.deepcopy(WARNINGS[1])]),
+            page_document(2, warnings=[copy.deepcopy(WARNINGS[0])]),
         ])
         self.assertEqual(record["pages"], [1, 2])
         pages_seen = [node["page"] for node in record["semantic_layer"]]
@@ -191,24 +225,87 @@ class SchemaValidationTest(unittest.TestCase):
         validate_review_record(built_record())
 
     def test_schema_is_versioned(self) -> None:
-        self.assertEqual(review_record_schema()["properties"]["schema_version"]["const"], "2.0")
+        self.assertEqual(review_record_schema()["properties"]["schema_version"]["const"], "3.0")
+
+    def test_duplicate_source_region_node_candidate_and_warning_ids_are_rejected(self) -> None:
+        for collection in ("source_regions", "semantic_layer", "candidates", "warnings"):
+            with self.subTest(collection=collection):
+                record = built_record()
+                record[collection].append(copy.deepcopy(record[collection][0]))
+                with self.assertRaises(ReviewRecordError):
+                    validate_review_record(record)
+
+    def test_source_region_bounds_must_be_finite_nonnegative_ordered_and_on_page(self) -> None:
+        invalid_bounds = (
+            [-1, 0, 10, 10],
+            [0, 0, 0, 10],
+            [0, 10, 10, 9],
+            [0, 0, 613, 10],
+            [0, 0, 10, float("inf")],
+        )
+        for bounds in invalid_bounds:
+            with self.subTest(bounds=bounds):
+                record = built_record()
+                record["source_regions"][0]["bbox_points"] = bounds
+                with self.assertRaises(ReviewRecordError):
+                    validate_review_record(record)
+
+    def test_semantic_node_references_must_be_nonempty_resolved_and_same_page(self) -> None:
+        record = build([page_document(1), page_document(2)])
+        node = record["semantic_layer"][0]
+        for references in ([], ["page-1-r9999"], ["page-2-r0001"]):
+            with self.subTest(references=references):
+                changed = copy.deepcopy(record)
+                changed["semantic_layer"][0]["source_regions"] = references
+                with self.assertRaises(ReviewRecordError):
+                    validate_review_record(changed)
+
+    def test_candidate_reference_must_resolve_and_match_its_id_page(self) -> None:
+        record = build([page_document(1), page_document(2)])
+        record["candidates"][0]["source_region"] = "page-2-r0001"
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_a_record_may_have_no_recognition_candidates(self) -> None:
+        record = build([page_document(1, candidates=[])])
+        self.assertEqual(record["candidates"], [])
+        validate_review_record(record)
+
+    def test_warning_references_must_resolve_and_agree_with_its_page(self) -> None:
+        record = build([
+            page_document(1, warnings=copy.deepcopy(WARNINGS)),
+            page_document(2),
+        ])
+        record["warnings"][1]["source_regions"] = ["page-2-r0001"]
+        with self.assertRaises(ReviewRecordError):
+            validate_review_record(record)
+
+    def test_page_and_document_wide_warnings_may_have_no_references(self) -> None:
+        record = built_record()
+        record["warnings"][0]["page"] = None
+        validate_review_record(record)
 
     def test_a_heading_hierarchy_of_levels_one_through_six_validates(self) -> None:
         record = built_record()
         for level in range(1, 7):
-            node = {"type": "heading", "level": level, "text": f"Level {level}", "page": 1}
+            node = semantic_node(
+                {"type": "heading", "level": level, "text": f"Level {level}"},
+                6 + level,
+            )
             record["semantic_layer"].append(node)
         validate_review_record(record)
 
     def test_a_heading_level_outside_one_through_six_is_rejected(self) -> None:
         record = built_record()
-        record["semantic_layer"][0] = {"type": "heading", "level": 7, "text": "x", "page": 1}
+        record["semantic_layer"][0] = semantic_node(
+            {"type": "heading", "level": 7, "text": "x"}, 1
+        )
         with self.assertRaises(ReviewRecordError):
             validate_review_record(record)
 
     def test_a_link_node_validates_and_requires_text_and_href(self) -> None:
         record = built_record()
-        record["semantic_layer"].append({**copy.deepcopy(LINK), "page": 1})
+        record["semantic_layer"].append(semantic_node(LINK, 6))
         validate_review_record(record)
         record["semantic_layer"][-1].pop("href")
         with self.assertRaises(ReviewRecordError):
@@ -222,16 +319,18 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_simple_figure_without_a_detailed_description_validates(self) -> None:
         record = built_record()
-        record["semantic_layer"][3] = {**copy.deepcopy(SIMPLE_FIGURE), "page": 1}
+        record["semantic_layer"][3] = semantic_node(SIMPLE_FIGURE, 4)
         validate_review_record(record)
 
     def test_a_simple_figure_carrying_a_detailed_description_is_rejected(self) -> None:
         record = built_record()
-        record["semantic_layer"][3] = {
-            **copy.deepcopy(SIMPLE_FIGURE),
-            "detailed_figure_description": "A simple figure should not carry this.",
-            "page": 1,
-        }
+        record["semantic_layer"][3] = semantic_node(
+            {
+                **copy.deepcopy(SIMPLE_FIGURE),
+                "detailed_figure_description": "A simple figure should not carry this.",
+            },
+            4,
+        )
         with self.assertRaises(ReviewRecordError):
             validate_review_record(record)
 
@@ -248,14 +347,14 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_captionless_table_validates(self) -> None:
         record = built_record()
-        table = {**copy.deepcopy(TABLE), "page": 1}
+        table = semantic_node(TABLE, 5)
         del table["caption"]
         record["semantic_layer"][4] = table
         validate_review_record(record)
 
     def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
         record = built_record()
-        table = {**copy.deepcopy(TABLE), "page": 1}
+        table = semantic_node(TABLE, 5)
         table["rows"][1]["cells"][1]["scope"] = "col"
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -263,7 +362,7 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
         record = built_record()
-        table = {**copy.deepcopy(TABLE), "page": 1}
+        table = semantic_node(TABLE, 5)
         table["rows"][0]["cells"][0]["scope"] = "none"
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -271,7 +370,7 @@ class SchemaValidationTest(unittest.TestCase):
 
     def test_a_table_without_rows_is_rejected(self) -> None:
         record = built_record()
-        table = {**copy.deepcopy(TABLE), "page": 1}
+        table = semantic_node(TABLE, 5)
         table["rows"] = []
         record["semantic_layer"][4] = table
         with self.assertRaises(ReviewRecordError):
@@ -436,7 +535,7 @@ class ReviewReportTest(unittest.TestCase):
     def test_source_region_shows_the_retained_recognized_text_as_context(self) -> None:
         record = built_record()
         # Point the warning at a candidate that carries recognized text.
-        record["warnings"][1]["region"] = "page-1-r0001"
+        record["warnings"][1]["source_regions"] = ["page-1-r0001"]
         html = self.report(record)
         self.assertIn("Recognized text: current", html)
 
@@ -463,7 +562,7 @@ class ReviewReportTest(unittest.TestCase):
 class SchemaDriftTest(unittest.TestCase):
     def test_in_code_schema_matches_the_published_json_schema(self) -> None:
         published = json.loads(
-            (ROOT / "schemas" / "review-record-2.0.schema.json").read_text(encoding="utf-8")
+            (ROOT / "schemas" / "review-record-3.0.schema.json").read_text(encoding="utf-8")
         )
         self.assertEqual(published, review_record_schema())
 

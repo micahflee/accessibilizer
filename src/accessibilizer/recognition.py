@@ -435,7 +435,8 @@ def validate_recognition_document(document: object) -> None:
         _validate_bbox(word.get("bbox_points"), "evidence word bbox_points must be four numbers")
 
 
-def _png_size(path: Path) -> tuple[int, int]:
+def png_size(path: Path) -> tuple[int, int]:
+    """Return a PNG's displayed pixel dimensions from its IHDR chunk."""
     header = path.read_bytes()[:24]
     if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
         raise ValueError(f"not a PNG render: {path}")
@@ -446,6 +447,17 @@ def _png_size(path: Path) -> tuple[int, int]:
 
 def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(value, high))
+
+
+def clamp_bbox_to_page(bbox: Sequence[float], size: tuple[int, int]) -> Bbox:
+    """Normalize a detected box to the nonempty page area used for its crop."""
+    width, height = size
+    x0, y0, x1, y1 = (int(value) for value in bbox)
+    crop_x = _clamp(x0, 0, max(width - 1, 0))
+    crop_y = _clamp(y0, 0, max(height - 1, 0))
+    crop_right = _clamp(x1, crop_x + 1, width)
+    crop_bottom = _clamp(y1, crop_y + 1, height)
+    return crop_x, crop_y, crop_right, crop_bottom
 
 
 def recognize_page(
@@ -468,16 +480,16 @@ def recognize_page(
     ])
     if rendered.returncode:
         raise RuntimeError(f"recognition render failed: {rendered.stderr.strip()}")
-    width, height = _png_size(page_render)
+    width, height = png_size(page_render)
 
     ordered = assign_region_ids(page, backend.detect(page_render, (width, height)))
     artifacts: list[Path] = [page_render]
     for identifier, candidate in ordered:
-        x0, y0, x1, y1 = candidate.bbox_pixels
-        crop_x = _clamp(int(x0), 0, max(width - 1, 0))
-        crop_y = _clamp(int(y0), 0, max(height - 1, 0))
-        crop_width = _clamp(int(x1), crop_x + 1, width) - crop_x
-        crop_height = _clamp(int(y1), crop_y + 1, height) - crop_y
+        crop_x, crop_y, crop_right, crop_bottom = clamp_bbox_to_page(
+            candidate.bbox_pixels, (width, height)
+        )
+        crop_width = crop_right - crop_x
+        crop_height = crop_bottom - crop_y
         cropped = _run([
             "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-r", str(dpi),
             "-png", "-x", str(crop_x), "-y", str(crop_y), "-W", str(crop_width),
