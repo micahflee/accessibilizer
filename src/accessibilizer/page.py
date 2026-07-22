@@ -22,8 +22,9 @@ import base64
 import json
 from pathlib import Path
 import re
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, TypeVar
 
+from accessibilizer.events import ProgressReporter
 from accessibilizer.provider import (
     ProviderConfig,
     RequestBudget,
@@ -31,6 +32,8 @@ from accessibilizer.provider import (
     parse_schema_content,
     request_chat_completion,
 )
+
+_T = TypeVar("_T")
 
 
 PAGE_PROMPT_VERSION = "1.4"
@@ -1079,6 +1082,7 @@ def generate_page_semantics(
     max_retries: int = 3,
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
+    on_retry: Callable[[int, float, str], None] | None = None,
 ) -> dict[str, Any]:
     payload = build_page_request(
         model=config.model,
@@ -1095,6 +1099,7 @@ def generate_page_semantics(
         max_retries=max_retries,
         retry_base_seconds=retry_base_seconds,
         retry_max_seconds=retry_max_seconds,
+        on_retry=on_retry,
     )
     content = parse_schema_content(
         result, "page semantic reconstruction returned an invalid schema response"
@@ -1114,6 +1119,7 @@ def verify_region(
     max_retries: int = 3,
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
+    on_retry: Callable[[int, float, str], None] | None = None,
 ) -> dict[str, Any]:
     payload = build_region_request(
         model=config.model,
@@ -1129,6 +1135,7 @@ def verify_region(
         max_retries=max_retries,
         retry_base_seconds=retry_base_seconds,
         retry_max_seconds=retry_max_seconds,
+        on_retry=on_retry,
     )
     content = parse_schema_content(
         result, "region verification returned an invalid schema response"
@@ -1136,6 +1143,49 @@ def verify_region(
     validate_region_response(content)
     assert isinstance(content, dict)
     return content
+
+
+def _reported_provider_call(
+    reporter: ProgressReporter | None,
+    config: ProviderConfig,
+    *,
+    purpose: str,
+    page: int,
+    page_count: int,
+    budget: RequestBudget | None,
+    call: Callable[[Callable[[int, float, str], None] | None], _T],
+) -> _T:
+    """Emit start/completion (and retry) provider events around one request.
+
+    The start event is emitted immediately before the document-bearing request
+    is sent, identifying its purpose, request number, estimated total, endpoint,
+    and model; the completion event carries elapsed time and the delta of the
+    provider's reported token usage. Heartbeats keep a slow request observable.
+    """
+    if reporter is None:
+        return call(None)
+    request_number = budget.actual_requests + 1 if budget is not None else None
+    request_total = budget.estimated_requests if budget is not None else None
+    before = dict(budget.reported_token_usage) if budget is not None else {}
+
+    def on_retry(attempt: int, delay: float, reason: str) -> None:
+        reporter.retrying(
+            "provider-reconstruction", page=page, purpose=purpose,
+            request=request_number, request_total=request_total,
+            attempt=attempt, delay=delay, detail=reason,
+        )
+
+    with reporter.operation(
+        "provider-reconstruction", page=page, page_count=page_count, purpose=purpose,
+        request=request_number, request_total=request_total,
+        endpoint=config.base_url, model=config.model,
+    ) as handle:
+        result = call(on_retry)
+        if budget is not None:
+            usage = budget.usage_since(before)
+            if usage:
+                handle.extra["token_usage"] = usage
+    return result
 
 
 def reconstruct_page(
@@ -1152,33 +1202,52 @@ def reconstruct_page(
     max_retries: int = 3,
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
+    reporter: ProgressReporter | None = None,
+    page_count: int = 1,
 ) -> dict[str, Any]:
     """Run the page call plus crop calls, reconcile, and build the document."""
-    page_response = generate_page_semantics(
-        config,
-        page_image=page_image,
-        candidates=candidates,
-        pdf_words=pdf_words,
-        source_region_ids=source_region_ids,
-        budget=budget,
-        max_retries=max_retries,
-        retry_base_seconds=retry_base_seconds,
-        retry_max_seconds=retry_max_seconds,
+    page_response = _reported_provider_call(
+        reporter, config, purpose="page-reconstruction", page=page,
+        page_count=page_count, budget=budget,
+        call=lambda on_retry: generate_page_semantics(
+            config,
+            page_image=page_image,
+            candidates=candidates,
+            pdf_words=pdf_words,
+            source_region_ids=source_region_ids,
+            budget=budget,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
+            retry_max_seconds=retry_max_seconds,
+            on_retry=on_retry,
+        ),
     )
     region_verifications: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for candidate in candidates:
         if candidate.get("type") not in REGION_VERIFY_TYPES:
             continue
         crop = regions_dir / f"{candidate.get('id')}.png"
-        verification = verify_region(
-            config,
-            region_image=crop,
-            candidate=candidate,
-            page_response=page_response,
-            budget=budget,
-            max_retries=max_retries,
-            retry_base_seconds=retry_base_seconds,
-            retry_max_seconds=retry_max_seconds,
+
+        def verify(
+            on_retry: Callable[[int, float, str], None] | None,
+            candidate: dict[str, Any] = candidate,
+            crop: Path = crop,
+        ) -> dict[str, Any]:
+            return verify_region(
+                config,
+                region_image=crop,
+                candidate=candidate,
+                page_response=page_response,
+                budget=budget,
+                max_retries=max_retries,
+                retry_base_seconds=retry_base_seconds,
+                retry_max_seconds=retry_max_seconds,
+                on_retry=on_retry,
+            )
+
+        verification = _reported_provider_call(
+            reporter, config, purpose="region-verification", page=page,
+            page_count=page_count, budget=budget, call=verify,
         )
         region_verifications.append((candidate, verification))
     semantic_layer, warnings = reconcile_page(

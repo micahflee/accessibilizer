@@ -10,13 +10,43 @@ import time
 import unittest
 from typing import Any
 
+import jsonschema
 import yaml
 
+from accessibilizer.events import STAGE_LABELS
 from tests.test_provider_acceptance import FakeProvider
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
+CONVERSION_EVENTS_SCHEMA = json.loads(
+    (ROOT / "schemas" / "conversion-events-1.0.schema.json").read_text(encoding="utf-8")
+)
+# Every labelled stage is a named major stage that must emit start and completion.
+MAJOR_STAGES = set(STAGE_LABELS)
+# Field names that would betray a secret, an encoded image, or model-produced
+# Semantic Layer content leaking into the durable log.
+FORBIDDEN_IN_EVENTS = (
+    "Bearer",
+    "Authorization",
+    "authorization",
+    "data:image",
+    "base64",
+    "normalized_math",
+    "spoken_math_alternative",
+    "figure_alternative",
+    "detailed_figure_description",
+    "transcription",
+    "messages",
+)
+
+
+def read_event_lines(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 EMPTY_PASSWORD_ENCRYPTED_PDF = (
     "JVBERi0xLjcKJb/3ov4KMSAwIG9iago8PCAvRXh0ZW5zaW9ucyA8PCAvQURCRSA8PCAvQmFz"
     "ZVZlcnNpb24gLzEuNyAvRXh0ZW5zaW9uTGV2ZWwgOCA+PiA+PiAvUGFnZXMgMiAwIFIgL1R5"
@@ -1018,6 +1048,193 @@ class ConversionTest(unittest.TestCase):
             )
             # The whole-document output carries a bookmark outline for navigation.
             self.assertIn(b"/Outlines", (bundle / "output.pdf").read_bytes())
+
+    def test_conversion_events_log_is_versioned_secret_free_and_confined_to_stderr(
+        self,
+    ) -> None:
+        usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
+        with (
+            FakeProvider(usage=usage) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "observed.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # stdout carries exactly one machine-readable result; all progress
+            # (including the request estimate) is confined to stderr.
+            self.assertEqual(len(result.stdout.strip().splitlines()), 1)
+            self.assertEqual(json.loads(result.stdout)["status"], "accessible")
+            self.assertIn("Estimated provider requests", result.stderr)
+            self.assertNotIn("Estimated provider requests", result.stdout)
+
+            events_path = bundle / "conversion-events.jsonl"
+            self.assertTrue(events_path.is_file())
+            events = read_event_lines(events_path)
+            self.assertTrue(events)
+            for event in events:
+                self.assertEqual(event["schema_version"], "1.0")
+                jsonschema.validate(instance=event, schema=CONVERSION_EVENTS_SCHEMA)
+
+            # Every named major stage emits a start and a completion event.
+            for stage in MAJOR_STAGES:
+                states = {e["state"] for e in events if e["stage"] == stage}
+                self.assertIn("started", states, stage)
+                self.assertIn("completed", states, stage)
+
+            # Per-page events report the current page and selected-page count.
+            per_page = [e for e in events if e["stage"] == "page-recognition"]
+            self.assertTrue(per_page)
+            self.assertTrue(all(e.get("page") == 1 and e.get("page_count") == 1 for e in per_page))
+
+            # Provider requests identify purpose, count, endpoint, and model
+            # immediately before transmission, and report token usage on completion.
+            started = [
+                e for e in events
+                if e["stage"] == "provider-reconstruction" and e["state"] == "started"
+            ]
+            self.assertTrue(started)
+            for key in ("purpose", "request", "request_total", "endpoint", "model"):
+                self.assertIn(key, started[0])
+            completed = [
+                e for e in events
+                if e["stage"] == "provider-reconstruction" and e["state"] == "completed"
+            ]
+            self.assertTrue(any("token_usage" in e for e in completed))
+
+            # The log never carries a secret, an encoded image, or model content.
+            raw = events_path.read_text(encoding="utf-8")
+            for forbidden in FORBIDDEN_IN_EVENTS:
+                self.assertNotIn(forbidden, raw)
+            # No Source PDF prose or reconstructed text leaks into the log either.
+            self.assertNotIn("Electric current is the rate", raw)
+
+    def test_ctrl_c_interruption_exits_130_preserves_state_and_resumes(self) -> None:
+        with (
+            FakeProvider(page_response_delay=20) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            temporary = Path(temporary_directory)
+            bundle = temporary / "interrupted.accessibilizer"
+            command = self.conversion_command(SOURCE, bundle, base_url=provider.base_url)
+            process = subprocess.Popen(
+                command,
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.conversion_environment(),
+            )
+            workspace = temporary / ".interrupted.accessibilizer.in-progress"
+            events_path = workspace / "conversion-events.jsonl"
+
+            def reconstruction_started() -> bool:
+                if not events_path.is_file():
+                    return False
+                return any(
+                    event["stage"] == "provider-reconstruction"
+                    and event["state"] == "started"
+                    for event in read_event_lines(events_path)
+                )
+
+            deadline = time.monotonic() + 60
+            while not reconstruction_started() and process.poll() is None:
+                if time.monotonic() >= deadline:
+                    process.kill()
+                    self.fail("a provider request never started before the timeout")
+                time.sleep(0.05)
+            self.assertIsNone(process.poll(), "conversion finished before interruption")
+
+            cid_directories = list(
+                temporary.glob(".interrupted.accessibilizer.container.*")
+            )
+            self.assertEqual(len(cid_directories), 1)
+            container_id = (cid_directories[0] / "id").read_text().strip()
+            # A deliberate Ctrl-C-equivalent: SIGTERM to the running container.
+            signalled = subprocess.run(
+                ["docker", "kill", "--signal=TERM", container_id],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(signalled.returncode, 0, signalled.stderr)
+            stdout, stderr = process.communicate(timeout=30)
+
+            # Exit 130, one machine-readable interruption result on stdout, and
+            # the resume command / diagnostics only on stderr.
+            self.assertEqual(process.returncode, 130, stderr)
+            interruption = json.loads(stdout)
+            self.assertEqual(interruption["status"], "interrupted")
+            self.assertEqual(interruption["stage"], "provider-reconstruction")
+            self.assertIn("--resume", interruption["resume_command"])
+            self.assertNotIn("Estimated provider requests", stdout)
+            self.assertIn("Resume with", stderr)
+
+            # State is preserved: the bundle is not published, and the durable log
+            # records the interrupted operation and its resume command.
+            self.assertFalse(bundle.exists())
+            self.assertTrue(events_path.is_file())
+            interrupted_events = [
+                e for e in read_event_lines(events_path) if e["state"] == "interrupted"
+            ]
+            self.assertEqual(len(interrupted_events), 1)
+            self.assertEqual(interrupted_events[0]["stage"], "provider-reconstruction")
+            self.assertIn("resume_command", interrupted_events[0])
+
+            # Resuming reuses the completed stages (reported as reused) and finishes;
+            # the durable log survives the interruption/resume into the final bundle.
+            provider.page_response_delay = 0.0
+            resumed = self.run_conversion(SOURCE, bundle, resume=True, base_url=provider.base_url)
+            self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+
+            final_events = read_event_lines(bundle / "conversion-events.jsonl")
+            self.assertTrue(any(e["state"] == "interrupted" for e in final_events))
+            reused_stages = {e["stage"] for e in final_events if e["state"] == "reused"}
+            self.assertIn("provider-capability", reused_stages)
+            self.assertIn("page-recognition", reused_stages)
+
+    def test_provider_retries_are_reported_and_logged(self) -> None:
+        with (
+            FakeProvider(transient_failures=2) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "retried.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            events = read_event_lines(bundle / "conversion-events.jsonl")
+            retrying = [e for e in events if e["state"] == "retrying"]
+            self.assertGreaterEqual(len(retrying), 2)
+            for event in retrying:
+                jsonschema.validate(instance=event, schema=CONVERSION_EVENTS_SCHEMA)
+                self.assertIn("attempt", event)
+                self.assertIn("delay", event)
+                # The retry reason is a safe summary, never a raw response body.
+                self.assertTrue(
+                    event["detail"].startswith("HTTP") or event["detail"] == "connection error",
+                    event["detail"],
+                )
+            self.assertIn("retrying", result.stderr)
+
+    def test_provider_failure_is_recorded_as_a_failed_event(self) -> None:
+        with (
+            FakeProvider(compatible=False) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            temporary = Path(temporary_directory)
+            bundle = temporary / "failed.accessibilizer"
+            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["status"], "operational_failure")
+            self.assertFalse(bundle.exists())
+            workspace = temporary / ".failed.accessibilizer.in-progress"
+            events = read_event_lines(workspace / "conversion-events.jsonl")
+            failed = [e for e in events if e["state"] == "failed"]
+            self.assertTrue(failed)
+            self.assertEqual(failed[0]["stage"], "provider-capability")
+            # The error state is recorded without a message that could leak content.
+            self.assertNotIn("detail", failed[0])
 
 
 class AuthoringCapabilityTest(unittest.TestCase):

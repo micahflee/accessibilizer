@@ -298,17 +298,23 @@ cid_directory=$(mktemp -d "$bundle_parent/.${bundle_name}.container.XXXXXX") || 
     operational_failure "could not prepare the container runtime"
 cidfile="$cid_directory/id"
 stop_conversion_container() {
+    # Give the container time to record the interruption, print the resume
+    # command, and exit 130 gracefully before it is force-stopped. docker run's
+    # signal proxy also forwards the interrupt, so this is a fallback.
     if [ -f "$cidfile" ]; then
         container_id=
         IFS= read -r container_id < "$cidfile" || true
         if [ -n "$container_id" ]; then
-            docker stop --time 1 "$container_id" >/dev/null 2>&1 || true
+            docker stop --time 10 "$container_id" >/dev/null 2>&1 || true
         fi
     fi
     rm -f "$cidfile"
     rmdir "$cid_directory" 2>/dev/null || true
 }
-trap 'stop_conversion_container; exit 143' HUP INT TERM
+# Stop the container on an interrupt but do not exit here: let the foreground
+# `docker run` relay the container's own interruption output and exit status
+# (130) so the resume command reaches the user.
+trap 'stop_conversion_container' HUP INT TERM
 
 set -- --rm \
     --cidfile "$cidfile" \
@@ -316,7 +322,8 @@ set -- --rm \
     --add-host "host.docker.internal:host-gateway" \
     --volume "$source_path:/work/source.pdf:ro" \
     --volume "$bundle_parent:/work/output" \
-    --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path"
+    --env "ACCESSIBILIZER_HOST_BUNDLE=$host_bundle_path" \
+    --env "ACCESSIBILIZER_HOST_SOURCE=$source_path"
 if [ -n "${ACCESSIBILIZER_RECOGNITION_BACKEND:-}" ]; then
     set -- "$@" --env "ACCESSIBILIZER_RECOGNITION_BACKEND=$ACCESSIBILIZER_RECOGNITION_BACKEND"
 fi
@@ -357,7 +364,10 @@ fi
 trap - HUP INT TERM
 rm -f "$cidfile"
 rmdir "$cid_directory" 2>/dev/null || true
-if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] && [ -n "$json_flag" ]; then
+# 130 is an intentional interruption whose machine-readable result the container
+# already produced; do not mask it as a container-runtime failure.
+if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] \
+    && [ "$result" -ne 130 ] && [ -n "$json_flag" ]; then
     printf '{"error":"container runtime failed","status":"operational_failure"}\n'
 fi
 if [ "$result" -eq 0 ] || [ "$result" -eq 2 ]; then
