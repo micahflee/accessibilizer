@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 import unittest
 from typing import Any
+from unittest.mock import patch
 
 from accessibilizer import review
 from accessibilizer.cli import (
     _authoring_contract,
     _internal_checks,
     _parse_page_selection,
+    _review_page_document,
 )
 
 
@@ -144,6 +147,29 @@ class AuthoringContractTest(unittest.TestCase):
             {"source_regions", "candidates", "warnings", "page_dimensions"}.intersection(contract)
         )
         self.assertEqual(contract["pages"][0]["semantic_layer"][0]["type"], "heading")
+
+
+class SourceEvidenceTest(unittest.TestCase):
+    def test_whole_page_fallback_warns_with_node_and_region_references(self) -> None:
+        document = page_document(1)
+        document["semantic_layer"][0]["source_regions"] = ["page-1-r0000"]
+        for verified in document["reconstruction"]["verified_regions"]:
+            verified["id"] = verified.pop("source_region")
+        recognition_document = {
+            "rendering": {"dpi": 300},
+            "candidates": [{
+                "id": "page-1-r0001", "type": "document_structure",
+                "bbox_pixels": [0, 0, 100, 100],
+            }],
+        }
+        with patch("accessibilizer.cli.recognition.png_size", return_value=(100, 100)):
+            reviewed = _review_page_document(
+                document, recognition_document, Path("page.png"), (72.0, 72.0)
+            )
+
+        warning = next(w for w in reviewed["warnings"] if w["code"] == "imprecise-source-grounding")
+        self.assertEqual(warning["semantic_nodes"], ["page-1-s0001"])
+        self.assertEqual(warning["source_regions"], ["page-1-r0000"])
 
 
 class InternalChecksTest(unittest.TestCase):

@@ -149,7 +149,17 @@ class FakeProvider:
                 if name == "accessibilizer_capability_check":
                     body: Any = {"blue_square_count": 3}
                 elif name == "accessibilizer_page_semantics":
-                    body = {**BASE_PAGE_CONTENT, **provider.page_overrides}
+                    body = json.loads(json.dumps(BASE_PAGE_CONTENT))
+                    evidence = request["messages"][1]["content"][1]["text"]
+                    evidence_document = json.loads(evidence.split("\n", 1)[1])
+                    region_ids = evidence_document.get("source_regions") or [
+                        evidence_document["recognition_candidates"][0]["id"]
+                    ]
+                    for node_name in ("heading", "paragraph", "formula", "figure", "table"):
+                        body[node_name]["source_regions"] = [region_ids[1] if len(region_ids) > 1 else region_ids[0]]
+                    body.update(provider.page_overrides)
+                    for node_name in ("heading", "paragraph", "formula", "figure", "table"):
+                        body[node_name].setdefault("source_regions", [region_ids[1] if len(region_ids) > 1 else region_ids[0]])
                 elif name == "accessibilizer_region_check":
                     body = {
                         "transcription": "I = Q / delta t",
