@@ -1,0 +1,13 @@
+{
+  "name": "accessibilizer-review-report-browser-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headless-browser tests for the interactive Review Report navigator.",
+  "scripts": {
+    "test": "playwright test",
+    "install-browser": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

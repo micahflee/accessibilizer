@@ -8,3 +8,7 @@ java/**/target/
 .DS_Store
 *.egg-info/
 .venv/
+node_modules/
+tests/browser/.fixture/
+tests/browser/package-lock.json
+tests/browser/test-results/

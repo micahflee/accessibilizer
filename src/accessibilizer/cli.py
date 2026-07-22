@@ -1506,6 +1506,8 @@ def _generate_report(source: Path, record: dict[str, Any], output: Path) -> None
         raise RuntimeError("the Source PDF does not match the Review Record")
     _render_report_regions(source, record, output / "regions")
     atomic_write_text(output / "review-report.html", review.render_review_report(record))
+    atomic_write_text(output / review.REVIEW_REPORT_STYLESHEET, review.review_report_css())
+    atomic_write_text(output / review.REVIEW_REPORT_SCRIPT, review.review_report_javascript())
 
 
 def _report(args: argparse.Namespace) -> int:

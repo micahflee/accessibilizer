@@ -269,8 +269,15 @@ class ReportCommandTest(unittest.TestCase):
 
             self.assertEqual(result, 0)
             html = (output / "review-report.html").read_text(encoding="utf-8")
-            self.assertIn('src="regions/page-1.png"', html)
+            # The interactive report references its Source Region crops and its
+            # relative local stylesheet and script; the full page image is loaded
+            # by the script at view time from the review-data geometry.
+            self.assertIn('src="regions/page-1-r', html)
+            self.assertIn('href="review-report.css"', html)
+            self.assertIn('src="review-report.js"', html)
             self.assertNotIn("https://", html)
+            self.assertTrue((output / "review-report.css").is_file())
+            self.assertTrue((output / "review-report.js").is_file())
 
     def test_bundle_report_preserves_non_report_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

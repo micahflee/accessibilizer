@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import html
+import json
 import math
 import re
 from typing import Any, NoReturn, Sequence
@@ -31,7 +32,10 @@ from jsonschema import Draft202012Validator
 
 
 REVIEW_RECORD_SCHEMA_VERSION = "3.0"
-REVIEW_REPORT_VERSION = "3.0"
+REVIEW_REPORT_VERSION = "4.0"
+
+REVIEW_REPORT_STYLESHEET = "review-report.css"
+REVIEW_REPORT_SCRIPT = "review-report.js"
 
 RESOLUTION_STATUSES: tuple[str, ...] = ("corrected", "accepted", "not_applicable")
 _STATUS_LABELS = {
@@ -810,14 +814,17 @@ def _region_warning_ids(warnings: list[dict[str, Any]], region_id: str) -> str:
     )
 
 
+def _string_regions(node: dict[str, Any]) -> list[str]:
+    """Return a node's Source Region references, ignoring any malformed entries."""
+    return [region for region in node.get("source_regions", []) if isinstance(region, str)]
+
+
 def _warnings_for_node(
     warnings: list[dict[str, Any]], node: dict[str, Any]
 ) -> list[dict[str, Any]]:
     """Return warnings explicitly attached to a node or one of its regions."""
     node_id = node.get("id")
-    region_ids = {
-        region for region in node.get("source_regions", []) if isinstance(region, str)
-    }
+    region_ids = set(_string_regions(node))
     return [
         warning
         for warning in warnings
@@ -945,27 +952,206 @@ def _warning_row(
     )
 
 
-def render_review_report(record: dict[str, Any]) -> str:
-    """Render a WCAG 2.2 AA HTML Review Report of a Review Record.
+def _primary_at_content(node: dict[str, Any]) -> str:
+    """Return the primary assistive-technology content shown in the concise view."""
+    node_type = str(node.get("type", ""))
+    if node_type in {"heading", "paragraph", "link"}:
+        return str(node.get("text", ""))
+    if node_type == "formula":
+        return str(node.get("spoken_math_alternative", ""))
+    if node_type == "figure":
+        return str(node.get("figure_alternative", ""))
+    if node_type == "table":
+        caption = node.get("caption")
+        return str(caption) if caption else "Semantic Table"
+    return ""
 
-    Warning state is carried by explicit text (never color alone), each
-    source-region warning shows a labelled crop, and warnings and resolutions are
-    presented as a semantic table with row and column headers.
+
+def _type_label(node: dict[str, Any]) -> str:
+    return str(node.get("type", "")).replace("_", " ").title() or "Component"
+
+
+def _warning_status_text(attached: list[dict[str, Any]]) -> str:
+    if not attached:
+        return "No attached Conversion Warnings"
+    unresolved = sum(1 for warning in attached if warning.get("resolution") is None)
+    return f"{len(attached)} attached Conversion Warning(s); {unresolved} unresolved"
+
+
+def _component_article(
+    node: dict[str, Any],
+    index: int,
+    warnings: list[dict[str, Any]],
+    candidates_by_region: dict[str, list[dict[str, Any]]],
+    regions_by_id: dict[str, dict[str, Any]],
+) -> str:
+    """Render one Semantic Layer node as a hidden, escaped Component panel.
+
+    The concise fields (type, primary content, warning status, region count) sit
+    above a native ``All details`` disclosure. Every source-derived value is
+    escaped; the panel never carries source content as executable markup.
+    """
+    node_id = str(node.get("id", ""))
+    page = node.get("page")
+    type_label = _type_label(node)
+    regions = _string_regions(node)
+    attached = _warnings_for_node(warnings, node)
+    warning_ids = " ".join(str(warning.get("id", "")) for warning in attached)
+
+    region_controls: list[str] = []
+    coord_rows: list[str] = []
+    for number, region in enumerate(regions, start=1):
+        geometry = regions_by_id.get(region, {})
+        bbox = geometry.get("bbox_points", [])
+        coords = ", ".join(_escape(value) for value in bbox) if bbox else "unknown"
+        region_controls.append(
+            f'<li class="region-control"><span class="region-number">Region {number} of {len(regions)}</span> '
+            f'<span class="region-id"><code>{_escape(region)}</code></span> '
+            f'<button type="button" data-emphasize="{_escape(region)}">Emphasize box {number}</button> '
+            f'<button type="button" data-zoom-region="{_escape(region)}">Zoom to box {number}</button></li>'
+        )
+        coord_rows.append(
+            f"<dt>Box {number} — <code>{_escape(region)}</code></dt>"
+            f"<dd>Bounding box (PDF points): {coords}</dd>"
+        )
+    region_controls_html = (
+        f'<ul class="region-controls" aria-label="Source Region boxes">{"".join(region_controls)}</ul>'
+        if region_controls
+        else '<p class="region-controls-empty">This Component references no Source Regions.</p>'
+    )
+
+    attached_warning_list = "".join(
+        f"<li>{_warning_link(warning)}</li>" for warning in attached
+    ) or "<li>No Conversion Warnings attached to this Component.</li>"
+    evidence = "".join(
+        _region_evidence(region, candidates_by_region, warnings) for region in regions
+    ) or "<p>No Source Region crops for this Component.</p>"
+
+    return (
+        f'<article id="{_escape(node_id)}" class="component" data-index="{index}" '
+        f'data-page="{_escape(page)}" data-regions="{_escape(" ".join(regions))}" '
+        f'data-warning-ids="{_escape(warning_ids)}" tabindex="-1" hidden>'
+        f'<h3 class="component-type">{_escape(type_label)}</h3>'
+        f'<p class="component-page">Source PDF page {_escape(page)}</p>'
+        f'<p class="component-at-content"><span class="field-label">Assistive-technology content:</span> '
+        f'{_escape(_primary_at_content(node))}</p>'
+        f'<p class="component-warning-status">{_escape(_warning_status_text(attached))}</p>'
+        f'<p class="component-region-count">{len(regions)} referenced Source Region(s)</p>'
+        f'{region_controls_html}'
+        f'<details class="all-details">'
+        f'<summary>All details</summary>'
+        f'<dl class="component-identity"><dt>Semantic Layer node ID</dt>'
+        f'<dd><code>{_escape(node_id)}</code></dd>'
+        f'<dt>Node type (canonical)</dt><dd>{_escape(str(node.get("type", "")))}</dd></dl>'
+        f'<section aria-label="Component fields"><h4>Component fields</h4>{_node_content(node)}</section>'
+        f'<section aria-label="Exact Source Region coordinates"><h4>Source Region coordinates</h4>'
+        f'<dl class="region-coordinates">{"".join(coord_rows) or "<dt>None</dt><dd>No Source Regions.</dd>"}</dl></section>'
+        f'<section aria-label="Attached Conversion Warnings"><h4>Attached Conversion Warnings</h4>'
+        f'<ul>{attached_warning_list}</ul></section>'
+        f'<section aria-label="Source Region evidence"><h4>Source Region evidence and Recognition Candidates</h4>'
+        f'{evidence}</section>'
+        f'</details></article>'
+    )
+
+
+def _review_report_data(
+    record: dict[str, Any],
+    components: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    regions_by_id: dict[str, dict[str, Any]],
+) -> str:
+    """Serialize the numeric geometry and identity the client script needs.
+
+    The payload carries stable IDs, page numbers, page dimensions, and Source
+    Region bounding boxes (numbers), plus display strings the script inserts with
+    ``textContent`` only. Angle brackets and ampersands are escaped so no
+    source-derived value can break out of the embedding script tag.
+    """
+    dimensions: dict[str, dict[str, float]] = {}
+    for entry in record.get("page_dimensions", []):
+        if isinstance(entry, dict) and isinstance(entry.get("page"), int):
+            dimensions[str(entry["page"])] = {
+                "width": float(entry.get("width_points", 0.0)),
+                "height": float(entry.get("height_points", 0.0)),
+            }
+    regions: dict[str, dict[str, Any]] = {}
+    for region_id, geometry in regions_by_id.items():
+        bbox = [float(value) for value in geometry.get("bbox_points", [])]
+        regions[region_id] = {"page": geometry.get("page"), "bbox": bbox}
+
+    component_data: list[dict[str, Any]] = []
+    for index, node in enumerate(components):
+        attached = _warnings_for_node(warnings, node)
+        component_data.append(
+            {
+                "id": str(node.get("id", "")),
+                "index": index,
+                "page": node.get("page"),
+                "type": str(node.get("type", "")),
+                "typeLabel": _type_label(node),
+                "atContent": _primary_at_content(node),
+                "regions": _string_regions(node),
+                "warningIds": [str(warning.get("id", "")) for warning in attached],
+                "hasWarning": bool(attached),
+            }
+        )
+
+    payload = {
+        "reportVersion": REVIEW_REPORT_VERSION,
+        "components": component_data,
+        "pageDimensions": dimensions,
+        "regions": regions,
+    }
+    serialized = json.dumps(payload, ensure_ascii=False)
+    # Neutralize any source-derived string that could otherwise close the
+    # embedding <script> element or introduce markup.
+    return (
+        serialized.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
+def render_review_report(record: dict[str, Any]) -> str:
+    """Render the interactive, split-screen HTML Review Report of a Review Record.
+
+    The report is a JavaScript-required Component navigator: source-derived values
+    are escaped and never become executable markup; the interactive shell,
+    styling, and behavior load only through the relative local ``review-report.css``
+    and ``review-report.js`` files this module also emits.
     """
     language = html.escape(str(record.get("language", "en")), quote=True)
     title = html.escape(str(record.get("title", "Untitled")))
+
     candidates_by_region: dict[str, list[dict[str, Any]]] = {}
     for candidate in record.get("candidates", []):
         if isinstance(candidate, dict) and isinstance(candidate.get("source_region"), str):
             candidates_by_region.setdefault(candidate["source_region"], []).append(candidate)
+
+    regions_by_id: dict[str, dict[str, Any]] = {
+        str(region["id"]): region
+        for region in record.get("source_regions", [])
+        if isinstance(region, dict) and isinstance(region.get("id"), str)
+    }
+
     warnings = [warning for warning in record.get("warnings", []) if isinstance(warning, dict)]
+    unresolved = sum(1 for warning in warnings if warning.get("resolution") is None)
+
+    pages = [page for page in record.get("pages", []) if isinstance(page, int)]
+    page_set = set(pages)
+    components = [
+        node
+        for node in record.get("semantic_layer", [])
+        if isinstance(node, dict) and node.get("page") in page_set
+    ]
+    articles = "".join(
+        _component_article(node, index, warnings, candidates_by_region, regions_by_id)
+        for index, node in enumerate(components)
+    )
+
     if warnings:
-        unresolved = sum(1 for warning in warnings if warning.get("resolution") is None)
-        rows = "".join(
-            _warning_row(warning, candidates_by_region) for warning in warnings
-        )
-        warnings_body = (
-            f"<p>{len(warnings)} Conversion Warning(s); {unresolved} not yet resolved.</p>"
+        rows = "".join(_warning_row(warning, candidates_by_region) for warning in warnings)
+        warnings_table = (
             "<table><caption>Conversion Warnings and their resolutions</caption>"
             "<thead><tr>"
             '<th scope="col">Warning</th><th scope="col">Page</th>'
@@ -975,64 +1161,810 @@ def render_review_report(record: dict[str, Any]) -> str:
             f"</tr></thead><tbody>{rows}</tbody></table>"
         )
     else:
-        warnings_body = "<p>No Conversion Warnings remain.</p>"
-    page_sections: list[str] = []
-    pages = [page for page in record.get("pages", []) if isinstance(page, int)]
-    for index, page in enumerate(pages):
-        previous = f'<a href="#page-{pages[index - 1]}">Previous page</a>' if index else ""
-        following = f'<a href="#page-{pages[index + 1]}">Next page</a>' if index + 1 < len(pages) else ""
-        page_warnings = [warning for warning in warnings if warning.get("page") in {None, page}]
-        warning_list = "".join(
-            f"<li>{_warning_link(warning)}</li>"
-            for warning in page_warnings
-        ) or "<li>No Conversion Warnings for this page.</li>"
-        cards: list[str] = []
-        for node in record.get("semantic_layer", []):
-            if not isinstance(node, dict) or node.get("page") != page:
-                continue
-            node_id = str(node.get("id", ""))
-            attached_warnings = _warnings_for_node(warnings, node)
-            all_warning_ids = " ".join(
-                str(warning.get("id", "")) for warning in attached_warnings
-            )
-            attached_warning_list = "".join(
-                f"<li>{_warning_link(warning)}</li>" for warning in attached_warnings
-            ) or "<li>No Conversion Warnings attached.</li>"
-            regions = "".join(_region_evidence(str(region), candidates_by_region, warnings)
-                              for region in node.get("source_regions", []) if isinstance(region, str))
-            cards.append(
-                f'<article id="{_escape(node_id)}" class="semantic-node" '
-                f'data-warning-ids="{_escape(all_warning_ids)}">'
-                f"<h3>{_escape(str(node.get('type', '')).replace('_', ' ').title())}</h3>"
-                f"{_node_content(node)}"
-                f'<section aria-label="Attached Conversion Warnings"><h4>Attached Conversion Warnings</h4>'
-                f"<ul>{attached_warning_list}</ul></section>"
-                f'<section aria-label="Source Regions">{regions}</section></article>'
-            )
-        page_sections.append(
-            f'<section id="page-{page}" class="review-page"><h2>Source PDF page {page}</h2>'
-            f'<nav aria-label="Page navigation">{previous} {following}</nav>'
-            f'<figure class="source-page"><img src="regions/page-{page}.png" alt="Full Source PDF page {page}"><figcaption>Full Source PDF page {page}</figcaption></figure>'
-            f'<section aria-label="Warnings for page {page}"><h3>Conversion Warnings</h3><ul>{warning_list}</ul></section>'
-            f"{''.join(cards)}</section>"
-        )
+        warnings_table = "<p>No Conversion Warnings remain.</p>"
+
+    # Page- and document-level warnings — those attached to no node or region —
+    # live in a separate always-reachable summary and are never Components.
+    scope_items: list[str] = []
+    for warning in warnings:
+        if warning.get("semantic_nodes") or warning.get("source_regions"):
+            continue
+        page = warning.get("page")
+        label = "Document" if page is None else f"Page {_escape(page)}"
+        scope_items.append(f"<li>{label}: {_warning_link(warning)}</li>")
+    scope_warnings = "".join(scope_items) or (
+        "<li>No page- or document-level Conversion Warnings.</li>"
+    )
+
+    data_script = _review_report_data(record, components, warnings, regions_by_id)
+    pages_text = html.escape(", ".join(str(page) for page in record.get("pages", [])))
+    source_sha = html.escape(str(record.get("source_sha256", "")))
+
     return f"""<!doctype html>
-<html lang="{language}">
+<html lang="{language}" class="no-js">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Review Report</title><style>
-body{{font-family:system-ui,sans-serif;max-width:76rem;margin:auto;padding:1rem}} img{{max-width:100%;height:auto}} .semantic-node,.source-region{{border:1px solid;padding:1rem;margin:1rem 0}} :focus-visible{{outline:3px solid;outline-offset:3px}} [hidden]{{display:none}}</style></head>
-<body><main>
+<title>{title} — Review Report</title>
+<link rel="stylesheet" href="{REVIEW_REPORT_STYLESHEET}"></head>
+<body>
+<noscript><p class="noscript-message">The interactive Review Report requires JavaScript. \
+Enable JavaScript in your browser to step through Components, view Source Region boxes, \
+and filter Conversion Warnings.</p></noscript>
+<main>
 <h1>{title} — Review Report</h1>
-<section aria-labelledby="document-identity"><h2 id="document-identity">Document</h2>
-<dl><dt>Pages</dt><dd>{html.escape(", ".join(str(page) for page in record.get("pages", [])))}</dd>
+<p class="unresolved-count" role="status">{unresolved} unresolved Conversion Warning(s) of {len(warnings)} total.</p>
+<details class="doc-metadata"><summary>Document details</summary>
+<dl><dt>Pages</dt><dd>{pages_text}</dd>
 <dt>Language</dt><dd>{language}</dd>
-<dt>Source SHA-256</dt>\
-<dd><code>{html.escape(str(record.get("source_sha256", "")))}</code></dd></dl></section>
-<button type="button" id="warnings-only" aria-pressed="false">Show warnings only</button>
-<section aria-labelledby="semantic-layer"><h2 id="semantic-layer">Semantic Layer by Source PDF page</h2>
-{''.join(page_sections)}</section>
-<section aria-labelledby="conversion-warnings">\
-<h2 id="conversion-warnings">Conversion Warnings</h2>
-{warnings_body}</section>
-</main><script>document.getElementById('warnings-only').addEventListener('click',function(){{var on=this.getAttribute('aria-pressed')!=='true';this.setAttribute('aria-pressed',String(on));this.textContent=on?'Show all content':'Show warnings only';document.querySelectorAll('.semantic-node').forEach(function(node){{node.hidden=on&&!node.dataset.warningIds;}});}});</script></body></html>
+<dt>Source SHA-256</dt><dd><code>{source_sha}</code></dd></dl></details>
+<details id="all-warnings" class="all-warnings"><summary>Conversion Warnings ({unresolved} unresolved)</summary>
+<section aria-label="Page- and document-level Conversion Warnings"><h2>Page- and document-level Conversion Warnings</h2>
+<ul>{scope_warnings}</ul></section>
+{warnings_table}</details>
+<section class="report-app" aria-labelledby="component-navigator-heading" hidden>
+<h2 id="component-navigator-heading">Component navigator</h2>
+<div id="component-toolbar" role="toolbar" aria-label="Component navigation" aria-controls="component-host">
+<button type="button" data-nav="prev">Previous</button>
+<button type="button" data-nav="next">Next</button>
+<span id="component-position" class="component-position" aria-hidden="true">Component 0 of 0</span>
+<button type="button" data-action="focus-details">Focus component details</button>
+<button type="button" id="warnings-only" aria-pressed="false">Warnings only</button>
+</div>
+<div id="live-region" class="visually-hidden" aria-live="polite" role="status"></div>
+<div class="panes">
+<section class="pane pane-page" aria-label="Source PDF page">
+<div class="page-controls" role="group" aria-label="Page zoom">
+<button type="button" data-zoom="component">Zoom to component</button>
+<button type="button" data-zoom="fit">Fit page</button>
+<button type="button" data-zoom="out">Zoom out</button>
+<button type="button" data-zoom="in">Zoom in</button>
+</div>
+<div id="page-viewport" class="page-viewport">
+<div id="page-stage" class="page-stage">
+<img id="page-image" class="page-image" alt="">
+<svg id="overlay" class="overlay" aria-hidden="true" focusable="false" preserveAspectRatio="none"></svg>
+</div>
+</div>
+</section>
+<div id="splitter" class="splitter" role="separator" aria-orientation="vertical" \
+aria-label="Resize panes" tabindex="0" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50">
+<button type="button" id="reset-panes">Reset pane sizes</button>
+</div>
+<section class="pane pane-details" aria-label="Component details">
+<div id="component-host">{articles}</div>
+<p id="filter-empty" class="filter-empty" hidden>No Components have attached or region-associated Conversion Warnings.</p>
+</section>
+</div>
+</section>
+</main>
+<script type="application/json" id="review-data">{data_script}</script>
+<script src="{REVIEW_REPORT_SCRIPT}"></script>
+</body></html>
 """
+
+
+def review_report_css() -> str:
+    """Return the stylesheet emitted beside the report as ``review-report.css``."""
+    return _REVIEW_REPORT_CSS
+
+
+def review_report_javascript() -> str:
+    """Return the client script emitted beside the report as ``review-report.js``."""
+    return _REVIEW_REPORT_JS
+
+
+_REVIEW_REPORT_CSS = r""":root { color-scheme: light dark; }
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 1rem;
+  line-height: 1.4;
+}
+
+h1 { font-size: 1.5rem; }
+
+img { max-width: 100%; height: auto; }
+
+:focus-visible {
+  outline: 3px solid;
+  outline-offset: 2px;
+}
+
+[hidden] { display: none !important; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.noscript-message {
+  border: 2px solid;
+  padding: 1rem;
+  font-weight: bold;
+}
+
+.unresolved-count {
+  font-weight: bold;
+  margin: 0.5rem 0;
+}
+
+.doc-metadata,
+.all-warnings {
+  margin: 0.5rem 0;
+}
+
+.all-warnings table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.all-warnings th,
+.all-warnings td {
+  border: 1px solid;
+  padding: 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+}
+
+button[aria-pressed="true"] {
+  outline: 2px solid;
+  font-weight: bold;
+}
+
+.report-app {
+  margin-top: 1rem;
+}
+
+#component-toolbar,
+.page-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.component-position {
+  font-weight: bold;
+}
+
+.panes {
+  --left-pane: 50%;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 60vh;
+}
+
+.pane {
+  min-width: 0;
+  overflow: auto;
+}
+
+.pane-page {
+  flex: 0 0 var(--left-pane);
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-details {
+  flex: 1 1 0;
+  padding-left: 1rem;
+}
+
+.page-viewport {
+  flex: 1 1 auto;
+  height: 70vh;
+  overflow: auto;
+  border: 1px solid;
+  position: relative;
+}
+
+.page-stage {
+  position: relative;
+  transform-origin: top left;
+}
+
+.page-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.region-box {
+  fill: none;
+  stroke: #000;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.region-box.emphasized {
+  stroke-width: 6;
+  stroke-dasharray: 8 4;
+}
+
+.region-box-label {
+  font-size: 16px;
+  font-weight: bold;
+  fill: #000;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 3px;
+}
+
+.splitter {
+  flex: 0 0 auto;
+  width: 0.75rem;
+  cursor: col-resize;
+  border: 1px solid;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: transparent;
+}
+
+.splitter #reset-panes {
+  writing-mode: vertical-rl;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.1rem;
+  cursor: pointer;
+}
+
+.component {
+  border: 1px solid;
+  padding: 1rem;
+}
+
+.component-type {
+  margin-top: 0;
+}
+
+.field-label {
+  font-weight: bold;
+}
+
+.component-warning-status {
+  font-weight: bold;
+}
+
+.region-controls {
+  list-style: none;
+  padding: 0;
+}
+
+.region-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0.3rem 0;
+  padding: 0.3rem;
+  border: 1px solid;
+}
+
+.region-number {
+  font-weight: bold;
+}
+
+.all-details {
+  margin-top: 1rem;
+}
+
+.source-region {
+  border: 1px solid;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.filter-empty {
+  border: 1px solid;
+  padding: 1rem;
+  font-weight: bold;
+}
+
+@media (max-width: 60rem) {
+  .panes {
+    display: block;
+  }
+  .pane-page {
+    flex: none;
+    width: 100%;
+  }
+  .pane-details {
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+  .splitter {
+    display: none;
+  }
+  .page-viewport {
+    height: 60vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+"""
+
+
+_REVIEW_REPORT_JS = r'''"use strict";
+(function () {
+  var root = document.querySelector(".report-app");
+  if (!root) return;
+  var dataEl = document.getElementById("review-data");
+  var data;
+  try {
+    data = JSON.parse(dataEl.textContent);
+  } catch (e) {
+    return;
+  }
+  var components = data.components || [];
+
+  document.documentElement.classList.remove("no-js");
+  root.hidden = false;
+
+  var host = document.getElementById("component-host");
+  var img = document.getElementById("page-image");
+  var overlay = document.getElementById("overlay");
+  var viewport = document.getElementById("page-viewport");
+  var stage = document.getElementById("page-stage");
+  var positionEl = document.getElementById("component-position");
+  var live = document.getElementById("live-region");
+  var toolbar = document.getElementById("component-toolbar");
+  var warningsOnlyBtn = document.getElementById("warnings-only");
+  var filterEmpty = document.getElementById("filter-empty");
+  var allWarnings = document.getElementById("all-warnings");
+  var splitter = document.getElementById("splitter");
+  var resetBtn = document.getElementById("reset-panes");
+  var panes = root.querySelector(".panes");
+  var pageControls = root.querySelector(".page-controls");
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  var articles = {};
+  components.forEach(function (c) {
+    articles[c.id] = document.getElementById(c.id);
+  });
+
+  var state = {
+    activeId: null,
+    zoomMode: "fit",
+    manualScale: 1,
+    warningsOnly: false,
+    detailsOpen: false,
+    emphasized: null,
+    zoomRegion: null
+  };
+
+  function componentById(id) {
+    for (var i = 0; i < components.length; i++) {
+      if (components[i].id === id) return components[i];
+    }
+    return null;
+  }
+
+  function traversal() {
+    if (!state.warningsOnly) return components;
+    return components.filter(function (c) {
+      return c.hasWarning;
+    });
+  }
+
+  // ---- overlay ----------------------------------------------------------
+  function buildOverlay(component) {
+    while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+    var dim = data.pageDimensions[String(component.page)];
+    if (!dim) return;
+    overlay.setAttribute("viewBox", "0 0 " + dim.width + " " + dim.height);
+    component.regions.forEach(function (rid, i) {
+      var region = data.regions[rid];
+      if (!region || !region.bbox || region.bbox.length < 4) return;
+      var x0 = region.bbox[0], y0 = region.bbox[1], x1 = region.bbox[2], y1 = region.bbox[3];
+      var rect = document.createElementNS(SVGNS, "rect");
+      rect.setAttribute("x", x0);
+      rect.setAttribute("y", y0);
+      rect.setAttribute("width", Math.max(0, x1 - x0));
+      rect.setAttribute("height", Math.max(0, y1 - y0));
+      rect.setAttribute("class", "region-box");
+      rect.setAttribute("data-region", rid);
+      overlay.appendChild(rect);
+      var label = document.createElementNS(SVGNS, "text");
+      label.setAttribute("x", x0 + 4);
+      label.setAttribute("y", y0 + 18);
+      label.setAttribute("class", "region-box-label");
+      label.textContent = String(i + 1) + " of " + component.regions.length;
+      overlay.appendChild(label);
+    });
+    applyEmphasis();
+  }
+
+  function applyEmphasis() {
+    var boxes = overlay.querySelectorAll(".region-box");
+    for (var i = 0; i < boxes.length; i++) {
+      if (state.emphasized && boxes[i].getAttribute("data-region") === state.emphasized) {
+        boxes[i].classList.add("emphasized");
+      } else {
+        boxes[i].classList.remove("emphasized");
+      }
+    }
+  }
+
+  // ---- zoom -------------------------------------------------------------
+  function viewportSize() {
+    return { w: viewport.clientWidth, h: viewport.clientHeight };
+  }
+
+  function fitScale(dim) {
+    var vs = viewportSize();
+    if (!dim.width || !dim.height || !vs.w || !vs.h) return 1;
+    return Math.min(vs.w / dim.width, vs.h / dim.height) || 1;
+  }
+
+  function unionBox(component) {
+    var box = null;
+    component.regions.forEach(function (rid) {
+      var r = data.regions[rid];
+      if (!r || !r.bbox || r.bbox.length < 4) return;
+      if (!box) {
+        box = { x0: r.bbox[0], y0: r.bbox[1], x1: r.bbox[2], y1: r.bbox[3] };
+      } else {
+        box.x0 = Math.min(box.x0, r.bbox[0]);
+        box.y0 = Math.min(box.y0, r.bbox[1]);
+        box.x1 = Math.max(box.x1, r.bbox[2]);
+        box.y1 = Math.max(box.y1, r.bbox[3]);
+      }
+    });
+    return box;
+  }
+
+  function activeZoomBox(component) {
+    if (state.zoomRegion && component.regions.indexOf(state.zoomRegion) >= 0) {
+      var r = data.regions[state.zoomRegion];
+      if (r && r.bbox && r.bbox.length >= 4) {
+        return { x0: r.bbox[0], y0: r.bbox[1], x1: r.bbox[2], y1: r.bbox[3] };
+      }
+    }
+    return unionBox(component);
+  }
+
+  function componentScale(component, dim) {
+    var box = activeZoomBox(component);
+    if (!box) return fitScale(dim);
+    var vs = viewportSize();
+    var bw = Math.max(1, box.x1 - box.x0);
+    var bh = Math.max(1, box.y1 - box.y0);
+    var pad = 1.15;
+    var s = Math.min(vs.w / (bw * pad), vs.h / (bh * pad));
+    return Math.max(fitScale(dim), Math.min(s, 8));
+  }
+
+  function currentScale(component) {
+    var dim = data.pageDimensions[String(component.page)];
+    if (!dim) return 1;
+    if (state.zoomMode === "fit") return fitScale(dim);
+    if (state.zoomMode === "component") return componentScale(component, dim);
+    return state.manualScale;
+  }
+
+  function applyZoom(component) {
+    var dim = data.pageDimensions[String(component.page)];
+    if (!dim) return;
+    var scale = currentScale(component) || 1;
+    stage.style.width = dim.width * scale + "px";
+    stage.style.height = dim.height * scale + "px";
+    if (state.zoomMode === "component") {
+      var box = activeZoomBox(component);
+      if (box) {
+        var vs = viewportSize();
+        var cx = ((box.x0 + box.x1) / 2) * scale;
+        var cy = ((box.y0 + box.y1) / 2) * scale;
+        viewport.scrollLeft = Math.max(0, cx - vs.w / 2);
+        viewport.scrollTop = Math.max(0, cy - vs.h / 2);
+      }
+    }
+  }
+
+  function zoomBy(factor) {
+    var c = componentById(state.activeId);
+    if (!c) return;
+    state.manualScale = Math.max(0.1, Math.min(8, currentScale(c) * factor));
+    state.zoomMode = "manual";
+    state.zoomRegion = null;
+    applyZoom(c);
+  }
+
+  // ---- activation -------------------------------------------------------
+  function updatePosition(component) {
+    var list = traversal();
+    var pos = list.indexOf(component) + 1;
+    positionEl.textContent = "Component " + pos + " of " + list.length;
+  }
+
+  function announce(component) {
+    var list = traversal();
+    var pos = list.indexOf(component) + 1;
+    live.textContent =
+      "Component " + pos + " of " + list.length + ", " + component.typeLabel + ", page " + component.page;
+  }
+
+  function setActive(id, opts) {
+    opts = opts || {};
+    var component = componentById(id);
+    if (!component) return;
+    if (state.activeId && articles[state.activeId]) {
+      articles[state.activeId].hidden = true;
+    }
+    state.activeId = id;
+    var el = articles[id];
+    var details = el.querySelector("details.all-details");
+    if (details) details.open = state.detailsOpen;
+    el.hidden = false;
+    filterEmpty.hidden = true;
+
+    img.setAttribute("src", "regions/page-" + component.page + ".png");
+    img.setAttribute("alt", "Full Source PDF page " + component.page);
+
+    if (!opts.keepZoomRegion) state.zoomRegion = null;
+    state.emphasized = null;
+    buildOverlay(component);
+    applyZoom(component);
+    updatePosition(component);
+    announce(component);
+
+    var hash = "#" + id;
+    if (opts.push === false) {
+      history.replaceState(null, "", hash);
+    } else if (location.hash !== hash) {
+      history.pushState(null, "", hash);
+    }
+  }
+
+  function step(delta) {
+    var list = traversal();
+    if (!list.length) return;
+    var current = componentById(state.activeId);
+    var idx = list.indexOf(current);
+    if (idx < 0) idx = 0;
+    else idx = Math.min(list.length - 1, Math.max(0, idx + delta));
+    setActive(list[idx].id);
+  }
+
+  function focusDetails() {
+    var el = articles[state.activeId];
+    if (el) el.focus();
+  }
+
+  function setWarningsOnly(on) {
+    state.warningsOnly = on;
+    warningsOnlyBtn.setAttribute("aria-pressed", String(on));
+    var list = traversal();
+    if (!list.length) {
+      if (state.activeId && articles[state.activeId]) articles[state.activeId].hidden = true;
+      filterEmpty.hidden = false;
+      positionEl.textContent = "Component 0 of 0";
+      live.textContent = "No Components match the warnings filter.";
+      return;
+    }
+    var current = componentById(state.activeId);
+    var target = current && list.indexOf(current) >= 0 ? current.id : list[0].id;
+    setActive(target);
+  }
+
+  // ---- routing ----------------------------------------------------------
+  function route(hash) {
+    if (!hash) return false;
+    var id = hash.replace(/^#/, "");
+    if (articles[id]) {
+      setActive(id, { push: false });
+      return true;
+    }
+    var pageMatch = /^page-(\d+)$/.exec(id);
+    if (pageMatch) {
+      var p = parseInt(pageMatch[1], 10);
+      var list = traversal().filter(function (c) { return c.page === p; });
+      if (!list.length) list = components.filter(function (c) { return c.page === p; });
+      if (list.length) {
+        setActive(list[0].id, { push: false });
+        return true;
+      }
+    }
+    if (/^warning-/.test(id)) {
+      if (allWarnings) allWarnings.open = true;
+      var row = document.getElementById(id);
+      if (row) {
+        row.setAttribute("tabindex", "-1");
+        row.focus();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // ---- events -----------------------------------------------------------
+  toolbar.addEventListener("click", function (e) {
+    var nav = e.target.closest("[data-nav]");
+    if (nav) {
+      step(nav.getAttribute("data-nav") === "next" ? 1 : -1);
+      return;
+    }
+    if (e.target.closest('[data-action="focus-details"]')) {
+      focusDetails();
+      return;
+    }
+    if (e.target.closest("#warnings-only")) {
+      setWarningsOnly(warningsOnlyBtn.getAttribute("aria-pressed") !== "true");
+    }
+  });
+
+  toolbar.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      step(1);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      step(-1);
+    }
+  });
+
+  pageControls.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-zoom]");
+    if (!b) return;
+    var c = componentById(state.activeId);
+    if (!c) return;
+    var mode = b.getAttribute("data-zoom");
+    if (mode === "fit") {
+      state.zoomMode = "fit";
+      state.zoomRegion = null;
+      applyZoom(c);
+    } else if (mode === "component") {
+      state.zoomMode = "component";
+      state.zoomRegion = null;
+      applyZoom(c);
+    } else if (mode === "in") {
+      zoomBy(1.25);
+    } else if (mode === "out") {
+      zoomBy(0.8);
+    }
+  });
+
+  host.addEventListener("click", function (e) {
+    var emph = e.target.closest("[data-emphasize]");
+    if (emph) {
+      var rid = emph.getAttribute("data-emphasize");
+      state.emphasized = state.emphasized === rid ? null : rid;
+      applyEmphasis();
+      return;
+    }
+    var zoom = e.target.closest("[data-zoom-region]");
+    if (zoom) {
+      var rid2 = zoom.getAttribute("data-zoom-region");
+      state.emphasized = rid2;
+      state.zoomRegion = rid2;
+      state.zoomMode = "component";
+      applyEmphasis();
+      applyZoom(componentById(state.activeId));
+    }
+  });
+
+  host.addEventListener(
+    "toggle",
+    function (e) {
+      if (e.target.matches("details.all-details")) {
+        state.detailsOpen = e.target.open;
+      }
+    },
+    true
+  );
+
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    var hash = a.getAttribute("href");
+    if (route(hash)) {
+      e.preventDefault();
+      if (location.hash !== hash) history.pushState(null, "", hash);
+    }
+  });
+
+  window.addEventListener("popstate", function () {
+    route(location.hash);
+  });
+
+  window.addEventListener("resize", function () {
+    if (state.activeId) applyZoom(componentById(state.activeId));
+  });
+
+  // ---- splitter ---------------------------------------------------------
+  var paneWidth = 50;
+  function setPaneWidth(pct) {
+    paneWidth = Math.max(20, Math.min(80, pct));
+    panes.style.setProperty("--left-pane", paneWidth + "%");
+    splitter.setAttribute("aria-valuenow", String(Math.round(paneWidth)));
+    if (state.activeId) applyZoom(componentById(state.activeId));
+  }
+
+  splitter.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      setPaneWidth(paneWidth - 2);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      setPaneWidth(paneWidth + 2);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setPaneWidth(20);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setPaneWidth(80);
+    }
+  });
+
+  var dragging = false;
+  splitter.addEventListener("pointerdown", function (e) {
+    if (e.target.closest("#reset-panes")) return;
+    dragging = true;
+    try {
+      splitter.setPointerCapture(e.pointerId);
+    } catch (_) {}
+    e.preventDefault();
+  });
+  splitter.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    var rect = panes.getBoundingClientRect();
+    if (rect.width) setPaneWidth(((e.clientX - rect.left) / rect.width) * 100);
+  });
+  function endDrag(e) {
+    dragging = false;
+    try {
+      splitter.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+  }
+  splitter.addEventListener("pointerup", endDrag);
+  splitter.addEventListener("pointercancel", endDrag);
+
+  resetBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    setPaneWidth(50);
+  });
+
+  // ---- init -------------------------------------------------------------
+  setPaneWidth(50);
+  if (!components.length) {
+    positionEl.textContent = "Component 0 of 0";
+    filterEmpty.hidden = false;
+    filterEmpty.textContent = "This Review Record has no Semantic Layer Components.";
+    return;
+  }
+  var handled = location.hash && route(location.hash);
+  if (!handled) setActive(components[0].id, { push: false });
+})();
+'''
