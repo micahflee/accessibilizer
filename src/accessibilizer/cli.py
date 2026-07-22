@@ -1262,6 +1262,14 @@ def _run_conversion(
     # Second pass: reconstruct each page that cannot be reused, enforcing the
     # request ceiling against the running total before every page.
     for page_number in pages:
+        # The whole-page fallback source region (...-r0000) can anchor a
+        # reconstructed formula/table/figure node, so region verification reads
+        # its crop — the full page render — before this loop reaches the
+        # review-record stage. Materialize it up front for every page.
+        _atomic_copy(
+            regions / f"page-{page_number}.png",
+            regions / f"page-{page_number}-r0000.png",
+        )
         if page_semantics_reusable[page_number]:
             reporter.reused(
                 "provider-reconstruction", page=page_number, page_count=page_count
@@ -1316,10 +1324,6 @@ def _run_conversion(
                     regions / f"page-{page_number}-recognition.png",
                     _displayed_page_dimensions(source_copy, page_number),
                 )
-            )
-            _atomic_copy(
-                regions / f"page-{page_number}.png",
-                regions / f"page-{page_number}-r0000.png",
             )
         first = page_documents[0]
         record = review.build_review_record(
