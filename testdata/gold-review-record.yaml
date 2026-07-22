@@ -1,513 +1,11 @@
-# Full-sample gold Review Record — the approved acceptance oracle (issue #14,
-# parent #1). Approved by the maintainer on 2026-07-21 per ADR 0020.
-#
-# A source-linked semantic oracle for all 11 pages of the supplied
-# electrical-current notes, hand-authored by reading the Source PDF. Genuine
-# ambiguities are recorded as unresolved Conversion Warnings rather than
-# silently guessed. This file is human-editable YAML backed by
-# schemas/review-record-2.0.schema.json.
-candidates:
-- crop: regions/page-1-r0001.png
-  id: page-1-r0001
-  text: 'Chapter 20: Current, Resistance, Ohm''s Law, Power, AC/DC'
-  type: document_structure
-- crop: regions/page-1-r0002.png
-  id: page-1-r0002
-  text: A simple circuit in which a battery drives conventional current I one way around a loop while
-    electrons flow the opposite way.
-  type: figure
-- crop: regions/page-1-r0003.png
-  id: page-1-r0003
-  text: Electrical current (I) is the rate of ‘flow’ of positive charge.
-  type: handwriting
-- crop: regions/page-1-r0004.png
-  id: page-1-r0004
-  text: I = Q / \Delta t = Q / t
-  type: formula
-- crop: regions/page-1-r0005.png
-  id: page-1-r0005
-  text: 'Its direction (from DC, or direct current, voltage) is opposite the ‘flow’ of electrons: from
-    plus to minus.'
-  type: handwriting
-- crop: regions/page-1-r0006.png
-  id: page-1-r0006
-  text: Units of current
-  type: document_structure
-- crop: regions/page-1-r0007.png
-  id: page-1-r0007
-  text: Current is measured in amperes (A), also known as ‘amps’. The ampere is an SI base unit.
-  type: handwriting
-- crop: regions/page-1-r0008.png
-  id: page-1-r0008
-  text: '[A] = C / s'
-  type: formula
-- crop: regions/page-1-r0009.png
-  id: page-1-r0009
-  text: Electric fields in a Simple Circuit (1962)
-  type: document_structure
-- crop: regions/page-1-r0010.png
-  id: page-1-r0010
-  text: A 1962 photograph (Jefimenko) that makes the electric field around a simple current-carrying circuit
-    visible using suspended fibers.
-  type: figure
-- crop: regions/page-2-r0001.png
-  id: page-2-r0001
-  text: 'Example: A steady current of 2.5 A is created in a wire for 1.0 minute. How much charge passed
-    by any given point, and how many electrons would this be?'
-  type: handwriting
-- crop: regions/page-2-r0002.png
-  id: page-2-r0002
-  text: I = Q / \Delta t = 2.5\ \text{C/s} = Q / t
-  type: formula
-- crop: regions/page-2-r0003.png
-  id: page-2-r0003
-  text: Q = I \cdot t = (2.5\ \text{C/s})(60\ \text{s}) = 150\ \text{C}
-  type: formula
-- crop: regions/page-2-r0004.png
-  id: page-2-r0004
-  text: N = (150\ \text{C})\left(\dfrac{1\ e^-}{1.6\times10^{-19}\ \text{C}}\right) = 9.4\times10^{20}\
-    e^-
-  type: formula
-- crop: regions/page-2-r0005.png
-  id: page-2-r0005
-  text: n = 9.4\times10^{20}\ e^- \left(\dfrac{1\ \text{mol}}{6.022\times10^{23}\ e^-}\right) = 0.0016\
-    \text{mol}
-  type: formula
-- crop: regions/page-2-r0006.png
-  id: page-2-r0006
-  text: Electrical Resistance
-  type: document_structure
-- crop: regions/page-2-r0007.png
-  id: page-2-r0007
-  text: 'A battery-and-resistor loop: a battery V drives current while a resistor R in the loop opposes
-    it; electrons flow around the circuit.'
-  type: figure
-- crop: regions/page-2-r0008.png
-  id: page-2-r0008
-  text: 'The circuit symbol for a resistor: a zig-zag line labeled R.'
-  type: figure
-- crop: regions/page-2-r0009.png
-  id: page-2-r0009
-  text: '[\Omega] = \dfrac{V}{A} = \dfrac{\text{J/C}}{\text{C/s}}'
-  type: formula
-- crop: regions/page-2-r0010.png
-  id: page-2-r0010
-  text: A resistor resists the flow of current. Resistors are often used to limit current in part of a
-    circuit. Wires themselves have some resistance, but we’ll usually ignore it.
-  type: handwriting
-- crop: regions/page-3-r0001.png
-  id: page-3-r0001
-  text: A photograph of a populated circuit board; handwritten arrows point to the axial components and
-    label them ‘resistors!’.
-  type: figure
-- crop: regions/page-3-r0002.png
-  id: page-3-r0002
-  text: 'Analogy: ‘friction’'
-  type: document_structure
-- crop: regions/page-3-r0003.png
-  id: page-3-r0003
-  text: 'An analogy diagram: a row of electrons is pushed to the right by an applied force F while a friction
-    force f acts to the left, modeling resistance.'
-  type: figure
-- crop: regions/page-3-r0004.png
-  id: page-3-r0004
-  text: 'Simplification: electric fields inside materials interact with the current.'
-  type: handwriting
-- crop: regions/page-3-r0005.png
-  id: page-3-r0005
-  text: A cylindrical resistor carrying current I, drawn with its length L and cross-sectional area A.
-  type: figure
-- crop: regions/page-3-r0006.png
-  id: page-3-r0006
-  text: Resistivity (rho)
-  type: document_structure
-- crop: regions/page-3-r0007.png
-  id: page-3-r0007
-  text: R \propto \dfrac{L}{A} \Rightarrow R = \rho\, \dfrac{L}{A}
-  type: formula
-- crop: regions/page-3-r0008.png
-  id: page-3-r0008
-  text: '[\Omega] = (\Omega\cdot m)\left(\dfrac{m}{m^2}\right)'
-  type: formula
-- crop: regions/page-3-r0009.png
-  id: page-3-r0009
-  text: Table 25-1  Resistivity and Temperature Coefficients (at 20 degrees C)
-  type: table
-- crop: regions/page-3-r0010.png
-  id: page-3-r0010
-  text: (dagger) Values depend strongly on the presence of even slight amounts of impurities.
-  type: handwriting
-- crop: regions/page-4-r0001.png
-  id: page-4-r0001
-  text: Resistivity depends on temperature — usually in metals, resistance rises as temperature rises
-    (R increases when T increases).
-  type: handwriting
-- crop: regions/page-4-r0002.png
-  id: page-4-r0002
-  text: Superconductors — materials with zero resistance — are generally at extremely low temperature.
-    ‘High temperature’ superconductors are those which exhibit R = 0 above 77 K, the boiling point of
-    nitrogen.
-  type: handwriting
-- crop: regions/page-4-r0003.png
-  id: page-4-r0003
-  text: Ohmic Materials (every material in 1B)
-  type: document_structure
-- crop: regions/page-4-r0004.png
-  id: page-4-r0004
-  text: Ohmic materials obey Ohm’s Law.
-  type: handwriting
-- crop: regions/page-4-r0005.png
-  id: page-4-r0005
-  text: I = \dfrac{V}{R}
-  type: formula
-- crop: regions/page-4-r0006.png
-  id: page-4-r0006
-  text: 'A current-versus-voltage graph for ohmic materials: straight lines through the origin whose slope
-    is 1/R, so a larger resistance gives a shallower line.'
-  type: figure
-- crop: regions/page-4-r0007.png
-  id: page-4-r0007
-  text: I = \left(\dfrac{1}{R}\right) V
-  type: formula
-- crop: regions/page-4-r0008.png
-  id: page-4-r0008
-  text: Ohm’s Law
-  type: document_structure
-- crop: regions/page-4-r0009.png
-  id: page-4-r0009
-  text: V = I R
-  type: formula
-- crop: regions/page-4-r0010.png
-  id: page-4-r0010
-  text: 'Example: In the circuit below, is V higher at point A or point B? What about I?'
-  type: handwriting
-- crop: regions/page-4-r0011.png
-  id: page-4-r0011
-  text: A circuit loop with a battery and a resistor; point A is just before the resistor and point B
-    just after it, with current I flowing from A to B.
-  type: figure
-- crop: regions/page-4-r0012.png
-  id: page-4-r0012
-  text: V = I R \Rightarrow V_A > V_B
-  type: formula
-- crop: regions/page-5-r0001.png
-  id: page-5-r0001
-  text: We say that ‘voltage drops’ across a resistor.
-  type: handwriting
-- crop: regions/page-5-r0002.png
-  id: page-5-r0002
-  text: The current is the same at A and B. The current is lower through this whole circuit due to the
-    resistor.
-  type: handwriting
-- crop: regions/page-5-r0003.png
-  id: page-5-r0003
-  text: 'Mental model: a traffic jam!'
-  type: handwriting
-- crop: regions/page-5-r0004.png
-  id: page-5-r0004
-  text: 'A ‘traffic jam’ analogy: electrons queued single-file around a loop, bunching up as they pass
-    through a resistor, with a battery at the bottom.'
-  type: figure
-- crop: regions/page-5-r0005.png
-  id: page-5-r0005
-  text: 'Example: A flashlight bulb draws 300 mA from its 1.5 V battery. What is the resistance of the
-    bulb? If the battery degrades and only produces 1.2 V, how would the current change?'
-  type: handwriting
-- crop: regions/page-5-r0006.png
-  id: page-5-r0006
-  text: An illustration of a flashlight with its bulb lit and a battery inside.
-  type: figure
-- crop: regions/page-5-r0007.png
-  id: page-5-r0007
-  text: I = \dfrac{V}{R} \Rightarrow R = \dfrac{V}{I} = \dfrac{1.5\ \text{V}}{0.30\ \text{A}} = 5.0\ \Omega
-  type: formula
-- crop: regions/page-5-r0008.png
-  id: page-5-r0008
-  text: V \to 1.2\ \text{V}:\quad I = \dfrac{1.2\ \text{V}}{5.0\ \Omega} = 0.24\ \text{A} = 240\ \text{mA}
-  type: formula
-- crop: regions/page-6-r0001.png
-  id: page-6-r0001
-  text: 'Example: Speaker wires. Suppose you want to connect your stereo to remote speakers. (a) If each
-    wire must be 20 m long, what diameter copper wire should you use to keep the resistance less than
-    0.10 Ohm per wire? (b) If the current to each speaker is 4.0 A, what is the potential difference,
-    or voltage drop, across each wire?'
-  type: text
-- crop: regions/page-6-r0002.png
-  id: page-6-r0002
-  text: An illustration of a stereo receiver connected to two remote speakers by 20-meter wires.
-  type: figure
-- crop: regions/page-6-r0003.png
-  id: page-6-r0003
-  text: A circuit in which a voltage source V drives current I through the wiring resistance R in series
-    with the speaker.
-  type: figure
-- crop: regions/page-6-r0004.png
-  id: page-6-r0004
-  text: (a)\ \rho_{cu} = 1.68\times10^{-9}\ \Omega\cdot m,\quad L = 20\ m,\quad R = 0.10\ \Omega
-  type: formula
-- crop: regions/page-6-r0005.png
-  id: page-6-r0005
-  text: A = \pi r^2 = \pi\left(\dfrac{d}{2}\right)^2,\quad R = \rho\,\dfrac{L}{A} = \dfrac{4\rho L}{\pi
-    d^2}
-  type: formula
-- crop: regions/page-6-r0006.png
-  id: page-6-r0006
-  text: d^2 > \dfrac{4\rho L}{\pi R} \Rightarrow d > \left[\dfrac{4\rho L}{\pi R}\right]^{1/2} = \left[\dfrac{4(1.68\times10^{-8}\
-    \Omega\cdot m)(20\ m)}{\pi(0.10\ \Omega)}\right]^{1/2} = 2.1\ \text{mm}
-  type: formula
-- crop: regions/page-6-r0007.png
-  id: page-6-r0007
-  text: (b)\ V = I R = (4.0\ \text{A})(0.10\ \Omega) \Rightarrow V_R = 0.400\ \text{V} = 400\ \text{mV}
-  type: formula
-- crop: regions/page-6-r0008.png
-  id: page-6-r0008
-  text: Electrical Energy & Power
-  type: document_structure
-- crop: regions/page-6-r0009.png
-  id: page-6-r0009
-  text: \text{Power} = \dfrac{\text{Energy}}{\text{time}}
-  type: formula
-- crop: regions/page-6-r0010.png
-  id: page-6-r0010
-  text: U = qV
-  type: formula
-- crop: regions/page-6-r0011.png
-  id: page-6-r0011
-  text: P = \dfrac{(\text{charge})(\text{Voltage})}{\text{time}} = IV
-  type: formula
-- crop: regions/page-7-r0001.png
-  id: page-7-r0001
-  text: Units
-  type: document_structure
-- crop: regions/page-7-r0002.png
-  id: page-7-r0002
-  text: I\ (\text{current}):\ [A] = \dfrac{C}{s}
-  type: formula
-- crop: regions/page-7-r0003.png
-  id: page-7-r0003
-  text: V\ (\text{potential difference}):\ [V] = \dfrac{J}{C}
-  type: formula
-- crop: regions/page-7-r0004.png
-  id: page-7-r0004
-  text: P\ (\text{power}):\ [W] = \dfrac{J}{s}
-  type: formula
-- crop: regions/page-7-r0005.png
-  id: page-7-r0005
-  text: R\ (\text{resistance}):\ [\Omega] = \dfrac{V}{A} = \dfrac{V\cdot s}{C} = \dfrac{J\cdot s}{C^2}
-  type: formula
-- crop: regions/page-7-r0006.png
-  id: page-7-r0006
-  text: W = A\,V = \left(\dfrac{C}{s}\right)\left(\dfrac{J}{C}\right) = \dfrac{J}{s}
-  type: formula
-- crop: regions/page-7-r0007.png
-  id: page-7-r0007
-  text: 'Power can also be expressed:'
-  type: handwriting
-- crop: regions/page-7-r0008.png
-  id: page-7-r0008
-  text: (V = IR) \Rightarrow P = I(IR) = I^2 R
-  type: formula
-- crop: regions/page-7-r0009.png
-  id: page-7-r0009
-  text: \left(I = \dfrac{V}{R}\right) \Rightarrow P = \left(\dfrac{V}{R}\right)V = \dfrac{V^2}{R}
-  type: formula
-- crop: regions/page-7-r0010.png
-  id: page-7-r0010
-  text: P = IV = I^2 R = \dfrac{V^2}{R}
-  type: formula
-- crop: regions/page-7-r0011.png
-  id: page-7-r0011
-  text: Power Sources (Voltage Source)
-  type: document_structure
-- crop: regions/page-7-r0012.png
-  id: page-7-r0012
-  text: 'Battery (DC, direct current): the source provides a steady, constant voltage.'
-  type: handwriting
-- crop: regions/page-7-r0013.png
-  id: page-7-r0013
-  text: 'A graph of a DC battery’s voltage versus time: a constant horizontal line at about 1.5 volts.'
-  type: figure
-- crop: regions/page-7-r0014.png
-  id: page-7-r0014
-  text: 'Generator (AC, alternating current). Advantages over DC: easier and safer to transmit over long
-    distances, and easy and efficient to generate.'
-  type: handwriting
-- crop: regions/page-8-r0001.png
-  id: page-8-r0001
-  text: 'A graph of AC voltage versus time: a sine wave oscillating between plus V0 and minus V0, with
-    one full cycle marked.'
-  type: figure
-- crop: regions/page-8-r0002.png
-  id: page-8-r0002
-  text: V = V_0 \sin(\omega t)
-  type: formula
-- crop: regions/page-8-r0003.png
-  id: page-8-r0003
-  text: 'The circuit symbol for an AC voltage source: a circle enclosing a sine wave, shown in a small
-    loop with a capacitor and a resistor.'
-  type: figure
-- crop: regions/page-8-r0004.png
-  id: page-8-r0004
-  text: Peak voltage is V0. Omega is the angular frequency in radians per second. The standard line frequency
-    f is 60 Hz (cycles per second).
-  type: handwriting
-- crop: regions/page-8-r0005.png
-  id: page-8-r0005
-  text: \omega = 2\pi f
-  type: formula
-- crop: regions/page-8-r0006.png
-  id: page-8-r0006
-  text: \left(60\ \dfrac{\text{cycles}}{s}\right)\left(2\pi\ \dfrac{\text{rad}}{\text{cycle}}\right) =
-    377\ \dfrac{\text{rad}}{s}
-  type: formula
-- crop: regions/page-8-r0007.png
-  id: page-8-r0007
-  text: ‘Average’ voltage (RMS)
-  type: document_structure
-- crop: regions/page-8-r0008.png
-  id: page-8-r0008
-  text: V_{RMS} = \sqrt{\overline{V^2}}
-  type: formula
-- crop: regions/page-8-r0009.png
-  id: page-8-r0009
-  text: 'Fact: the average value of sine squared theta (or cosine squared theta) over a cycle is one half.'
-  type: handwriting
-- crop: regions/page-8-r0010.png
-  id: page-8-r0010
-  text: 'A graph of sine squared of omega t versus time: a non-negative wave oscillating between 0 and
-    1, whose average value is one half.'
-  type: figure
-- crop: regions/page-8-r0011.png
-  id: page-8-r0011
-  text: \langle \sin^2(\omega t) \rangle = \tfrac{1}{2}
-  type: formula
-- crop: regions/page-8-r0012.png
-  id: page-8-r0012
-  text: V_{RMS} = \left(\overline{V_0^2 \sin^2(\omega t)}\right)^{1/2} = \left(V_0^2 \cdot \tfrac{1}{2}\right)^{1/2}
-    = \dfrac{1}{\sqrt{2}} V_0
-  type: formula
-- crop: regions/page-8-r0013.png
-  id: page-8-r0013
-  text: V_{RMS} = \dfrac{V_0}{\sqrt{2}}
-  type: formula
-- crop: regions/page-9-r0001.png
-  id: page-9-r0001
-  text: Current also ‘alternates’ in AC voltage
-  type: document_structure
-- crop: regions/page-9-r0002.png
-  id: page-9-r0002
-  text: I = \dfrac{V}{R} \Rightarrow I = \dfrac{V_0}{R}\sin(\omega t)
-  type: formula
-- crop: regions/page-9-r0003.png
-  id: page-9-r0003
-  text: I = I_0 \sin(\omega t),\quad I_0 = \dfrac{V_0}{R}
-  type: formula
-- crop: regions/page-9-r0004.png
-  id: page-9-r0004
-  text: I_{RMS} = \dfrac{1}{\sqrt{2}} I_0
-  type: formula
-- crop: regions/page-9-r0005.png
-  id: page-9-r0005
-  text: Power (alternating voltage)
-  type: document_structure
-- crop: regions/page-9-r0006.png
-  id: page-9-r0006
-  text: P_{AVG} = I_{RMS} V_{RMS}
-  type: formula
-- crop: regions/page-9-r0007.png
-  id: page-9-r0007
-  text: P_{AVG} = I_{RMS}^2 R
-  type: formula
-- crop: regions/page-9-r0008.png
-  id: page-9-r0008
-  text: P_{AVG} = \dfrac{V_{RMS}^2}{R}
-  type: formula
-- crop: regions/page-9-r0009.png
-  id: page-9-r0009
-  text: Electron Drift Velocity
-  type: document_structure
-- crop: regions/page-9-r0010.png
-  id: page-9-r0010
-  text: 'Misconception #2: electrons travel near the speed of light. Reality: electric fields propagate
-    near the speed of light, but the electrons that make up the current are very slow in electrical circuits.'
-  type: handwriting
-- crop: regions/page-9-r0011.png
-  id: page-9-r0011
-  text: A conductor segment of cross-sectional area A carrying current I, with an internal electric field
-    E driving electrons to drift slowly opposite the current.
-  type: figure
-- crop: regions/page-9-r0012.png
-  id: page-9-r0012
-  text: I = e\, n\, A\, v
-  type: formula
-- crop: regions/page-10-r0001.png
-  id: page-10-r0001
-  text: 'Example: What current would be produced in 12-gauge copper wire (r = 1 mm) if the electron drift
-    velocity was 1.0 mm/s (about 0.0022 mph)?'
-  type: handwriting
-- crop: regions/page-10-r0002.png
-  id: page-10-r0002
-  text: e = 1.60\times10^{-19}\ \text{C},\quad A = \pi(0.001\ m)^2,\quad v = 0.001\ \text{m/s},\quad I
-    = e\,n\,A\,v
-  type: formula
-- crop: regions/page-10-r0003.png
-  id: page-10-r0003
-  text: Copper (Z = 29) has one ‘free’ electron per atom, so the number of atoms per cubic meter gives
-    the number of electrons per cubic meter.
-  type: handwriting
-- crop: regions/page-10-r0004.png
-  id: page-10-r0004
-  text: n = \left(\dfrac{8.96\ \text{g}}{\text{cm}^3}\right)\left(\dfrac{1\ \text{mol}}{63.55\ \text{g}}\right)\left(\dfrac{6.02\times10^{23}\
-    \text{atoms}}{\text{mol}}\right)\left(\dfrac{100\ \text{cm}}{1\ \text{m}}\right)^3 = 8.5\times10^{28}\
-    m^{-3}
-  type: formula
-- crop: regions/page-10-r0005.png
-  id: page-10-r0005
-  text: I = (1.6\times10^{-19}\ \text{C})(8.5\times10^{28}\ m^{-3})(\pi(0.001\ m)^2)(0.001\ \text{m/s})
-    = 43\ \text{A}
-  type: formula
-- crop: regions/page-10-r0006.png
-  id: page-10-r0006
-  text: Electrical Hazards
-  type: document_structure
-- crop: regions/page-10-r0007.png
-  id: page-10-r0007
-  text: Electrical power produces heat, and too much of it produces fires, burns, melting, and so on.
-  type: handwriting
-- crop: regions/page-10-r0008.png
-  id: page-10-r0008
-  text: 'Example: A short is when there is an unplanned low-resistance path in a circuit.'
-  type: handwriting
-- crop: regions/page-10-r0009.png
-  id: page-10-r0009
-  text: A diagram of an appliance cord where worn-away insulation creates a short circuit — a low-resistance
-    path that bypasses the intended load.
-  type: figure
-- crop: regions/page-10-r0010.png
-  id: page-10-r0010
-  text: P = \dfrac{V^2}{r},\quad I = \dfrac{V}{r}
-  type: formula
-- crop: regions/page-11-r0001.png
-  id: page-11-r0001
-  text: Our bodies are electrical! For example, pacemakers use electrical pulses to stimulate heart muscle.
-  type: handwriting
-- crop: regions/page-11-r0002.png
-  id: page-11-r0002
-  text: Wear insulating shoes to prevent being a ‘short’ — important in many professions.
-  type: handwriting
-- crop: regions/page-11-r0003.png
-  id: page-11-r0003
-  text: Large current is dangerous!
-  type: handwriting
-- crop: regions/page-11-r0004.png
-  id: page-11-r0004
-  text: Table 20.3  Effects of Electrical Shock as a Function of Current
-  type: table
-- crop: regions/page-11-r0005.png
-  id: page-11-r0005
-  text: Pure H2O is an insulator, but in everyday life water has ions, which makes it conductive. Water
-    and electronics don’t mix!
-  type: handwriting
+# Full-sample gold Review Record 3.0 migration fixture (issue #41, parent #37).
+# The Semantic Layer remains the separately approved draft from issue #14; this
+# migration adds source-evidence identity and geometry but does not claim the
+# maintainer approval tracked by issue #15. Derived images are generated by the
+# offline report command and are intentionally not checked into Git.
+schema_version: '3.0'
+source_sha256: fe203e79ddc803a7eaa4e401222a186b861c6b04ed632c865a2eaad858f2c077
+title: 'Chapter 20: Current, Resistance, Ohm''s Law, Power, AC/DC'
 language: en
 pages:
 - 1
@@ -521,6 +19,875 @@ pages:
 - 9
 - 10
 - 11
+page_dimensions:
+- page: 1
+  width_points: 612.0
+  height_points: 803.25
+- page: 2
+  width_points: 612.0
+  height_points: 803.25
+- page: 3
+  width_points: 612.0
+  height_points: 803.25
+- page: 4
+  width_points: 612.0
+  height_points: 803.25
+- page: 5
+  width_points: 612.0
+  height_points: 803.25
+- page: 6
+  width_points: 612.0
+  height_points: 803.25
+- page: 7
+  width_points: 612.0
+  height_points: 803.25
+- page: 8
+  width_points: 612.0
+  height_points: 803.25
+- page: 9
+  width_points: 612.0
+  height_points: 803.25
+- page: 10
+  width_points: 612.0
+  height_points: 803.25
+- page: 11
+  width_points: 612.0
+  height_points: 803.25
+source_regions:
+- id: page-1-r0001
+  page: 1
+  bbox_points:
+  - 25
+  - 15
+  - 570
+  - 50
+- id: page-1-r0002
+  page: 1
+  bbox_points:
+  - 40
+  - 60
+  - 255
+  - 280
+- id: page-1-r0003
+  page: 1
+  bbox_points:
+  - 275
+  - 85
+  - 570
+  - 185
+- id: page-1-r0004
+  page: 1
+  bbox_points:
+  - 330
+  - 180
+  - 500
+  - 240
+- id: page-1-r0005
+  page: 1
+  bbox_points:
+  - 275
+  - 245
+  - 570
+  - 355
+- id: page-1-r0006
+  page: 1
+  bbox_points:
+  - 25
+  - 350
+  - 170
+  - 390
+- id: page-1-r0007
+  page: 1
+  bbox_points:
+  - 45
+  - 390
+  - 180
+  - 440
+- id: page-1-r0008
+  page: 1
+  bbox_points:
+  - 195
+  - 390
+  - 325
+  - 440
+- id: page-1-r0009
+  page: 1
+  bbox_points:
+  - 75
+  - 475
+  - 490
+  - 520
+- id: page-1-r0010
+  page: 1
+  bbox_points:
+  - 145
+  - 535
+  - 440
+  - 785
+- id: page-1-r0011
+  page: 1
+  bbox_points:
+  - 335
+  - 390
+  - 565
+  - 440
+- id: page-2-r0001
+  page: 2
+  bbox_points:
+  - 40
+  - 15
+  - 560
+  - 120
+- id: page-2-r0002
+  page: 2
+  bbox_points:
+  - 150
+  - 125
+  - 460
+  - 175
+- id: page-2-r0003
+  page: 2
+  bbox_points:
+  - 70
+  - 180
+  - 385
+  - 225
+- id: page-2-r0004
+  page: 2
+  bbox_points:
+  - 90
+  - 235
+  - 500
+  - 310
+- id: page-2-r0005
+  page: 2
+  bbox_points:
+  - 80
+  - 325
+  - 560
+  - 390
+- id: page-2-r0006
+  page: 2
+  bbox_points:
+  - 275
+  - 410
+  - 480
+  - 445
+- id: page-2-r0007
+  page: 2
+  bbox_points:
+  - 45
+  - 440
+  - 255
+  - 650
+- id: page-2-r0008
+  page: 2
+  bbox_points:
+  - 280
+  - 455
+  - 500
+  - 520
+- id: page-2-r0009
+  page: 2
+  bbox_points:
+  - 285
+  - 530
+  - 575
+  - 625
+- id: page-2-r0010
+  page: 2
+  bbox_points:
+  - 45
+  - 650
+  - 575
+  - 785
+- id: page-3-r0001
+  page: 3
+  bbox_points:
+  - 45
+  - 15
+  - 570
+  - 175
+- id: page-3-r0002
+  page: 3
+  bbox_points:
+  - 45
+  - 180
+  - 260
+  - 220
+- id: page-3-r0003
+  page: 3
+  bbox_points:
+  - 50
+  - 215
+  - 300
+  - 290
+- id: page-3-r0004
+  page: 3
+  bbox_points:
+  - 365
+  - 175
+  - 575
+  - 285
+- id: page-3-r0005
+  page: 3
+  bbox_points:
+  - 230
+  - 265
+  - 475
+  - 375
+- id: page-3-r0006
+  page: 3
+  bbox_points:
+  - 45
+  - 375
+  - 260
+  - 425
+- id: page-3-r0007
+  page: 3
+  bbox_points:
+  - 50
+  - 425
+  - 350
+  - 500
+- id: page-3-r0008
+  page: 3
+  bbox_points:
+  - 225
+  - 485
+  - 490
+  - 535
+- id: page-3-r0009
+  page: 3
+  bbox_points:
+  - 115
+  - 545
+  - 445
+  - 775
+- id: page-3-r0010
+  page: 3
+  bbox_points:
+  - 115
+  - 774
+  - 445
+  - 800
+- id: page-4-r0001
+  page: 4
+  bbox_points:
+  - 40
+  - 15
+  - 575
+  - 80
+- id: page-4-r0002
+  page: 4
+  bbox_points:
+  - 40
+  - 75
+  - 575
+  - 220
+- id: page-4-r0003
+  page: 4
+  bbox_points:
+  - 50
+  - 220
+  - 550
+  - 300
+- id: page-4-r0004
+  page: 4
+  bbox_points:
+  - 40
+  - 320
+  - 390
+  - 365
+- id: page-4-r0005
+  page: 4
+  bbox_points:
+  - 75
+  - 365
+  - 205
+  - 430
+- id: page-4-r0006
+  page: 4
+  bbox_points:
+  - 195
+  - 360
+  - 555
+  - 545
+- id: page-4-r0007
+  page: 4
+  bbox_points:
+  - 370
+  - 370
+  - 500
+  - 425
+- id: page-4-r0008
+  page: 4
+  bbox_points:
+  - 45
+  - 545
+  - 240
+  - 600
+- id: page-4-r0009
+  page: 4
+  bbox_points:
+  - 190
+  - 545
+  - 340
+  - 600
+- id: page-4-r0010
+  page: 4
+  bbox_points:
+  - 50
+  - 605
+  - 570
+  - 680
+- id: page-4-r0011
+  page: 4
+  bbox_points:
+  - 100
+  - 675
+  - 300
+  - 800
+- id: page-4-r0012
+  page: 4
+  bbox_points:
+  - 320
+  - 685
+  - 560
+  - 750
+- id: page-5-r0001
+  page: 5
+  bbox_points:
+  - 75
+  - 20
+  - 545
+  - 65
+- id: page-5-r0002
+  page: 5
+  bbox_points:
+  - 70
+  - 70
+  - 545
+  - 160
+- id: page-5-r0003
+  page: 5
+  bbox_points:
+  - 85
+  - 170
+  - 300
+  - 215
+- id: page-5-r0004
+  page: 5
+  bbox_points:
+  - 145
+  - 205
+  - 455
+  - 400
+- id: page-5-r0005
+  page: 5
+  bbox_points:
+  - 80
+  - 435
+  - 575
+  - 570
+- id: page-5-r0006
+  page: 5
+  bbox_points:
+  - 25
+  - 545
+  - 105
+  - 710
+- id: page-5-r0007
+  page: 5
+  bbox_points:
+  - 140
+  - 565
+  - 510
+  - 645
+- id: page-5-r0008
+  page: 5
+  bbox_points:
+  - 120
+  - 660
+  - 520
+  - 735
+- id: page-6-r0001
+  page: 6
+  bbox_points:
+  - 20
+  - 10
+  - 210
+  - 200
+- id: page-6-r0002
+  page: 6
+  bbox_points:
+  - 205
+  - 15
+  - 330
+  - 220
+- id: page-6-r0003
+  page: 6
+  bbox_points:
+  - 15
+  - 215
+  - 230
+  - 410
+- id: page-6-r0004
+  page: 6
+  bbox_points:
+  - 265
+  - 225
+  - 570
+  - 335
+- id: page-6-r0005
+  page: 6
+  bbox_points:
+  - 265
+  - 290
+  - 570
+  - 405
+- id: page-6-r0006
+  page: 6
+  bbox_points:
+  - 45
+  - 405
+  - 590
+  - 505
+- id: page-6-r0007
+  page: 6
+  bbox_points:
+  - 365
+  - 10
+  - 590
+  - 210
+- id: page-6-r0008
+  page: 6
+  bbox_points:
+  - 35
+  - 500
+  - 360
+  - 555
+- id: page-6-r0009
+  page: 6
+  bbox_points:
+  - 75
+  - 550
+  - 300
+  - 620
+- id: page-6-r0010
+  page: 6
+  bbox_points:
+  - 50
+  - 620
+  - 180
+  - 690
+- id: page-6-r0011
+  page: 6
+  bbox_points:
+  - 235
+  - 555
+  - 590
+  - 700
+- id: page-7-r0001
+  page: 7
+  bbox_points:
+  - 40
+  - 5
+  - 120
+  - 35
+- id: page-7-r0002
+  page: 7
+  bbox_points:
+  - 40
+  - 25
+  - 300
+  - 90
+- id: page-7-r0003
+  page: 7
+  bbox_points:
+  - 40
+  - 80
+  - 300
+  - 155
+- id: page-7-r0004
+  page: 7
+  bbox_points:
+  - 305
+  - 20
+  - 570
+  - 90
+- id: page-7-r0005
+  page: 7
+  bbox_points:
+  - 305
+  - 85
+  - 590
+  - 175
+- id: page-7-r0006
+  page: 7
+  bbox_points:
+  - 40
+  - 165
+  - 455
+  - 230
+- id: page-7-r0007
+  page: 7
+  bbox_points:
+  - 50
+  - 230
+  - 335
+  - 275
+- id: page-7-r0008
+  page: 7
+  bbox_points:
+  - 60
+  - 270
+  - 430
+  - 325
+- id: page-7-r0009
+  page: 7
+  bbox_points:
+  - 55
+  - 325
+  - 440
+  - 380
+- id: page-7-r0010
+  page: 7
+  bbox_points:
+  - 65
+  - 370
+  - 165
+  - 420
+- id: page-7-r0011
+  page: 7
+  bbox_points:
+  - 70
+  - 425
+  - 510
+  - 485
+- id: page-7-r0012
+  page: 7
+  bbox_points:
+  - 45
+  - 500
+  - 230
+  - 565
+- id: page-7-r0013
+  page: 7
+  bbox_points:
+  - 285
+  - 485
+  - 510
+  - 610
+- id: page-7-r0014
+  page: 7
+  bbox_points:
+  - 45
+  - 615
+  - 570
+  - 755
+- id: page-7-r0015
+  page: 7
+  bbox_points:
+  - 225
+  - 370
+  - 350
+  - 420
+- id: page-7-r0016
+  page: 7
+  bbox_points:
+  - 380
+  - 365
+  - 500
+  - 420
+- id: page-8-r0001
+  page: 8
+  bbox_points:
+  - 35
+  - 1
+  - 330
+  - 145
+- id: page-8-r0002
+  page: 8
+  bbox_points:
+  - 370
+  - 40
+  - 520
+  - 85
+- id: page-8-r0003
+  page: 8
+  bbox_points:
+  - 445
+  - 125
+  - 580
+  - 285
+- id: page-8-r0004
+  page: 8
+  bbox_points:
+  - 85
+  - 160
+  - 430
+  - 290
+- id: page-8-r0005
+  page: 8
+  bbox_points:
+  - 200
+  - 280
+  - 310
+  - 335
+- id: page-8-r0006
+  page: 8
+  bbox_points:
+  - 70
+  - 330
+  - 420
+  - 405
+- id: page-8-r0007
+  page: 8
+  bbox_points:
+  - 35
+  - 410
+  - 210
+  - 460
+- id: page-8-r0008
+  page: 8
+  bbox_points:
+  - 190
+  - 410
+  - 335
+  - 460
+- id: page-8-r0009
+  page: 8
+  bbox_points:
+  - 20
+  - 460
+  - 480
+  - 535
+- id: page-8-r0010
+  page: 8
+  bbox_points:
+  - 45
+  - 525
+  - 340
+  - 640
+- id: page-8-r0011
+  page: 8
+  bbox_points:
+  - 35
+  - 650
+  - 330
+  - 715
+- id: page-8-r0012
+  page: 8
+  bbox_points:
+  - 35
+  - 710
+  - 450
+  - 790
+- id: page-8-r0013
+  page: 8
+  bbox_points:
+  - 480
+  - 710
+  - 600
+  - 790
+- id: page-9-r0001
+  page: 9
+  bbox_points:
+  - 65
+  - 1
+  - 490
+  - 45
+- id: page-9-r0002
+  page: 9
+  bbox_points:
+  - 90
+  - 40
+  - 430
+  - 100
+- id: page-9-r0003
+  page: 9
+  bbox_points:
+  - 115
+  - 95
+  - 380
+  - 145
+- id: page-9-r0004
+  page: 9
+  bbox_points:
+  - 190
+  - 135
+  - 335
+  - 185
+- id: page-9-r0005
+  page: 9
+  bbox_points:
+  - 65
+  - 185
+  - 390
+  - 235
+- id: page-9-r0006
+  page: 9
+  bbox_points:
+  - 55
+  - 225
+  - 190
+  - 285
+- id: page-9-r0007
+  page: 9
+  bbox_points:
+  - 230
+  - 225
+  - 360
+  - 285
+- id: page-9-r0008
+  page: 9
+  bbox_points:
+  - 395
+  - 220
+  - 510
+  - 280
+- id: page-9-r0009
+  page: 9
+  bbox_points:
+  - 60
+  - 310
+  - 420
+  - 370
+- id: page-9-r0010
+  page: 9
+  bbox_points:
+  - 30
+  - 375
+  - 590
+  - 480
+- id: page-9-r0011
+  page: 9
+  bbox_points:
+  - 150
+  - 485
+  - 590
+  - 610
+- id: page-9-r0012
+  page: 9
+  bbox_points:
+  - 95
+  - 610
+  - 390
+  - 710
+- id: page-10-r0001
+  page: 10
+  bbox_points:
+  - 60
+  - 15
+  - 530
+  - 120
+- id: page-10-r0002
+  page: 10
+  bbox_points:
+  - 70
+  - 130
+  - 450
+  - 230
+- id: page-10-r0003
+  page: 10
+  bbox_points:
+  - 70
+  - 245
+  - 500
+  - 325
+- id: page-10-r0004
+  page: 10
+  bbox_points:
+  - 20
+  - 330
+  - 560
+  - 395
+- id: page-10-r0005
+  page: 10
+  bbox_points:
+  - 40
+  - 395
+  - 560
+  - 455
+- id: page-10-r0006
+  page: 10
+  bbox_points:
+  - 30
+  - 475
+  - 250
+  - 530
+- id: page-10-r0007
+  page: 10
+  bbox_points:
+  - 15
+  - 550
+  - 590
+  - 625
+- id: page-10-r0008
+  page: 10
+  bbox_points:
+  - 30
+  - 610
+  - 500
+  - 690
+- id: page-10-r0009
+  page: 10
+  bbox_points:
+  - 85
+  - 640
+  - 510
+  - 785
+- id: page-10-r0010
+  page: 10
+  bbox_points:
+  - 220
+  - 735
+  - 410
+  - 800
+- id: page-11-r0001
+  page: 11
+  bbox_points:
+  - 35
+  - 5
+  - 310
+  - 60
+- id: page-11-r0002
+  page: 11
+  bbox_points:
+  - 45
+  - 55
+  - 550
+  - 140
+- id: page-11-r0003
+  page: 11
+  bbox_points:
+  - 45
+  - 140
+  - 400
+  - 195
+- id: page-11-r0004
+  page: 11
+  bbox_points:
+  - 70
+  - 215
+  - 535
+  - 455
+- id: page-11-r0005
+  page: 11
+  bbox_points:
+  - 45
+  - 485
+  - 575
+  - 625
+- id: page-11-r0006
+  page: 11
+  bbox_points:
+  - 365
+  - 1
+  - 590
+  - 105
+candidates: []
 reconstruction:
   page_prompt_version: '1.3'
   page_schema_version: '1.0'
@@ -542,17 +909,17 @@ reconstruction:
     reading_order_is_unambiguous: false
     verified_regions:
     - agrees_with_page: true
-      id: page-1-r0002
       type: figure
+      source_region: page-1-r0002
     - agrees_with_page: true
-      id: page-1-r0004
       type: formula
+      source_region: page-1-r0004
     - agrees_with_page: true
-      id: page-1-r0008
       type: formula
+      source_region: page-1-r0008
     - agrees_with_page: true
-      id: page-1-r0010
       type: figure
+      source_region: page-1-r0010
   - document_class: stem_instructional
     page: 2
     primary_language_is_english: true
@@ -570,26 +937,26 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-2-r0002
       type: formula
+      source_region: page-2-r0002
     - agrees_with_page: true
-      id: page-2-r0003
       type: formula
+      source_region: page-2-r0003
     - agrees_with_page: true
-      id: page-2-r0004
       type: formula
+      source_region: page-2-r0004
     - agrees_with_page: true
-      id: page-2-r0005
       type: formula
+      source_region: page-2-r0005
     - agrees_with_page: true
-      id: page-2-r0007
       type: figure
+      source_region: page-2-r0007
     - agrees_with_page: true
-      id: page-2-r0008
       type: figure
+      source_region: page-2-r0008
     - agrees_with_page: true
-      id: page-2-r0009
       type: formula
+      source_region: page-2-r0009
   - document_class: stem_instructional
     page: 3
     primary_language_is_english: true
@@ -607,23 +974,23 @@ reconstruction:
     reading_order_is_unambiguous: false
     verified_regions:
     - agrees_with_page: true
-      id: page-3-r0001
       type: figure
+      source_region: page-3-r0001
     - agrees_with_page: true
-      id: page-3-r0003
       type: figure
+      source_region: page-3-r0003
     - agrees_with_page: true
-      id: page-3-r0005
       type: figure
+      source_region: page-3-r0005
     - agrees_with_page: true
-      id: page-3-r0007
       type: formula
+      source_region: page-3-r0007
     - agrees_with_page: true
-      id: page-3-r0008
       type: formula
+      source_region: page-3-r0008
     - agrees_with_page: true
-      id: page-3-r0009
       type: table
+      source_region: page-3-r0009
   - document_class: stem_instructional
     page: 4
     primary_language_is_english: true
@@ -643,23 +1010,23 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-4-r0005
       type: formula
+      source_region: page-4-r0005
     - agrees_with_page: true
-      id: page-4-r0006
       type: figure
+      source_region: page-4-r0006
     - agrees_with_page: true
-      id: page-4-r0007
       type: formula
+      source_region: page-4-r0007
     - agrees_with_page: true
-      id: page-4-r0009
       type: formula
+      source_region: page-4-r0009
     - agrees_with_page: true
-      id: page-4-r0011
       type: figure
+      source_region: page-4-r0011
     - agrees_with_page: true
-      id: page-4-r0012
       type: formula
+      source_region: page-4-r0012
   - document_class: stem_instructional
     page: 5
     primary_language_is_english: true
@@ -675,17 +1042,17 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-5-r0004
       type: figure
+      source_region: page-5-r0004
     - agrees_with_page: true
-      id: page-5-r0006
       type: figure
+      source_region: page-5-r0006
     - agrees_with_page: true
-      id: page-5-r0007
       type: formula
+      source_region: page-5-r0007
     - agrees_with_page: true
-      id: page-5-r0008
       type: formula
+      source_region: page-5-r0008
   - document_class: stem_instructional
     page: 6
     primary_language_is_english: true
@@ -704,32 +1071,32 @@ reconstruction:
     reading_order_is_unambiguous: false
     verified_regions:
     - agrees_with_page: true
-      id: page-6-r0002
       type: figure
+      source_region: page-6-r0002
     - agrees_with_page: true
-      id: page-6-r0003
       type: figure
+      source_region: page-6-r0003
     - agrees_with_page: true
-      id: page-6-r0004
       type: formula
+      source_region: page-6-r0004
     - agrees_with_page: true
-      id: page-6-r0005
       type: formula
+      source_region: page-6-r0005
     - agrees_with_page: true
-      id: page-6-r0006
       type: formula
+      source_region: page-6-r0006
     - agrees_with_page: true
-      id: page-6-r0007
       type: formula
+      source_region: page-6-r0007
     - agrees_with_page: true
-      id: page-6-r0009
       type: formula
+      source_region: page-6-r0009
     - agrees_with_page: true
-      id: page-6-r0010
       type: formula
+      source_region: page-6-r0010
     - agrees_with_page: true
-      id: page-6-r0011
       type: formula
+      source_region: page-6-r0011
   - document_class: stem_instructional
     page: 7
     primary_language_is_english: true
@@ -751,32 +1118,32 @@ reconstruction:
     reading_order_is_unambiguous: false
     verified_regions:
     - agrees_with_page: true
-      id: page-7-r0002
       type: formula
+      source_region: page-7-r0002
     - agrees_with_page: true
-      id: page-7-r0003
       type: formula
+      source_region: page-7-r0003
     - agrees_with_page: true
-      id: page-7-r0004
       type: formula
+      source_region: page-7-r0004
     - agrees_with_page: true
-      id: page-7-r0005
       type: formula
+      source_region: page-7-r0005
     - agrees_with_page: true
-      id: page-7-r0006
       type: formula
+      source_region: page-7-r0006
     - agrees_with_page: true
-      id: page-7-r0008
       type: formula
+      source_region: page-7-r0008
     - agrees_with_page: true
-      id: page-7-r0009
       type: formula
+      source_region: page-7-r0009
     - agrees_with_page: true
-      id: page-7-r0010
       type: formula
+      source_region: page-7-r0010
     - agrees_with_page: true
-      id: page-7-r0013
       type: figure
+      source_region: page-7-r0013
   - document_class: stem_instructional
     page: 8
     primary_language_is_english: true
@@ -797,35 +1164,35 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-8-r0001
       type: figure
+      source_region: page-8-r0001
     - agrees_with_page: true
-      id: page-8-r0002
       type: formula
+      source_region: page-8-r0002
     - agrees_with_page: true
-      id: page-8-r0003
       type: figure
+      source_region: page-8-r0003
     - agrees_with_page: true
-      id: page-8-r0005
       type: formula
+      source_region: page-8-r0005
     - agrees_with_page: true
-      id: page-8-r0006
       type: formula
+      source_region: page-8-r0006
     - agrees_with_page: true
-      id: page-8-r0008
       type: formula
+      source_region: page-8-r0008
     - agrees_with_page: true
-      id: page-8-r0010
       type: figure
+      source_region: page-8-r0010
     - agrees_with_page: true
-      id: page-8-r0011
       type: formula
+      source_region: page-8-r0011
     - agrees_with_page: true
-      id: page-8-r0012
       type: formula
+      source_region: page-8-r0012
     - agrees_with_page: true
-      id: page-8-r0013
       type: formula
+      source_region: page-8-r0013
   - document_class: stem_instructional
     page: 9
     primary_language_is_english: true
@@ -845,29 +1212,29 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-9-r0002
       type: formula
+      source_region: page-9-r0002
     - agrees_with_page: true
-      id: page-9-r0003
       type: formula
+      source_region: page-9-r0003
     - agrees_with_page: true
-      id: page-9-r0004
       type: formula
+      source_region: page-9-r0004
     - agrees_with_page: true
-      id: page-9-r0006
       type: formula
+      source_region: page-9-r0006
     - agrees_with_page: true
-      id: page-9-r0007
       type: formula
+      source_region: page-9-r0007
     - agrees_with_page: true
-      id: page-9-r0008
       type: formula
+      source_region: page-9-r0008
     - agrees_with_page: true
-      id: page-9-r0011
       type: figure
+      source_region: page-9-r0011
     - agrees_with_page: true
-      id: page-9-r0012
       type: formula
+      source_region: page-9-r0012
   - document_class: stem_instructional
     page: 10
     primary_language_is_english: true
@@ -885,20 +1252,20 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-10-r0002
       type: formula
+      source_region: page-10-r0002
     - agrees_with_page: true
-      id: page-10-r0004
       type: formula
+      source_region: page-10-r0004
     - agrees_with_page: true
-      id: page-10-r0005
       type: formula
+      source_region: page-10-r0005
     - agrees_with_page: true
-      id: page-10-r0009
       type: figure
+      source_region: page-10-r0009
     - agrees_with_page: true
-      id: page-10-r0010
       type: formula
+      source_region: page-10-r0010
   - document_class: stem_instructional
     page: 11
     primary_language_is_english: true
@@ -911,18 +1278,20 @@ reconstruction:
     reading_order_is_unambiguous: true
     verified_regions:
     - agrees_with_page: true
-      id: page-11-r0004
       type: table
-  provider_endpoint: manual://accessibilizer-gold-oracle
-  provider_model: human-authored-oracle
+      source_region: page-11-r0004
+  provider_endpoint: manual://accessibilizer-gold-fixture
+  provider_model: human-authored-gold-fixture
   region_prompt_version: '1.3'
   region_schema_version: '1.0'
-schema_version: '2.0'
 semantic_layer:
 - level: 1
   page: 1
   text: 'Chapter 20: Current, Resistance, Ohm''s Law, Power, AC/DC'
   type: heading
+  id: page-1-s0001
+  source_regions:
+  - page-1-r0001
 - complexity: complex
   detailed_figure_description: A single-loop circuit. A battery, labeled V, has its positive terminal
     at the top and negative terminal at the bottom. Blue arrows labeled I mark the conventional current
@@ -932,32 +1301,57 @@ semantic_layer:
     a loop while electrons flow the opposite way.
   page: 1
   type: figure
+  id: page-1-s0002
+  source_regions:
+  - page-1-r0002
 - page: 1
   text: Electrical current (I) is the rate of ‘flow’ of positive charge.
   type: paragraph
+  id: page-1-s0003
+  source_regions:
+  - page-1-r0003
 - normalized_math: I = Q / \Delta t = Q / t
   page: 1
   spoken_math_alternative: I equals Q divided by delta t, which equals Q divided by t.
   type: formula
+  id: page-1-s0004
+  source_regions:
+  - page-1-r0004
 - page: 1
   text: 'Its direction (from DC, or direct current, voltage) is opposite the ‘flow’ of electrons: from
     plus to minus.'
   type: paragraph
+  id: page-1-s0005
+  source_regions:
+  - page-1-r0005
 - level: 2
   page: 1
   text: Units of current
   type: heading
+  id: page-1-s0006
+  source_regions:
+  - page-1-r0006
 - page: 1
   text: Current is measured in amperes (A), also known as ‘amps’. The ampere is an SI base unit.
   type: paragraph
+  id: page-1-s0007
+  source_regions:
+  - page-1-r0007
+  - page-1-r0011
 - normalized_math: '[A] = C / s'
   page: 1
   spoken_math_alternative: One ampere equals one coulomb per second.
   type: formula
+  id: page-1-s0008
+  source_regions:
+  - page-1-r0008
 - level: 2
   page: 1
   text: Electric fields in a Simple Circuit (1962)
   type: heading
+  id: page-1-s0009
+  source_regions:
+  - page-1-r0009
 - complexity: complex
   detailed_figure_description: 'A black-and-white photograph in which fine fibers align with the electric
     field around a two-terminal circuit. A printed callout labels the internal electric field as constant
@@ -968,36 +1362,57 @@ semantic_layer:
     circuit visible using suspended fibers.
   page: 1
   type: figure
+  id: page-1-s0010
+  source_regions:
+  - page-1-r0010
 - page: 2
   text: 'Example: A steady current of 2.5 A is created in a wire for 1.0 minute. How much charge passed
     by any given point, and how many electrons would this be?'
   type: paragraph
+  id: page-2-s0001
+  source_regions:
+  - page-2-r0001
 - normalized_math: I = Q / \Delta t = 2.5\ \text{C/s} = Q / t
   page: 2
   spoken_math_alternative: I equals Q over delta t; here I is 2.5 coulombs per second, which equals Q
     over t.
   type: formula
+  id: page-2-s0002
+  source_regions:
+  - page-2-r0002
 - normalized_math: Q = I \cdot t = (2.5\ \text{C/s})(60\ \text{s}) = 150\ \text{C}
   page: 2
   spoken_math_alternative: Q equals I times t, which is 2.5 coulombs per second times 60 seconds, equals
     150 coulombs.
   type: formula
+  id: page-2-s0003
+  source_regions:
+  - page-2-r0003
 - normalized_math: N = (150\ \text{C})\left(\dfrac{1\ e^-}{1.6\times10^{-19}\ \text{C}}\right) = 9.4\times10^{20}\
     e^-
   page: 2
   spoken_math_alternative: N equals 150 coulombs times one electron per 1.6 times ten to the negative
     nineteen coulombs, which is about 9.4 times ten to the twentieth electrons.
   type: formula
+  id: page-2-s0004
+  source_regions:
+  - page-2-r0004
 - normalized_math: n = 9.4\times10^{20}\ e^- \left(\dfrac{1\ \text{mol}}{6.022\times10^{23}\ e^-}\right)
     = 0.0016\ \text{mol}
   page: 2
   spoken_math_alternative: n equals 9.4 times ten to the twentieth electrons divided by 6.022 times ten
     to the twenty-third electrons per mole, which is about 0.0016 moles.
   type: formula
+  id: page-2-s0005
+  source_regions:
+  - page-2-r0005
 - level: 2
   page: 2
   text: Electrical Resistance
   type: heading
+  id: page-2-s0006
+  source_regions:
+  - page-2-r0006
 - complexity: complex
   detailed_figure_description: A single-loop circuit like the earlier one, with a battery labeled V and
     its plus and minus terminals, but now a zig-zag resistor labeled R is placed in the loop. Arrows labeled
@@ -1006,19 +1421,31 @@ semantic_layer:
     loop opposes it; electrons flow around the circuit.'
   page: 2
   type: figure
+  id: page-2-s0007
+  source_regions:
+  - page-2-r0007
 - complexity: simple
   figure_alternative: 'The circuit symbol for a resistor: a zig-zag line labeled R.'
   page: 2
   type: figure
+  id: page-2-s0008
+  source_regions:
+  - page-2-r0008
 - normalized_math: '[\Omega] = \dfrac{V}{A} = \dfrac{\text{J/C}}{\text{C/s}}'
   page: 2
   spoken_math_alternative: One ohm equals one volt per ampere, which equals joules per coulomb divided
     by coulombs per second.
   type: formula
+  id: page-2-s0009
+  source_regions:
+  - page-2-r0009
 - page: 2
   text: A resistor resists the flow of current. Resistors are often used to limit current in part of a
     circuit. Wires themselves have some resistance, but we’ll usually ignore it.
   type: paragraph
+  id: page-2-s0010
+  source_regions:
+  - page-2-r0010
 - complexity: complex
   detailed_figure_description: A close-up photograph of a green printed circuit board densely packed with
     components. Rows of small color-banded axial resistors run across the board among transistors and
@@ -1027,35 +1454,59 @@ semantic_layer:
     components and label them ‘resistors!’.
   page: 3
   type: figure
+  id: page-3-s0001
+  source_regions:
+  - page-3-r0001
 - level: 2
   page: 3
   text: 'Analogy: ‘friction’'
   type: heading
+  id: page-3-s0002
+  source_regions:
+  - page-3-r0002
 - complexity: simple
   figure_alternative: 'An analogy diagram: a row of electrons is pushed to the right by an applied force
     F while a friction force f acts to the left, modeling resistance.'
   page: 3
   type: figure
+  id: page-3-s0003
+  source_regions:
+  - page-3-r0003
 - page: 3
   text: 'Simplification: electric fields inside materials interact with the current.'
   type: paragraph
+  id: page-3-s0004
+  source_regions:
+  - page-3-r0004
 - complexity: simple
   figure_alternative: A cylindrical resistor carrying current I, drawn with its length L and cross-sectional
     area A.
   page: 3
   type: figure
+  id: page-3-s0005
+  source_regions:
+  - page-3-r0005
 - level: 2
   page: 3
   text: Resistivity (rho)
   type: heading
+  id: page-3-s0006
+  source_regions:
+  - page-3-r0006
 - normalized_math: R \propto \dfrac{L}{A} \Rightarrow R = \rho\, \dfrac{L}{A}
   page: 3
   spoken_math_alternative: R is proportional to L over A; therefore R equals rho times L over A.
   type: formula
+  id: page-3-s0007
+  source_regions:
+  - page-3-r0007
 - normalized_math: '[\Omega] = (\Omega\cdot m)\left(\dfrac{m}{m^2}\right)'
   page: 3
   spoken_math_alternative: One ohm equals an ohm-meter times meters per meter squared.
   type: formula
+  id: page-3-s0008
+  source_regions:
+  - page-3-r0008
 - caption: Table 25-1  Resistivity and Temperature Coefficients (at 20 degrees C)
   page: 3
   rows:
@@ -1318,69 +1769,121 @@ semantic_layer:
       scope: none
       text: ''
   type: table
+  id: page-3-s0009
+  source_regions:
+  - page-3-r0009
 - page: 3
   text: (dagger) Values depend strongly on the presence of even slight amounts of impurities.
   type: paragraph
+  id: page-3-s0010
+  source_regions:
+  - page-3-r0010
 - page: 4
   text: Resistivity depends on temperature — usually in metals, resistance rises as temperature rises
     (R increases when T increases).
   type: paragraph
+  id: page-4-s0001
+  source_regions:
+  - page-4-r0001
 - page: 4
   text: Superconductors — materials with zero resistance — are generally at extremely low temperature.
     ‘High temperature’ superconductors are those which exhibit R = 0 above 77 K, the boiling point of
     nitrogen.
   type: paragraph
+  id: page-4-s0002
+  source_regions:
+  - page-4-r0002
 - level: 2
   page: 4
   text: Ohmic Materials (every material in 1B)
   type: heading
+  id: page-4-s0003
+  source_regions:
+  - page-4-r0003
 - page: 4
   text: Ohmic materials obey Ohm’s Law.
   type: paragraph
+  id: page-4-s0004
+  source_regions:
+  - page-4-r0004
 - normalized_math: I = \dfrac{V}{R}
   page: 4
   spoken_math_alternative: I equals V over R.
   type: formula
+  id: page-4-s0005
+  source_regions:
+  - page-4-r0005
 - complexity: simple
   figure_alternative: 'A current-versus-voltage graph for ohmic materials: straight lines through the
     origin whose slope is 1/R, so a larger resistance gives a shallower line.'
   page: 4
   type: figure
+  id: page-4-s0006
+  source_regions:
+  - page-4-r0006
+  - page-4-r0007
 - normalized_math: I = \left(\dfrac{1}{R}\right) V
   page: 4
   spoken_math_alternative: I equals one over R, times V; as R increases the slope delta I over delta V
     decreases.
   type: formula
+  id: page-4-s0007
+  source_regions:
+  - page-4-r0007
 - level: 2
   page: 4
   text: Ohm’s Law
   type: heading
+  id: page-4-s0008
+  source_regions:
+  - page-4-r0008
 - normalized_math: V = I R
   page: 4
   spoken_math_alternative: V equals I times R.
   type: formula
+  id: page-4-s0009
+  source_regions:
+  - page-4-r0009
 - page: 4
   text: 'Example: In the circuit below, is V higher at point A or point B? What about I?'
   type: paragraph
+  id: page-4-s0010
+  source_regions:
+  - page-4-r0010
 - complexity: simple
   figure_alternative: A circuit loop with a battery and a resistor; point A is just before the resistor
     and point B just after it, with current I flowing from A to B.
   page: 4
   type: figure
+  id: page-4-s0011
+  source_regions:
+  - page-4-r0011
 - normalized_math: V = I R \Rightarrow V_A > V_B
   page: 4
   spoken_math_alternative: Because V equals I R, the potential at A is greater than the potential at B.
   type: formula
+  id: page-4-s0012
+  source_regions:
+  - page-4-r0012
 - page: 5
   text: We say that ‘voltage drops’ across a resistor.
   type: paragraph
+  id: page-5-s0001
+  source_regions:
+  - page-5-r0001
 - page: 5
   text: The current is the same at A and B. The current is lower through this whole circuit due to the
     resistor.
   type: paragraph
+  id: page-5-s0002
+  source_regions:
+  - page-5-r0002
 - page: 5
   text: 'Mental model: a traffic jam!'
   type: paragraph
+  id: page-5-s0003
+  source_regions:
+  - page-5-r0003
 - complexity: complex
   detailed_figure_description: Electrons drawn as small boxes form a continuous queue around a rectangular
     loop. A resistor labeled R sits along the top of the loop and the electrons bunch together as they
@@ -1390,53 +1893,83 @@ semantic_layer:
     as they pass through a resistor, with a battery at the bottom.'
   page: 5
   type: figure
+  id: page-5-s0004
+  source_regions:
+  - page-5-r0004
 - page: 5
   text: 'Example: A flashlight bulb draws 300 mA from its 1.5 V battery. What is the resistance of the
     bulb? If the battery degrades and only produces 1.2 V, how would the current change?'
   type: paragraph
+  id: page-5-s0005
+  source_regions:
+  - page-5-r0005
 - complexity: simple
   figure_alternative: An illustration of a flashlight with its bulb lit and a battery inside.
   page: 5
   type: figure
+  id: page-5-s0006
+  source_regions:
+  - page-5-r0006
 - normalized_math: I = \dfrac{V}{R} \Rightarrow R = \dfrac{V}{I} = \dfrac{1.5\ \text{V}}{0.30\ \text{A}}
     = 5.0\ \Omega
   page: 5
   spoken_math_alternative: I equals V over R, so R equals V over I, which is 1.5 volts over 0.30 amperes,
     equals 5.0 ohms.
   type: formula
+  id: page-5-s0007
+  source_regions:
+  - page-5-r0007
 - normalized_math: V \to 1.2\ \text{V}:\quad I = \dfrac{1.2\ \text{V}}{5.0\ \Omega} = 0.24\ \text{A} =
     240\ \text{mA}
   page: 5
   spoken_math_alternative: With V reduced to 1.2 volts, I equals 1.2 volts over 5.0 ohms, equals 0.24
     amperes, or 240 milliamperes.
   type: formula
+  id: page-5-s0008
+  source_regions:
+  - page-5-r0008
 - page: 6
   text: 'Example: Speaker wires. Suppose you want to connect your stereo to remote speakers. (a) If each
     wire must be 20 m long, what diameter copper wire should you use to keep the resistance less than
     0.10 Ohm per wire? (b) If the current to each speaker is 4.0 A, what is the potential difference,
     or voltage drop, across each wire?'
   type: paragraph
+  id: page-6-s0001
+  source_regions:
+  - page-6-r0001
 - complexity: simple
   figure_alternative: An illustration of a stereo receiver connected to two remote speakers by 20-meter
     wires.
   page: 6
   type: figure
+  id: page-6-s0002
+  source_regions:
+  - page-6-r0002
 - complexity: simple
   figure_alternative: A circuit in which a voltage source V drives current I through the wiring resistance
     R in series with the speaker.
   page: 6
   type: figure
+  id: page-6-s0003
+  source_regions:
+  - page-6-r0003
 - normalized_math: (a)\ \rho_{cu} = 1.68\times10^{-9}\ \Omega\cdot m,\quad L = 20\ m,\quad R = 0.10\ \Omega
   page: 6
   spoken_math_alternative: 'Part a: rho for copper is written as 1.68 times ten to the negative nine ohm-meters;
     L equals 20 meters; R equals 0.10 ohms.'
   type: formula
+  id: page-6-s0004
+  source_regions:
+  - page-6-r0004
 - normalized_math: A = \pi r^2 = \pi\left(\dfrac{d}{2}\right)^2,\quad R = \rho\,\dfrac{L}{A} = \dfrac{4\rho
     L}{\pi d^2}
   page: 6
   spoken_math_alternative: The cross-sectional area A equals pi r squared, which is pi times d over two,
     squared; so R equals rho L over A, which equals four rho L over pi d squared.
   type: formula
+  id: page-6-s0005
+  source_regions:
+  - page-6-r0005
 - normalized_math: d^2 > \dfrac{4\rho L}{\pi R} \Rightarrow d > \left[\dfrac{4\rho L}{\pi R}\right]^{1/2}
     = \left[\dfrac{4(1.68\times10^{-8}\ \Omega\cdot m)(20\ m)}{\pi(0.10\ \Omega)}\right]^{1/2} = 2.1\
     \text{mm}
@@ -1445,136 +1978,231 @@ semantic_layer:
     root of four rho L over pi R; substituting 1.68 times ten to the negative eight ohm-meters gives about
     2.1 millimeters.
   type: formula
+  id: page-6-s0006
+  source_regions:
+  - page-6-r0006
 - normalized_math: (b)\ V = I R = (4.0\ \text{A})(0.10\ \Omega) \Rightarrow V_R = 0.400\ \text{V} = 400\
     \text{mV}
   page: 6
   spoken_math_alternative: 'Part b: V equals I R, which is 4.0 amperes times 0.10 ohms; the voltage drop
     V sub R equals 0.400 volts, or 400 millivolts.'
   type: formula
+  id: page-6-s0007
+  source_regions:
+  - page-6-r0007
 - level: 2
   page: 6
   text: Electrical Energy & Power
   type: heading
+  id: page-6-s0008
+  source_regions:
+  - page-6-r0008
 - normalized_math: \text{Power} = \dfrac{\text{Energy}}{\text{time}}
   page: 6
   spoken_math_alternative: Power equals energy divided by time.
   type: formula
+  id: page-6-s0009
+  source_regions:
+  - page-6-r0009
 - normalized_math: U = qV
   page: 6
   spoken_math_alternative: Electrical energy U equals charge q times voltage V.
   type: formula
+  id: page-6-s0010
+  source_regions:
+  - page-6-r0010
 - normalized_math: P = \dfrac{(\text{charge})(\text{Voltage})}{\text{time}} = IV
   page: 6
   spoken_math_alternative: Power equals charge times voltage divided by time, which equals I times V.
   type: formula
+  id: page-6-s0011
+  source_regions:
+  - page-6-r0011
 - level: 2
   page: 7
   text: Units
   type: heading
+  id: page-7-s0001
+  source_regions:
+  - page-7-r0001
 - normalized_math: I\ (\text{current}):\ [A] = \dfrac{C}{s}
   page: 7
   spoken_math_alternative: 'Current I: one ampere equals one coulomb per second.'
   type: formula
+  id: page-7-s0002
+  source_regions:
+  - page-7-r0002
 - normalized_math: V\ (\text{potential difference}):\ [V] = \dfrac{J}{C}
   page: 7
   spoken_math_alternative: 'Potential difference V: one volt equals one joule per coulomb.'
   type: formula
+  id: page-7-s0003
+  source_regions:
+  - page-7-r0003
 - normalized_math: P\ (\text{power}):\ [W] = \dfrac{J}{s}
   page: 7
   spoken_math_alternative: 'Power P: one watt equals one joule per second.'
   type: formula
+  id: page-7-s0004
+  source_regions:
+  - page-7-r0004
 - normalized_math: R\ (\text{resistance}):\ [\Omega] = \dfrac{V}{A} = \dfrac{V\cdot s}{C} = \dfrac{J\cdot
     s}{C^2}
   page: 7
   spoken_math_alternative: 'Resistance R: one ohm equals one volt per ampere, which equals volt-seconds
     per coulomb, which equals joule-seconds per coulomb squared.'
   type: formula
+  id: page-7-s0005
+  source_regions:
+  - page-7-r0005
 - normalized_math: W = A\,V = \left(\dfrac{C}{s}\right)\left(\dfrac{J}{C}\right) = \dfrac{J}{s}
   page: 7
   spoken_math_alternative: One watt equals one ampere times one volt, which is coulombs per second times
     joules per coulomb, which equals joules per second.
   type: formula
+  id: page-7-s0006
+  source_regions:
+  - page-7-r0006
 - page: 7
   text: 'Power can also be expressed:'
   type: paragraph
+  id: page-7-s0007
+  source_regions:
+  - page-7-r0007
 - normalized_math: (V = IR) \Rightarrow P = I(IR) = I^2 R
   page: 7
   spoken_math_alternative: Using V equals I R, power equals I times I R, which equals I squared times
     R.
   type: formula
+  id: page-7-s0008
+  source_regions:
+  - page-7-r0008
 - normalized_math: \left(I = \dfrac{V}{R}\right) \Rightarrow P = \left(\dfrac{V}{R}\right)V = \dfrac{V^2}{R}
   page: 7
   spoken_math_alternative: Using I equals V over R, power equals V over R times V, which equals V squared
     over R.
   type: formula
+  id: page-7-s0009
+  source_regions:
+  - page-7-r0009
 - normalized_math: P = IV = I^2 R = \dfrac{V^2}{R}
   page: 7
   spoken_math_alternative: Power equals I V, equals I squared R, equals V squared over R.
   type: formula
+  id: page-7-s0010
+  source_regions:
+  - page-7-r0010
+  - page-7-r0015
+  - page-7-r0016
 - level: 2
   page: 7
   text: Power Sources (Voltage Source)
   type: heading
+  id: page-7-s0011
+  source_regions:
+  - page-7-r0011
 - page: 7
   text: 'Battery (DC, direct current): the source provides a steady, constant voltage.'
   type: paragraph
+  id: page-7-s0012
+  source_regions:
+  - page-7-r0012
 - complexity: simple
   figure_alternative: 'A graph of a DC battery’s voltage versus time: a constant horizontal line at about
     1.5 volts.'
   page: 7
   type: figure
+  id: page-7-s0013
+  source_regions:
+  - page-7-r0013
 - page: 7
   text: 'Generator (AC, alternating current). Advantages over DC: easier and safer to transmit over long
     distances, and easy and efficient to generate.'
   type: paragraph
+  id: page-7-s0014
+  source_regions:
+  - page-7-r0014
 - complexity: simple
   figure_alternative: 'A graph of AC voltage versus time: a sine wave oscillating between plus V0 and
     minus V0, with one full cycle marked.'
   page: 8
   type: figure
+  id: page-8-s0001
+  source_regions:
+  - page-8-r0001
 - normalized_math: V = V_0 \sin(\omega t)
   page: 8
   spoken_math_alternative: V equals V-naught times the sine of omega t.
   type: formula
+  id: page-8-s0002
+  source_regions:
+  - page-8-r0002
 - complexity: simple
   figure_alternative: 'The circuit symbol for an AC voltage source: a circle enclosing a sine wave, shown
     in a small loop with a capacitor and a resistor.'
   page: 8
   type: figure
+  id: page-8-s0003
+  source_regions:
+  - page-8-r0003
 - page: 8
   text: Peak voltage is V0. Omega is the angular frequency in radians per second. The standard line frequency
     f is 60 Hz (cycles per second).
   type: paragraph
+  id: page-8-s0004
+  source_regions:
+  - page-8-r0004
 - normalized_math: \omega = 2\pi f
   page: 8
   spoken_math_alternative: Omega equals two pi f.
   type: formula
+  id: page-8-s0005
+  source_regions:
+  - page-8-r0005
 - normalized_math: \left(60\ \dfrac{\text{cycles}}{s}\right)\left(2\pi\ \dfrac{\text{rad}}{\text{cycle}}\right)
     = 377\ \dfrac{\text{rad}}{s}
   page: 8
   spoken_math_alternative: 60 cycles per second times two pi radians per cycle equals 377 radians per
     second.
   type: formula
+  id: page-8-s0006
+  source_regions:
+  - page-8-r0006
 - level: 2
   page: 8
   text: ‘Average’ voltage (RMS)
   type: heading
+  id: page-8-s0007
+  source_regions:
+  - page-8-r0007
 - normalized_math: V_{RMS} = \sqrt{\overline{V^2}}
   page: 8
   spoken_math_alternative: V RMS equals the square root of the average of V squared.
   type: formula
+  id: page-8-s0008
+  source_regions:
+  - page-8-r0008
 - page: 8
   text: 'Fact: the average value of sine squared theta (or cosine squared theta) over a cycle is one half.'
   type: paragraph
+  id: page-8-s0009
+  source_regions:
+  - page-8-r0009
 - complexity: simple
   figure_alternative: 'A graph of sine squared of omega t versus time: a non-negative wave oscillating
     between 0 and 1, whose average value is one half.'
   page: 8
   type: figure
+  id: page-8-s0010
+  source_regions:
+  - page-8-r0010
 - normalized_math: \langle \sin^2(\omega t) \rangle = \tfrac{1}{2}
   page: 8
   spoken_math_alternative: The average of sine squared omega t equals one half.
   type: formula
+  id: page-8-s0011
+  source_regions:
+  - page-8-r0011
 - normalized_math: V_{RMS} = \left(\overline{V_0^2 \sin^2(\omega t)}\right)^{1/2} = \left(V_0^2 \cdot
     \tfrac{1}{2}\right)^{1/2} = \dfrac{1}{\sqrt{2}} V_0
   page: 8
@@ -1582,51 +2210,87 @@ semantic_layer:
     omega t, which equals the square root of V-naught squared times one half, which equals one over root
     two times V-naught.
   type: formula
+  id: page-8-s0012
+  source_regions:
+  - page-8-r0012
 - normalized_math: V_{RMS} = \dfrac{V_0}{\sqrt{2}}
   page: 8
   spoken_math_alternative: V RMS equals V-naught divided by the square root of two.
   type: formula
+  id: page-8-s0013
+  source_regions:
+  - page-8-r0013
 - level: 2
   page: 9
   text: Current also ‘alternates’ in AC voltage
   type: heading
+  id: page-9-s0001
+  source_regions:
+  - page-9-r0001
 - normalized_math: I = \dfrac{V}{R} \Rightarrow I = \dfrac{V_0}{R}\sin(\omega t)
   page: 9
   spoken_math_alternative: Since I equals V over R, I equals V-naught over R times the sine of omega t.
   type: formula
+  id: page-9-s0002
+  source_regions:
+  - page-9-r0002
 - normalized_math: I = I_0 \sin(\omega t),\quad I_0 = \dfrac{V_0}{R}
   page: 9
   spoken_math_alternative: I equals I-naught times sine omega t, where I-naught, the peak current, equals
     V-naught over R.
   type: formula
+  id: page-9-s0003
+  source_regions:
+  - page-9-r0003
 - normalized_math: I_{RMS} = \dfrac{1}{\sqrt{2}} I_0
   page: 9
   spoken_math_alternative: I RMS equals one over root two times I-naught.
   type: formula
+  id: page-9-s0004
+  source_regions:
+  - page-9-r0004
 - level: 2
   page: 9
   text: Power (alternating voltage)
   type: heading
+  id: page-9-s0005
+  source_regions:
+  - page-9-r0005
 - normalized_math: P_{AVG} = I_{RMS} V_{RMS}
   page: 9
   spoken_math_alternative: The average power equals I RMS times V RMS.
   type: formula
+  id: page-9-s0006
+  source_regions:
+  - page-9-r0006
 - normalized_math: P_{AVG} = I_{RMS}^2 R
   page: 9
   spoken_math_alternative: The average power equals I RMS squared times R.
   type: formula
+  id: page-9-s0007
+  source_regions:
+  - page-9-r0007
 - normalized_math: P_{AVG} = \dfrac{V_{RMS}^2}{R}
   page: 9
   spoken_math_alternative: The average power equals V RMS squared over R.
   type: formula
+  id: page-9-s0008
+  source_regions:
+  - page-9-r0008
 - level: 2
   page: 9
   text: Electron Drift Velocity
   type: heading
+  id: page-9-s0009
+  source_regions:
+  - page-9-r0009
 - page: 9
   text: 'Misconception #2: electrons travel near the speed of light. Reality: electric fields propagate
     near the speed of light, but the electrons that make up the current are very slow in electrical circuits.'
   type: paragraph
+  id: page-9-s0010
+  source_regions:
+  - page-9-r0010
 - complexity: complex
   detailed_figure_description: A cylindrical conductor is drawn horizontally. Its left circular face is
     labeled with area A; a thin slice of width dx is marked inside. Arrows labeled I and E point to the
@@ -1636,15 +2300,24 @@ semantic_layer:
     electric field E driving electrons to drift slowly opposite the current.
   page: 9
   type: figure
+  id: page-9-s0011
+  source_regions:
+  - page-9-r0011
 - normalized_math: I = e\, n\, A\, v
   page: 9
   spoken_math_alternative: Current equals e times n times A times v, where e is the elementary charge,
     n is the number of electrons per unit volume, A is the cross-sectional area, and v is the drift velocity.
   type: formula
+  id: page-9-s0012
+  source_regions:
+  - page-9-r0012
 - page: 10
   text: 'Example: What current would be produced in 12-gauge copper wire (r = 1 mm) if the electron drift
     velocity was 1.0 mm/s (about 0.0022 mph)?'
   type: paragraph
+  id: page-10-s0001
+  source_regions:
+  - page-10-r0001
 - normalized_math: e = 1.60\times10^{-19}\ \text{C},\quad A = \pi(0.001\ m)^2,\quad v = 0.001\ \text{m/s},\quad
     I = e\,n\,A\,v
   page: 10
@@ -1652,10 +2325,16 @@ semantic_layer:
     the area A is pi times 0.001 meters squared; the drift velocity v is 0.001 meters per second; and
     I equals e n A v. The number density n is left blank to be computed.
   type: formula
+  id: page-10-s0002
+  source_regions:
+  - page-10-r0002
 - page: 10
   text: Copper (Z = 29) has one ‘free’ electron per atom, so the number of atoms per cubic meter gives
     the number of electrons per cubic meter.
   type: paragraph
+  id: page-10-s0003
+  source_regions:
+  - page-10-r0003
 - normalized_math: n = \left(\dfrac{8.96\ \text{g}}{\text{cm}^3}\right)\left(\dfrac{1\ \text{mol}}{63.55\
     \text{g}}\right)\left(\dfrac{6.02\times10^{23}\ \text{atoms}}{\text{mol}}\right)\left(\dfrac{100\
     \text{cm}}{1\ \text{m}}\right)^3 = 8.5\times10^{28}\ m^{-3}
@@ -1664,6 +2343,9 @@ semantic_layer:
     6.02 times ten to the twenty-third atoms per mole, times 100 centimeters per meter cubed, which is
     about 8.5 times ten to the twenty-eighth per cubic meter.
   type: formula
+  id: page-10-s0004
+  source_regions:
+  - page-10-r0004
 - normalized_math: I = (1.6\times10^{-19}\ \text{C})(8.5\times10^{28}\ m^{-3})(\pi(0.001\ m)^2)(0.001\
     \text{m/s}) = 43\ \text{A}
   page: 10
@@ -1671,16 +2353,28 @@ semantic_layer:
     to the twenty-eighth per cubic meter, times pi times 0.001 meters squared, times 0.001 meters per
     second, which is about 43 amperes.
   type: formula
+  id: page-10-s0005
+  source_regions:
+  - page-10-r0005
 - level: 2
   page: 10
   text: Electrical Hazards
   type: heading
+  id: page-10-s0006
+  source_regions:
+  - page-10-r0006
 - page: 10
   text: Electrical power produces heat, and too much of it produces fires, burns, melting, and so on.
   type: paragraph
+  id: page-10-s0007
+  source_regions:
+  - page-10-r0007
 - page: 10
   text: 'Example: A short is when there is an unplanned low-resistance path in a circuit.'
   type: paragraph
+  id: page-10-s0008
+  source_regions:
+  - page-10-r0008
 - complexity: complex
   detailed_figure_description: A wall plug at the left connects through a cord to an appliance at the
     right whose element is labeled R. Along the cord, a point where the insulation wore away creates a
@@ -1690,19 +2384,35 @@ semantic_layer:
     — a low-resistance path that bypasses the intended load.
   page: 10
   type: figure
+  id: page-10-s0009
+  source_regions:
+  - page-10-r0009
 - normalized_math: P = \dfrac{V^2}{r},\quad I = \dfrac{V}{r}
   page: 10
   spoken_math_alternative: At the short, power equals V squared over r, and current equals V over r.
   type: formula
+  id: page-10-s0010
+  source_regions:
+  - page-10-r0010
 - page: 11
   text: Our bodies are electrical! For example, pacemakers use electrical pulses to stimulate heart muscle.
   type: paragraph
+  id: page-11-s0001
+  source_regions:
+  - page-11-r0001
+  - page-11-r0006
 - page: 11
   text: Wear insulating shoes to prevent being a ‘short’ — important in many professions.
   type: paragraph
+  id: page-11-s0002
+  source_regions:
+  - page-11-r0002
 - page: 11
   text: Large current is dangerous!
   type: paragraph
+  id: page-11-s0003
+  source_regions:
+  - page-11-r0003
 - caption: Table 20.3  Effects of Electrical Shock as a Function of Current
   page: 11
   rows:
@@ -1797,12 +2507,16 @@ semantic_layer:
       text: Onset of sustained ventricular contraction and respiratory paralysis; both cease when shock
         ends; heartbeat may return to normal; used to defibrillate the heart
   type: table
+  id: page-11-s0004
+  source_regions:
+  - page-11-r0004
 - page: 11
   text: Pure H2O is an insulator, but in everyday life water has ions, which makes it conductive. Water
     and electronics don’t mix!
   type: paragraph
-source_sha256: fe203e79ddc803a7eaa4e401222a186b861c6b04ed632c865a2eaad858f2c077
-title: 'Chapter 20: Current, Resistance, Ohm''s Law, Power, AC/DC'
+  id: page-11-s0005
+  source_regions:
+  - page-11-r0005
 warnings:
 - code: ambiguous-reading-order
   history: []
@@ -1810,16 +2524,26 @@ warnings:
   message: Page 1 places the circuit diagram and the definition of current side by side; either the diagram
     or the prose could plausibly be read first, so the reading order is not unambiguous.
   page: 1
-  region: null
   resolution: null
+  semantic_nodes:
+  - page-1-s0002
+  - page-1-s0003
+  source_regions:
+  - page-1-r0002
+  - page-1-r0003
 - code: ambiguous-reading-order
   history: []
   id: w0002
   message: Page 3 sets the ‘friction’ analogy beside the ‘Simplification’ note in two columns; either
     could be read first, so the reading order is not unambiguous.
   page: 3
-  region: null
   resolution: null
+  semantic_nodes:
+  - page-3-s0002
+  - page-3-s0004
+  source_regions:
+  - page-3-r0002
+  - page-3-r0004
 - code: table-merged-cells
   history: []
   id: w0003
@@ -1827,16 +2551,28 @@ warnings:
     all three columns; verify these grouping headers keep their association with the material rows beneath
     them.
   page: 3
-  region: page-3-r0009
   resolution: null
+  semantic_nodes:
+  - page-3-s0009
+  source_regions:
+  - page-3-r0009
 - code: ambiguous-reading-order
   history: []
   id: w0004
   message: Page 6 interleaves a printed problem statement, a hand-drawn circuit, and two columns of worked
     algebra; more than one reading sequence is plausible.
   page: 6
-  region: null
   resolution: null
+  semantic_nodes:
+  - page-6-s0001
+  - page-6-s0003
+  - page-6-s0004
+  - page-6-s0007
+  source_regions:
+  - page-6-r0001
+  - page-6-r0003
+  - page-6-r0004
+  - page-6-r0007
 - code: suspected-source-error
   history: []
   id: w0005
@@ -1844,8 +2580,11 @@ warnings:
     below and Table 25-1 use 1.68 x 10^-8; the 10^-9 exponent is preserved as written and appears to be
     a source slip.
   page: 6
-  region: page-6-r0004
   resolution: null
+  semantic_nodes:
+  - page-6-s0004
+  source_regions:
+  - page-6-r0004
 - code: ambiguous-reading-order
   history: []
   id: w0006
@@ -1853,5 +2592,14 @@ warnings:
     the left, power and resistance on the right); it can be read column-first or row-first, so the reading
     order is not unambiguous.
   page: 7
-  region: null
   resolution: null
+  semantic_nodes:
+  - page-7-s0002
+  - page-7-s0003
+  - page-7-s0004
+  - page-7-s0005
+  source_regions:
+  - page-7-r0002
+  - page-7-r0003
+  - page-7-r0004
+  - page-7-r0005
