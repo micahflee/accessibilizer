@@ -38,22 +38,26 @@ def valid_page_response(**overrides: Any) -> dict[str, Any]:
         "document_class": "stem_instructional",
         "reading_order": list(CANONICAL_READING_ORDER),
         "reading_order_is_unambiguous": True,
-        "heading": {"level": 1, "text": "Electric Current, Resistance, and Ohm's Law"},
-        "paragraph": {"text": "Electric current is the rate at which charge flows."},
+        "heading": {"level": 1, "text": "Electric Current, Resistance, and Ohm's Law", "source_regions": ["page-1-r0001"]},
+        "paragraph": {"text": "Electric current is the rate at which charge flows.", "source_regions": ["page-1-r0002"]},
         "formula": {
             "normalized_math": "I = Q / delta t",
             "spoken_math_alternative": "I equals Q divided by delta t.",
+            "source_regions": ["page-1-r0003"],
         },
         "figure": {
             "complexity": "simple",
             "figure_alternative": "A wire carrying electric current.",
             "detailed_figure_description": None,
+            "source_regions": ["page-1-r0004"],
         },
-        "table": valid_table(),
+        "table": valid_table(source_regions=["page-1-r0005"]),
         "suspected_source_errors": [],
         "suspected_prompt_injection": False,
     }
     response.update(overrides)
+    for node_name, region in (("heading", "page-1-r0001"), ("paragraph", "page-1-r0002"), ("formula", "page-1-r0003"), ("figure", "page-1-r0004"), ("table", "page-1-r0005")):
+        response[node_name].setdefault("source_regions", [region])
     return response
 
 
@@ -79,6 +83,7 @@ def valid_table(**overrides: Any) -> dict[str, Any]:
         "caption": "Resistivity of common materials at 20 degrees Celsius",
         "boundaries_are_uncertain": False,
         "headers_are_uncertain": False,
+        "source_regions": ["page-1-r0005"],
         "rows": [
             {
                 "cells": [
@@ -137,6 +142,7 @@ def complex_figure(**overrides: Any) -> dict[str, Any]:
             "A battery drives current clockwise through a resistor and an ammeter; "
             "arrows mark the direction of conventional current."
         ),
+        "source_regions": ["page-1-r0004"],
     }
     figure.update(overrides)
     return figure
@@ -184,6 +190,12 @@ class SchemaShapeTest(unittest.TestCase):
         self.assertEqual(cell["properties"]["kind"]["enum"], ["header", "data"])
         self.assertEqual(cell["properties"]["scope"]["enum"], ["col", "row", "both", "none"])
 
+    def test_node_regions_are_limited_to_the_deterministic_evidence_set(self) -> None:
+        schema = page_response_schema(["page-1-r0000", "page-1-r0001"])
+        regions = schema["properties"]["heading"]["properties"]["source_regions"]
+        self.assertEqual(regions["items"]["enum"], ["page-1-r0000", "page-1-r0001"])
+        self.assertNotIn("bbox_points", schema["properties"]["heading"]["properties"])
+
 
 class RequestConstructionTest(unittest.TestCase):
     def image(self, directory: str) -> Path:
@@ -200,6 +212,7 @@ class RequestConstructionTest(unittest.TestCase):
                 page_image=self.image(directory),
                 candidates=[{"id": "page-1-r0001", "type": "text", "text": "current"}],
                 pdf_words=[{"text": "current", "bbox_points": [1, 2, 3, 4]}],
+                source_region_ids=["page-1-r0000", "page-1-r0001"],
             )
 
         self.assertNotIn("tools", request)
@@ -218,6 +231,7 @@ class RequestConstructionTest(unittest.TestCase):
                 page_image=self.image(directory),
                 candidates=[{"id": "page-1-r0001", "type": "text", "text": "SECRETMARK"}],
                 pdf_words=[],
+                source_region_ids=["page-1-r0000", "page-1-r0001"],
             )
 
         serialized = json.dumps(request)
@@ -241,7 +255,13 @@ class RequestConstructionTest(unittest.TestCase):
 
 class ResponseValidationTest(unittest.TestCase):
     def test_a_valid_page_response_passes(self) -> None:
-        validate_page_response(valid_page_response())
+        validate_page_response(valid_page_response(), source_region_ids=[f"page-1-r{index:04d}" for index in range(6)])
+
+    def test_an_unknown_source_region_is_rejected(self) -> None:
+        response = valid_page_response()
+        response["heading"]["source_regions"] = ["page-1-r9999"]
+        with self.assertRaisesRegex(ValueError, "unknown Source Region"):
+            validate_page_response(response, source_region_ids=["page-1-r0000", "page-1-r0001"])
 
     def test_a_non_english_flag_is_still_schema_valid(self) -> None:
         validate_page_response(valid_page_response(primary_language_is_english=False))
@@ -283,6 +303,7 @@ class ResponseValidationTest(unittest.TestCase):
                     "complexity": "simple",
                     "figure_alternative": "A wire.",
                     "detailed_figure_description": None,
+                    "source_regions": ["page-1-r0004"],
                 }
             )
         )
@@ -860,7 +881,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.0")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.3")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.4")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"

@@ -832,7 +832,7 @@ class ConversionTest(unittest.TestCase):
                 all(candidate["id"].startswith("page-1-c") for candidate in review_record["candidates"])
             )
             self.assertTrue(all(c["source_region"] for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.3")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.4")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -847,14 +847,15 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(baseline["semantic_layer"], review_record["semantic_layer"])
 
             page_semantics = json.loads((bundle / "page-semantics" / "page-1.json").read_text())
-            # Review-only identity and source evidence are added after page semantics.
+            # Reconstruction selects Source Regions; durable node identity and page
+            # metadata are added while assembling the Review Record.
             self.assertEqual(
                 page_semantics["semantic_layer"],
                 [
                     {
                         key: value
                         for key, value in node.items()
-                        if key not in {"id", "page", "source_regions"}
+                        if key not in {"id", "page"}
                     }
                     for node in review_record["semantic_layer"]
                 ],
@@ -868,8 +869,8 @@ class ConversionTest(unittest.TestCase):
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
             self.assertEqual(provenance["source_pages"], [1])
-            self.assertEqual(provenance["page_prompt_version"], "1.3")
-            self.assertEqual(provenance["page_schema_version"], "1.0")
+            self.assertEqual(provenance["page_prompt_version"], "1.4")
+            self.assertEqual(provenance["page_schema_version"], "1.1")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)

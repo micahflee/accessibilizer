@@ -56,6 +56,12 @@ class VisualReport(TypedDict):
 
 
 VISUAL_TOLERANCE = 0.0001
+SOURCE_EVIDENCE_CONTRACT_VERSION = "1.0"
+
+
+def _whole_page_region_id(page: int) -> str:
+    """Return the deterministic whole-page Source Region identity."""
+    return f"page-{page}-r0000"
 
 
 CONVERT_EPILOG = """\
@@ -486,12 +492,8 @@ def _review_page_document(
 ) -> dict[str, Any]:
     """Project deterministic recognition evidence into Review Record 3.0 inputs.
 
-    This adapter keeps the page-semantics and recognition stage contracts separate:
-    it gives their existing objects Review Record identities without treating a
-    Recognition Candidate ID as a Source Region ID. Issue #39 will move exact
-    Source Region selection into page reconstruction; until then nodes are grounded
-    in deterministic regions of the corresponding evidence type rather than
-    associated by position.
+    This adapter assigns durable Review Record identities after reconstruction while
+    preserving the model's selection from the deterministic Source Region set.
     """
     document = copy.deepcopy(page_document)
     page_number = document["page"]
@@ -504,7 +506,10 @@ def _review_page_document(
     }
 
     raw_candidates = recognition_document["candidates"]
-    source_regions: list[dict[str, Any]] = []
+    source_regions: list[dict[str, Any]] = [{
+        "id": _whole_page_region_id(page_number), "page": page_number,
+        "bbox_points": [0.0, 0.0, width_points, height_points],
+    }]
     candidates: list[dict[str, Any]] = []
     for index, candidate in enumerate(raw_candidates, start=1):
         region_id = candidate["id"]
@@ -537,33 +542,45 @@ def _review_page_document(
         )
     document["source_regions"] = source_regions
     document["candidates"] = candidates
-
-    regions_by_type: dict[str, list[str]] = {}
-    for candidate in candidates:
-        regions_by_type.setdefault(candidate["type"], []).append(
-            candidate["source_region"]
-        )
-    evidence_type = {
-        "heading": "document_structure",
-        "paragraph": "text",
-        "formula": "formula",
+    node_type_for_candidate_type = {
+        "document_structure": "heading",
         "figure": "figure",
+        "formula": "formula",
+        "handwriting": "paragraph",
         "table": "table",
-        "link": "text",
+        "text": "paragraph",
     }
+    candidate_type_by_region = {
+        candidate["source_region"]: candidate["type"] for candidate in candidates
+    }
+
     for index, node in enumerate(document["semantic_layer"], start=1):
         node["id"] = f"page-{page_number}-s{index:04d}"
-        node["source_regions"] = list(
-            regions_by_type.get(evidence_type[node["type"]], [])
-        )
     for warning in document["warnings"]:
         region = warning.pop("region", None)
-        warning["semantic_nodes"] = [
+        semantic_nodes = [
             node["id"]
             for node in document["semantic_layer"]
             if region and region in node["source_regions"]
         ]
+        if region and not semantic_nodes:
+            node_type = node_type_for_candidate_type.get(candidate_type_by_region.get(region))
+            semantic_nodes = [
+                node["id"] for node in document["semantic_layer"]
+                if node["type"] == node_type
+            ]
+        warning["semantic_nodes"] = semantic_nodes
         warning["source_regions"] = [region] if region else []
+    fallback = _whole_page_region_id(page_number)
+    for node in document["semantic_layer"]:
+        if fallback in node["source_regions"]:
+            document["warnings"].append({
+                "code": "imprecise-source-grounding",
+                "message": "No tighter deterministic Source Region supports this Semantic Layer node; the whole-page fallback is used.",
+                "status": "unresolved",
+                "semantic_nodes": [node["id"]],
+                "source_regions": [fallback],
+            })
     for verified in document["reconstruction"]["verified_regions"]:
         verified["source_region"] = verified.pop("id")
     return document
@@ -1039,6 +1056,10 @@ def _convert(args: argparse.Namespace) -> int:
             regions_dir=regions,
             candidates=page_candidates[page_number],
             pdf_words=page_words[page_number],
+            source_region_ids=[
+                _whole_page_region_id(page_number),
+                *(str(candidate["id"]) for candidate in page_candidates[page_number]),
+            ],
             budget=budget,
             max_retries=limits.provider_max_retries,
             retry_base_seconds=limits.provider_retry_base_seconds,
@@ -1068,6 +1089,10 @@ def _convert(args: argparse.Namespace) -> int:
                 _displayed_page_dimensions(source_copy, page_number),
             )
         )
+        _atomic_copy(
+            regions / f"page-{page_number}.png",
+            regions / f"page-{page_number}-r0000.png",
+        )
     first = page_documents[0]
     record = review.build_review_record(
         source_sha256=source_sha256,
@@ -1090,6 +1115,7 @@ def _convert(args: argparse.Namespace) -> int:
         "pdf_author_sha256": file_sha256(Path(PDF_AUTHOR_JAR)),
         "review_record_schema_version": review.REVIEW_RECORD_SCHEMA_VERSION,
         "review_report_version": review.REVIEW_REPORT_VERSION,
+        "source_evidence_contract_version": SOURCE_EVIDENCE_CONTRACT_VERSION,
         "source_sha256": source_sha256,
     })
     review_record = workspace / "review-record.yaml"
@@ -1150,6 +1176,7 @@ def _convert(args: argparse.Namespace) -> int:
         "region_prompt_version": page.REGION_PROMPT_VERSION,
         "region_schema_version": page.REGION_SCHEMA_VERSION,
         "review_record_schema_version": review.REVIEW_RECORD_SCHEMA_VERSION,
+        "source_evidence_contract_version": SOURCE_EVIDENCE_CONTRACT_VERSION,
         "recognition_backend": backend.name,
         "recognition_backend_version": backend.version,
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
