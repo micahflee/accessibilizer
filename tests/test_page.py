@@ -198,6 +198,10 @@ class SchemaShapeTest(unittest.TestCase):
         self.assertEqual(regions["items"]["enum"], ["page-1-r0000", "page-1-r0001"])
         self.assertNotIn("bbox_points", schema["properties"]["heading"]["properties"])
 
+    def test_page_schema_uses_openai_supported_structured_output_keywords(self) -> None:
+        schema = page_response_schema(["page-1-r0000", "page-1-r0001"])
+        self.assertNotIn("uniqueItems", json.dumps(schema))
+
 
 class RequestConstructionTest(unittest.TestCase):
     def image(self, directory: str) -> Path:
@@ -264,6 +268,12 @@ class ResponseValidationTest(unittest.TestCase):
         response["heading"]["source_regions"] = ["page-1-r9999"]
         with self.assertRaisesRegex(ValueError, "unknown Source Region"):
             validate_page_response(response, source_region_ids=["page-1-r0000", "page-1-r0001"])
+
+    def test_duplicate_source_regions_are_rejected_at_runtime(self) -> None:
+        response = valid_page_response()
+        response["heading"]["source_regions"] = ["page-1-r0001", "page-1-r0001"]
+        with self.assertRaisesRegex(ValueError, "non-empty unique array"):
+            validate_page_response(response)
 
     def test_a_non_english_flag_is_still_schema_valid(self) -> None:
         validate_page_response(valid_page_response(primary_language_is_english=False))

@@ -37,7 +37,7 @@ _T = TypeVar("_T")
 
 
 PAGE_PROMPT_VERSION = "1.4"
-PAGE_SCHEMA_VERSION = "1.1"
+PAGE_SCHEMA_VERSION = "1.2"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
 PAGE_SEMANTICS_CONTRACT_VERSION = "1.1"
@@ -148,7 +148,9 @@ def _source_regions_property(source_region_ids: Sequence[str] | None) -> dict[st
     items: dict[str, Any] = {"type": "string", "pattern": r"^page-[0-9]+-r[0-9]{4,}$"}
     if source_region_ids is not None:
         items = {"enum": list(source_region_ids)}
-    return {"type": "array", "minItems": 1, "uniqueItems": True, "items": items}
+    # OpenAI Structured Outputs rejects the JSON Schema ``uniqueItems`` keyword.
+    # validate_page_response enforces uniqueness after the provider responds.
+    return {"type": "array", "minItems": 1, "items": items}
 
 
 def page_response_schema(source_region_ids: Sequence[str] | None = None) -> dict[str, Any]:
