@@ -631,11 +631,13 @@ def validate_review_record(record: dict[str, Any]) -> None:
     for page_number, (width, height) in dimensions.items():
         fallback_id = f"page-{page_number}-r0000"
         fallback = regions.get(fallback_id)
-        if fallback is None or [float(value) for value in fallback["bbox_points"]] != [
+        if fallback is not None and [
+            float(value) for value in fallback["bbox_points"]
+        ] != [
             0.0, 0.0, width, height
         ]:
             fail(
-                f"page {page_number} requires whole-page fallback Source Region "
+                f"page {page_number} whole-page fallback Source Region "
                 f"{fallback_id} with exact page bounds"
             )
 

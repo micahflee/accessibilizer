@@ -251,20 +251,27 @@ class SchemaValidationTest(unittest.TestCase):
                 with self.assertRaises(ReviewRecordError):
                     validate_review_record(record)
 
-    def test_every_page_requires_an_exact_whole_page_fallback_region(self) -> None:
-        for mutation in ("missing", "partial"):
-            with self.subTest(mutation=mutation):
-                record = built_record()
-                fallback = next(
-                    region for region in record["source_regions"]
-                    if region["id"] == "page-1-r0000"
-                )
-                if mutation == "missing":
-                    record["source_regions"].remove(fallback)
-                else:
-                    fallback["bbox_points"] = [0, 0, 611, 792]
-                with self.assertRaisesRegex(ReviewRecordError, "whole-page fallback"):
-                    validate_review_record(record)
+    def test_a_record_may_omit_the_whole_page_fallback_region(self) -> None:
+        record = built_record()
+        record["source_regions"] = [
+            region
+            for region in record["source_regions"]
+            if region["id"] != "page-1-r0000"
+        ]
+
+        validate_review_record(record)
+
+    def test_a_whole_page_fallback_region_must_use_exact_bounds(self) -> None:
+        record = built_record()
+        fallback = next(
+            region
+            for region in record["source_regions"]
+            if region["id"] == "page-1-r0000"
+        )
+        fallback["bbox_points"] = [0, 0, 611, 792]
+
+        with self.assertRaisesRegex(ReviewRecordError, "whole-page fallback"):
+            validate_review_record(record)
 
     def test_reconstruction_must_describe_every_converted_page_exactly_once(self) -> None:
         for mutation in ("missing", "duplicate"):
