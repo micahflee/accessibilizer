@@ -41,6 +41,7 @@ PAGE_SCHEMA_VERSION = "1.2"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
 PAGE_SEMANTICS_CONTRACT_VERSION = "1.1"
+RECONSTRUCTION_ORCHESTRATION_VERSION = "1.1"
 
 # This version authors exactly one representative node of each type in this order;
 # richer document trees are a later slice (issue #1, Milestone 6).
@@ -1066,8 +1067,49 @@ def build_page_semantics_document(
 
 
 def expected_request_count(candidates: Sequence[dict[str, Any]]) -> int:
-    """Provider calls the page stage makes: one page call plus each crop call."""
-    return 1 + sum(1 for c in candidates if c.get("type") in REGION_VERIFY_TYPES)
+    """Provider calls made for one page, including reconstructed-type backfills."""
+    specialized = [
+        candidate
+        for candidate in candidates
+        if candidate.get("type") in REGION_VERIFY_TYPES
+    ]
+    detected_types = {candidate.get("type") for candidate in specialized}
+    return 1 + len(specialized) + len(REGION_VERIFY_TYPES - detected_types)
+
+
+def _region_verification_targets(
+    candidates: Sequence[dict[str, Any]], page_response: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Return crop checks for specialized evidence and reconstructed semantics.
+
+    Full-page vision can discover a Formula, Figure, or Semantic Table that the
+    specialized recognizer classified as another type. Preserve every specialized
+    crop check, then backfill one target for each reconstructed type that otherwise
+    has no independent crop verification. A backfill is a verification target, not
+    a new Recognition Candidate; its type selects the matching page-level semantic
+    view for the crop prompt.
+    """
+    targets = [
+        candidate
+        for candidate in candidates
+        if candidate.get("type") in REGION_VERIFY_TYPES
+    ]
+    covered_types = {target.get("type") for target in targets}
+    candidates_by_id = {
+        candidate.get("id"): candidate
+        for candidate in candidates
+        if isinstance(candidate.get("id"), str)
+    }
+    for semantic_type in CANONICAL_READING_ORDER:
+        if semantic_type not in REGION_VERIFY_TYPES or semantic_type in covered_types:
+            continue
+        region_id = page_response[semantic_type]["source_regions"][0]
+        targets.append({
+            **candidates_by_id.get(region_id, {}),
+            "id": region_id,
+            "type": semantic_type,
+        })
+    return targets
 
 
 # --- provider-backed orchestration -------------------------------------------
@@ -1225,9 +1267,7 @@ def reconstruct_page(
         ),
     )
     region_verifications: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for candidate in candidates:
-        if candidate.get("type") not in REGION_VERIFY_TYPES:
-            continue
+    for candidate in _region_verification_targets(candidates, page_response):
         crop = regions_dir / f"{candidate.get('id')}.png"
 
         def verify(

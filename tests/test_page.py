@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -18,6 +19,7 @@ from accessibilizer.page import (
     expected_request_count,
     page_response_schema,
     reconcile_page,
+    reconstruct_page,
     region_response_schema,
     validate_page_response,
     validate_region_response,
@@ -947,6 +949,62 @@ class DocumentAndBudgetTest(unittest.TestCase):
             {"type": "table"},
             {"type": "figure"},
         ]
+        self.assertEqual(expected_request_count(candidates), 4)
+
+    def test_reconstruction_verifies_semantic_types_missing_from_recognition(self) -> None:
+        """Full-page vision may discover semantics the specialized pass missed."""
+        response = valid_page_response()
+        candidates = [
+            {
+                "id": "page-1-r0003",
+                "type": "formula",
+                "text": "I = Q / delta t",
+            }
+        ]
+        verified_types: list[tuple[str, str]] = []
+
+        def verify(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            candidate = kwargs["candidate"]
+            verified_types.append((candidate["type"], candidate["id"]))
+            return {
+                "transcription": "independent crop check",
+                "agrees_with_page": True,
+                "suspected_prompt_injection": False,
+            }
+
+        with (
+            patch(
+                "accessibilizer.page.generate_page_semantics",
+                return_value=response,
+            ),
+            patch("accessibilizer.page.verify_region", side_effect=verify),
+        ):
+            document = reconstruct_page(
+                CONFIG,
+                page=1,
+                source_sha256="a" * 64,
+                page_image=Path("page.png"),
+                regions_dir=Path("regions"),
+                candidates=candidates,
+                pdf_words=[],
+                source_region_ids=[f"page-1-r{index:04d}" for index in range(1, 6)],
+            )
+
+        self.assertEqual(
+            verified_types,
+            [
+                ("formula", "page-1-r0003"),
+                ("figure", "page-1-r0004"),
+                ("table", "page-1-r0005"),
+            ],
+        )
+        self.assertEqual(
+            {region["type"] for region in document["reconstruction"]["verified_regions"]},
+            {"formula", "figure", "table"},
+        )
+
+    def test_expected_request_count_includes_missing_semantic_type_checks(self) -> None:
+        candidates = [{"type": "formula"}]
         self.assertEqual(expected_request_count(candidates), 4)
 
 
