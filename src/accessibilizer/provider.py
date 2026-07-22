@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 import sys
 import time
-try:
+
+if sys.version_info >= (3, 11):
     import tomllib
-except ImportError:  # pragma: no cover - the canonical Python 3.10 image uses tomli
-    import tomli as tomllib  # type: ignore[import-not-found, no-redef]
+else:  # pragma: no cover - selected by the canonical Python 3.10 runtime
+    import tomli as tomllib
 from typing import Any, Callable, Literal, Mapping, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse

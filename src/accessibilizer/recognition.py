@@ -143,9 +143,10 @@ class PaddleBackend:
         if self._structure is None:
             from paddleocr import PPStructure
 
-            # show_log/ocr defaults; CPU-only is enforced by the CPU paddlepaddle
-            # wheel pinned in the image. No network access is used.
-            self._structure = PPStructure(show_log=False)
+            # CPU-only is enforced by the pinned wheel. Disable the optional IR
+            # optimizer because PaddlePaddle 2.6.x's self-attention fusion pass
+            # can execute an unsupported instruction on valid x86-64 hosts.
+            self._structure = PPStructure(show_log=False, ir_optim=False)
         return self._structure
 
     def detect(self, page_image: Path, size: tuple[int, int]) -> list[RawCandidate]:

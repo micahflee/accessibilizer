@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-try:
+import sys
+
+if sys.version_info >= (3, 11):
     import tomllib
-except ImportError:  # pragma: no cover - the canonical Python 3.10 image uses tomli
-    import tomli as tomllib  # type: ignore[import-not-found, no-redef]
+else:  # pragma: no cover - selected by the canonical Python 3.10 runtime
+    import tomli as tomllib
 from typing import Any
 
 from accessibilizer.configuration import config_path, user_config_default

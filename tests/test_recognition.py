@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import sys
 import tempfile
+from types import ModuleType
 import unittest
+from unittest.mock import patch
 
 from accessibilizer import recognition
 from accessibilizer.recognition import (
@@ -165,6 +168,22 @@ class BackendSelectionTest(unittest.TestCase):
             {candidate.type for candidate in candidates},
             {"text", "handwriting", "formula", "table", "figure", "document_structure"},
         )
+
+    def test_paddle_backend_disables_the_crashing_ir_optimizer(self) -> None:
+        options: dict[str, object] = {}
+        expected_pipeline = object()
+        paddleocr = ModuleType("paddleocr")
+
+        def pp_structure(**kwargs: object) -> object:
+            options.update(kwargs)
+            return expected_pipeline
+
+        setattr(paddleocr, "PPStructure", pp_structure)
+        with patch.dict(sys.modules, {"paddleocr": paddleocr}):
+            pipeline = recognition.PaddleBackend()._pipeline()
+
+        self.assertIs(pipeline, expected_pipeline)
+        self.assertEqual(options, {"show_log": False, "ir_optim": False})
 
 
 @unittest.skipUnless(POPPLER, "poppler (pdftoppm/pdftotext) is required")

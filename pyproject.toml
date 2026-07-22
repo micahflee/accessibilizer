@@ -11,6 +11,7 @@ license = "AGPL-3.0-or-later"
 dependencies = [
     "pyyaml>=6",
     "jsonschema>=4.21",
+    "tomli>=1.2; python_version < '3.11'",
 ]
 
 [dependency-groups]
