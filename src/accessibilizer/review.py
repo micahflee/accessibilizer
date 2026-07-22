@@ -778,22 +778,71 @@ def _status_label(resolution: dict[str, Any] | None) -> str:
     return _STATUS_LABELS.get(str(resolution.get("status")), "Unresolved")
 
 
-def _semantic_layer_items(record: dict[str, Any]) -> str:
-    items: list[str] = []
-    for node in record.get("semantic_layer", []):
-        node_type = html.escape(str(node.get("type", "")).replace("_", " ").title())
-        rows = "".join(
-            f"<dt>{html.escape(str(key).replace('_', ' ').title())}</dt>"
-            f"<dd>{html.escape(str(value))}</dd>"
-            for key, value in node.items()
-            if key != "type"
-        )
-        items.append(f"<li><h3>{node_type}</h3><dl>{rows}</dl></li>")
-    return "".join(items)
+def _escape(value: object) -> str:
+    return html.escape(str(value), quote=True)
+
+
+def _warning_ids(
+    warnings: list[dict[str, Any]], *, node_id: str | None = None, region_id: str | None = None,
+    page: int | None = None,
+) -> str:
+    """Return explicit warning associations; never infer them from list position."""
+    return " ".join(
+        str(warning["id"])
+        for warning in warnings
+        if (node_id is not None and node_id in warning.get("semantic_nodes", []))
+        or (region_id is not None and region_id in warning.get("source_regions", []))
+        or (page is not None and warning.get("page") == page
+            and not warning.get("semantic_nodes") and not warning.get("source_regions"))
+        or (page is None and warning.get("page") is None
+            and not warning.get("semantic_nodes") and not warning.get("source_regions"))
+    )
+
+
+def _node_content(node: dict[str, Any]) -> str:
+    node_type = str(node.get("type", ""))
+    if node_type in {"heading", "paragraph", "link"}:
+        return f"<p>{_escape(node.get('text', ''))}</p>"
+    if node_type == "formula":
+        return (f"<dl><dt>Normalized math</dt><dd>{_escape(node.get('normalized_math', ''))}</dd>"
+                f"<dt>Spoken Math Alternative</dt><dd>{_escape(node.get('spoken_math_alternative', ''))}</dd></dl>")
+    if node_type == "figure":
+        details = ""
+        if node.get("detailed_figure_description"):
+            details = f"<dt>Detailed Figure Description</dt><dd>{_escape(node['detailed_figure_description'])}</dd>"
+        return f"<dl><dt>Figure Alternative</dt><dd>{_escape(node.get('figure_alternative', ''))}</dd>{details}</dl>"
+    if node_type == "table":
+        rows: list[str] = []
+        for row in node.get("rows", []):
+            cells: list[str] = []
+            for cell in row.get("cells", []):
+                tag = "th" if cell.get("kind") == "header" else "td"
+                scope = f' scope="{_escape(cell.get("scope"))}"' if tag == "th" else ""
+                cells.append(f"<{tag}{scope}>{_escape(cell.get('text', ''))}</{tag}>")
+            rows.append(f"<tr>{''.join(cells)}</tr>")
+        caption = f"<caption>{_escape(node.get('caption', ''))}</caption>" if node.get("caption") else ""
+        return f"<table>{caption}<tbody>{''.join(rows)}</tbody></table>"
+    return f"<pre>{_escape(node)}</pre>"
+
+
+def _region_evidence(
+    region_id: str, candidates_by_region: dict[str, list[dict[str, Any]]], warnings: list[dict[str, Any]]
+) -> str:
+    warning_ids = _warning_ids(warnings, region_id=region_id)
+    data_warning = f' data-warning-ids="{_escape(warning_ids)}"' if warning_ids else ""
+    candidates = "".join(
+        f"<li><strong>{_escape(candidate.get('type', 'Candidate'))}</strong>: {_escape(candidate.get('text') or 'No retained text')}</li>"
+        for candidate in candidates_by_region.get(region_id, [])
+    ) or "<li>No Recognition Candidates retained.</li>"
+    return (
+        f'<figure class="source-region"{data_warning}><img src="regions/{_escape(region_id)}.png" '
+        f'alt="Source Region {_escape(region_id)}"><figcaption>Source Region {_escape(region_id)}</figcaption>'
+        f"<details><summary>Recognition Candidates (non-authoritative)</summary><ul>{candidates}</ul></details></figure>"
+    )
 
 
 def _warning_row(
-    warning: dict[str, Any], candidates_by_region: dict[str, dict[str, Any]]
+    warning: dict[str, Any], candidates_by_region: dict[str, list[dict[str, Any]]]
 ) -> str:
     identifier = html.escape(str(warning.get("id", "")))
     code = html.escape(str(warning.get("code", "")))
@@ -803,7 +852,8 @@ def _warning_row(
     source_regions = warning.get("source_regions", [])
     region = source_regions[0] if source_regions else None
     if region:
-        candidate = candidates_by_region.get(str(region), {})
+        candidates = candidates_by_region.get(str(region), [])
+        candidate = candidates[0] if candidates else {}
         source = html.escape(f"regions/{region}.png", quote=True)
         region_type = html.escape(str(candidate.get("type", "region")))
         recognized = candidate.get("text")
@@ -847,12 +897,11 @@ def render_review_report(record: dict[str, Any]) -> str:
     """
     language = html.escape(str(record.get("language", "en")), quote=True)
     title = html.escape(str(record.get("title", "Untitled")))
-    candidates_by_region = {
-        candidate["source_region"]: candidate
-        for candidate in record.get("candidates", [])
-        if isinstance(candidate, dict) and "source_region" in candidate
-    }
-    warnings = record.get("warnings", [])
+    candidates_by_region: dict[str, list[dict[str, Any]]] = {}
+    for candidate in record.get("candidates", []):
+        if isinstance(candidate, dict) and isinstance(candidate.get("source_region"), str):
+            candidates_by_region.setdefault(candidate["source_region"], []).append(candidate)
+    warnings = [warning for warning in record.get("warnings", []) if isinstance(warning, dict)]
     if warnings:
         unresolved = sum(1 for warning in warnings if warning.get("resolution") is None)
         rows = "".join(
@@ -870,10 +919,43 @@ def render_review_report(record: dict[str, Any]) -> str:
         )
     else:
         warnings_body = "<p>No Conversion Warnings remain.</p>"
+    page_sections: list[str] = []
+    pages = [page for page in record.get("pages", []) if isinstance(page, int)]
+    for index, page in enumerate(pages):
+        previous = f'<a href="#page-{pages[index - 1]}">Previous page</a>' if index else ""
+        following = f'<a href="#page-{pages[index + 1]}">Next page</a>' if index + 1 < len(pages) else ""
+        page_warning_ids = _warning_ids(warnings, page=page)
+        page_warnings = [warning for warning in warnings if warning.get("page") in {None, page}]
+        warning_list = "".join(
+            f"<li><strong>{_escape(warning.get('id'))}: {_escape(warning.get('code'))}</strong> — {_escape(warning.get('message'))} (Status: {_status_label(warning.get('resolution'))})</li>"
+            for warning in page_warnings
+        ) or "<li>No Conversion Warnings for this page.</li>"
+        cards: list[str] = []
+        for node in record.get("semantic_layer", []):
+            if not isinstance(node, dict) or node.get("page") != page:
+                continue
+            node_id = str(node.get("id", ""))
+            node_warning_ids = _warning_ids(warnings, node_id=node_id)
+            all_warning_ids = " ".join(filter(None, [page_warning_ids, node_warning_ids]))
+            regions = "".join(_region_evidence(str(region), candidates_by_region, warnings)
+                              for region in node.get("source_regions", []) if isinstance(region, str))
+            cards.append(
+                f'<article class="semantic-node" data-warning-ids="{_escape(all_warning_ids)}">'
+                f"<h3>{_escape(str(node.get('type', '')).replace('_', ' ').title())}</h3>"
+                f"{_node_content(node)}<section aria-label=\"Source Regions\">{regions}</section></article>"
+            )
+        page_sections.append(
+            f'<section id="page-{page}" class="review-page"><h2>Source PDF page {page}</h2>'
+            f'<nav aria-label="Page navigation">{previous} {following}</nav>'
+            f'<figure class="source-page"><img src="regions/page-{page}.png" alt="Full Source PDF page {page}"><figcaption>Full Source PDF page {page}</figcaption></figure>'
+            f'<section aria-label="Warnings for page {page}"><h3>Conversion Warnings</h3><ul>{warning_list}</ul></section>'
+            f"{''.join(cards)}</section>"
+        )
     return f"""<!doctype html>
 <html lang="{language}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — Review Report</title></head>
+<title>{title} — Review Report</title><style>
+body{{font-family:system-ui,sans-serif;max-width:76rem;margin:auto;padding:1rem}} img{{max-width:100%;height:auto}} .semantic-node,.source-region{{border:1px solid;padding:1rem;margin:1rem 0}} :focus-visible{{outline:3px solid;outline-offset:3px}} [hidden]{{display:none}}</style></head>
 <body><main>
 <h1>{title} — Review Report</h1>
 <section aria-labelledby="document-identity"><h2 id="document-identity">Document</h2>
@@ -881,10 +963,11 @@ def render_review_report(record: dict[str, Any]) -> str:
 <dt>Language</dt><dd>{language}</dd>
 <dt>Source SHA-256</dt>\
 <dd><code>{html.escape(str(record.get("source_sha256", "")))}</code></dd></dl></section>
-<section aria-labelledby="semantic-layer"><h2 id="semantic-layer">Semantic Layer</h2>
-<ol>{_semantic_layer_items(record)}</ol></section>
+<button type="button" id="warnings-only" aria-pressed="false">Show warnings only</button>
+<section aria-labelledby="semantic-layer"><h2 id="semantic-layer">Semantic Layer by Source PDF page</h2>
+{''.join(page_sections)}</section>
 <section aria-labelledby="conversion-warnings">\
 <h2 id="conversion-warnings">Conversion Warnings</h2>
 {warnings_body}</section>
-</main></body></html>
+</main><script>document.getElementById('warnings-only').addEventListener('click',function(){{var on=this.getAttribute('aria-pressed')!=='true';this.setAttribute('aria-pressed',String(on));this.textContent=on?'Show all content':'Show warnings only';document.querySelectorAll('.semantic-node').forEach(function(node){{node.hidden=on&&!node.dataset.warningIds;}});}});</script></body></html>
 """

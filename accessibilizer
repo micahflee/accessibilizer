@@ -23,7 +23,7 @@ operational_failure() {
 }
 
 command=${1:-}
-if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = "review" ]; then
+if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = "review" ] || [ "$command" = "report" ]; then
     shift
     bundle_path=
     reviewer=
@@ -41,7 +41,7 @@ if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = 
     if [ ! -d "$bundle_path" ]; then
         operational_failure "bundle must be an existing Conversion Bundle directory"
     fi
-    if [ "$command" = "validate" ] && [ -n "$reviewer" ]; then
+    if { [ "$command" = "validate" ] || [ "$command" = "report" ]; } && [ -n "$reviewer" ]; then
         operational_failure "validate does not accept --reviewer"
     fi
 
@@ -114,7 +114,7 @@ if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = 
 fi
 
 if [ "$command" != "convert" ]; then
-    operational_failure "usage: accessibilizer {convert,review,validate,finalize} ... (see --help)"
+    operational_failure "usage: accessibilizer {convert,report,review,validate,finalize} ... (see --help)"
 fi
 shift
 
