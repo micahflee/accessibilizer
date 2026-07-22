@@ -96,7 +96,8 @@ The generated protected directory contains:
 - `output.pdf`: whole-document PDF/UA-1 output
 - `review-record.yaml`: the human-editable, whole-document Review Record — canonical Source Regions and displayed-page dimensions, the flat Semantic Layer with stable node identities and explicit evidence references, distinct Recognition Candidates, Conversion Warnings with node/region references and resolution history, and reconstruction provenance. It validates against `schemas/review-record-3.0.schema.json`; derived crops live at `regions/<source-region-id>.png` and are not stored as record paths.
 - `review-baseline.json`: the last tool-committed snapshot of the Review Record, used to detect changed resolutions and preserve history; not meant for editing
-- `review-report.html`: WCAG 2.2 AA presentation of the Review Record, pairing source-region context with the generated interpretations, warnings, and resolutions
+- `review-report.html`: WCAG 2.2 AA presentation of the Review Record — a JavaScript-required, split-screen Component navigator that steps through every Semantic Layer node in Logical Reading Order while keeping its full Source PDF page and coordinate-aligned Source Region boxes in view. Loads only its sibling relative assets `review-report.css`, `review-report.js`, and `regions/`; no network access at view time
+- `review-report.css`, `review-report.js`: the report's local, offline, dependency-free stylesheet and behavior, referenced only through relative paths
 - `page-semantics/page-N.json`: each page's reconstructed Semantic Layer and warnings the Review Record is built from
 - `recognition/page-N.json`: per-page non-authoritative recognition candidates and existing PDF text evidence
 - `regions/page-N.png`: stable rendered source context for review

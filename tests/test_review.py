@@ -6,8 +6,11 @@ from pathlib import Path
 import unittest
 from typing import Any
 
+import re
+
 from accessibilizer.review import (
     REVIEW_RECORD_SCHEMA_VERSION,
+    REVIEW_REPORT_VERSION,
     ReviewRecordError,
     build_review_record,
     commit_resolutions,
@@ -16,9 +19,22 @@ from accessibilizer.review import (
     load_yaml,
     render_review_report,
     review_record_schema,
+    review_report_css,
+    review_report_javascript,
     unresolved_warnings,
     validate_review_record,
 )
+
+
+def review_data(html: str) -> dict[str, Any]:
+    """Parse the embedded review-data JSON payload out of a rendered report."""
+    match = re.search(
+        r'<script type="application/json" id="review-data">(.*?)</script>',
+        html,
+        re.S,
+    )
+    assert match is not None, "report is missing its embedded review-data payload"
+    return json.loads(match.group(1))  # type: ignore[no-any-return]
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -536,19 +552,48 @@ class ReviewReportTest(unittest.TestCase):
 
     def test_report_declares_language_and_has_one_top_level_heading(self) -> None:
         html = self.report(built_record())
-        self.assertIn('<html lang="en-US">', html)
+        self.assertIn('<html lang="en-US"', html)
         self.assertEqual(html.count("<h1"), 1)
         self.assertIn("<main", html)
 
-    def test_report_lists_the_converted_pages(self) -> None:
+    def test_report_requires_javascript_and_loads_only_relative_local_assets(self) -> None:
+        html = self.report(built_record())
+        self.assertIn('<html lang="en-US" class="no-js">', html)
+        self.assertIn("<noscript>", html)
+        self.assertIn("requires JavaScript", html)
+        self.assertIn('<link rel="stylesheet" href="review-report.css">', html)
+        self.assertIn('<script src="review-report.js"></script>', html)
+        # No external, remote, or absolute references at view time.
+        self.assertNotIn("https://", html)
+        self.assertNotIn("http://", html)
+        # The interactive shell is hidden until the script reveals it.
+        self.assertIn('class="report-app" aria-labelledby="component-navigator-heading" hidden', html)
+
+    def test_css_and_js_are_offline_dependency_free_assets(self) -> None:
+        css = review_report_css()
+        js = review_report_javascript()
+        self.assertNotIn("http://", css)
+        self.assertNotIn("https://", css)
+        # The client script never opens a network connection or loads code. The
+        # only URL it names is the SVG namespace required by createElementNS.
+        self.assertNotIn("fetch(", js)
+        self.assertNotIn("XMLHttpRequest", js)
+        self.assertNotIn("import(", js)
+        self.assertNotIn("https://", js)
+        self.assertEqual(js.count("http://"), js.count("http://www.w3.org/2000/svg"))
+        self.assertIn("review-data", js)
+
+    def test_report_lists_the_converted_pages_in_a_metadata_disclosure(self) -> None:
         record = build([page_document(1), page_document(2)])
         html = self.report(record)
+        self.assertIn("<details class=\"doc-metadata\">", html)
         self.assertIn("1, 2", html)
 
     def test_warning_state_is_conveyed_with_text_not_color_alone(self) -> None:
         html = self.report(built_record())
         self.assertIn("Unresolved", html)
-        # No colour is used to carry meaning anywhere in the document.
+        # No colour word carries meaning in the generated HTML (styling lives in
+        # the separate stylesheet).
         self.assertNotIn("color", html.lower())
 
     def test_warnings_render_as_a_semantic_table_with_row_and_column_headers(self) -> None:
@@ -598,10 +643,17 @@ class ReviewReportTest(unittest.TestCase):
         record = built_record()
         record["semantic_layer"][1]["text"] = "<script>alert(1)</script>"
         html = self.report(record)
+        # Neither the visible Component panel nor the embedded data payload lets
+        # the source-derived string become executable markup.
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
+        self.assertIn("\\u003cscript\\u003e", html)
+        # The parsed payload still round-trips the real text for announcements.
+        data = review_data(html)
+        paragraph = next(c for c in data["components"] if c["id"] == "page-1-s0002")
+        self.assertEqual(paragraph["atContent"], "<script>alert(1)</script>")
 
-    def test_link_card_exposes_text_and_destination_without_an_active_remote_resource(self) -> None:
+    def test_link_component_exposes_text_and_destination_without_an_active_remote_resource(self) -> None:
         record = built_record()
         record["semantic_layer"].append(semantic_node(LINK, 6))
 
@@ -611,7 +663,7 @@ class ReviewReportTest(unittest.TestCase):
         self.assertIn("<dt>Destination</dt><dd><code>https://example.org/ohm</code></dd>", html)
         self.assertNotIn('href="https://example.org/ohm"', html)
 
-    def test_cards_show_heading_level_and_table_cell_spans(self) -> None:
+    def test_components_show_heading_level_and_table_cell_spans_in_all_details(self) -> None:
         record = built_record()
         table = next(
             node for node in record["semantic_layer"] if node["type"] == "table"
@@ -624,17 +676,39 @@ class ReviewReportTest(unittest.TestCase):
         self.assertIn("<dt>Heading level</dt><dd>1</dd>", html)
         self.assertIn('rowspan="2" colspan="3"', html)
 
-    def test_report_is_page_oriented_and_includes_local_page_and_region_images(self) -> None:
+    def test_every_semantic_node_becomes_a_component_in_reading_order(self) -> None:
         record = build([page_document(1), page_document(2)])
-        record["semantic_layer"][0]["source_regions"] = ["page-1-r0001", "page-1-r0002"]
         html = self.report(record)
-        self.assertIn('id="page-1"', html)
-        self.assertIn('id="page-2"', html)
-        self.assertIn('src="regions/page-1.png"', html)
-        self.assertIn('src="regions/page-1-r0001.png"', html)
-        self.assertIn('src="regions/page-1-r0002.png"', html)
-        self.assertIn('href="#page-2"', html)
-        self.assertNotIn("https://", html)
+        expected = [node["id"] for node in record["semantic_layer"]]
+        found = re.findall(r'<article id="([^"]+)" class="component"', html)
+        self.assertEqual(found, expected)
+        data = review_data(html)
+        self.assertEqual([c["id"] for c in data["components"]], expected)
+        self.assertEqual([c["index"] for c in data["components"]], list(range(len(expected))))
+
+    def test_embedded_data_carries_page_geometry_and_region_boxes(self) -> None:
+        record = built_record()
+        html = self.report(record)
+        data = review_data(html)
+        self.assertEqual(data["reportVersion"], REVIEW_REPORT_VERSION)
+        self.assertEqual(data["pageDimensions"]["1"], {"width": 612.0, "height": 792.0})
+        self.assertEqual(data["regions"]["page-1-r0001"]["bbox"], [10.0, 10.0, 590.0, 120.0])
+        self.assertEqual(data["regions"]["page-1-r0001"]["page"], 1)
+        formula = next(c for c in data["components"] if c["id"] == "page-1-s0003")
+        self.assertEqual(formula["page"], 1)
+        self.assertEqual(formula["typeLabel"], "Formula")
+        self.assertEqual(formula["regions"], ["page-1-r0003"])
+
+    def test_component_concise_view_shows_the_specified_fields(self) -> None:
+        html = self.report(built_record())
+        # Type, page, primary AT content, warning status, and region count are all
+        # present outside the disclosure.
+        self.assertIn('<h3 class="component-type">Formula</h3>', html)
+        self.assertIn("Assistive-technology content:", html)
+        self.assertIn("I equals Q divided by delta t.", html)
+        self.assertIn("attached Conversion Warning(s)", html)
+        self.assertIn("referenced Source Region(s)", html)
+        self.assertIn('<details class="all-details"><summary>All details</summary>', html)
 
     def test_report_associates_every_warning_scope_without_array_position_inference(self) -> None:
         record = built_record()
@@ -644,11 +718,17 @@ class ReviewReportTest(unittest.TestCase):
             "resolution": None, "history": [],
         })
         html = self.report(record)
+        data = review_data(html)
+        by_id = {c["id"]: c for c in data["components"]}
+        # The formula owns w0002 by node/region; the figure owns w0003 by region.
+        self.assertEqual(by_id["page-1-s0003"]["warningIds"], ["w0002"])
+        self.assertEqual(by_id["page-1-s0004"]["warningIds"], ["w0003"])
+        # An unreferenced page warning marks no Component.
+        self.assertEqual(by_id["page-1-s0001"]["warningIds"], [])
         self.assertIn('data-warning-ids="w0002"', html)
         self.assertIn('data-warning-ids="w0003"', html)
-        self.assertIn('href="#warning-w0001"', html)
 
-    def test_node_cards_show_explicitly_attached_and_region_warnings(self) -> None:
+    def test_components_show_explicitly_attached_and_region_warnings(self) -> None:
         record = built_record()
         record["warnings"].append({
             "id": "w0003", "code": "region-only", "message": "Inspect this figure region.",
@@ -659,32 +739,55 @@ class ReviewReportTest(unittest.TestCase):
         html = self.report(record)
 
         self.assertIn(
-            '<article id="page-1-s0003" class="semantic-node" data-warning-ids="w0002">',
+            '<article id="page-1-s0003" class="component" data-index="2" '
+            'data-page="1" data-regions="page-1-r0003" data-warning-ids="w0002"',
             html,
         )
         self.assertIn(
-            '<article id="page-1-s0004" class="semantic-node" data-warning-ids="w0003">',
+            '<article id="page-1-s0004" class="component" data-index="3" '
+            'data-page="1" data-regions="page-1-r0004" data-warning-ids="w0003"',
             html,
         )
         self.assertIn('href="#warning-w0002">w0002: recognition-disagreement</a>', html)
         self.assertIn('href="#warning-w0003">w0003: region-only</a>', html)
         self.assertIn('id="warning-w0003"', html)
 
-    def test_page_warnings_remain_reachable_without_marking_unrelated_cards(self) -> None:
-        html = self.report(built_record())
-
+    def test_document_wide_warnings_are_reachable_and_never_fake_components(self) -> None:
+        record = built_record()
+        # Promote the reference-free warning to a document-wide one.
+        record["warnings"][0]["page"] = None
+        html = self.report(record)
+        data = review_data(html)
+        # It appears in the always-reachable warnings summary, not as a Component.
         self.assertIn('href="#warning-w0001">w0001: ambiguous-reading-order</a>', html)
-        self.assertIn(
-            '<article id="page-1-s0001" class="semantic-node" data-warning-ids="">',
-            html,
+        self.assertNotIn("w0001", [wid for c in data["components"] for wid in c["warningIds"]])
+        self.assertEqual(len(data["components"]), len(record["semantic_layer"]))
+
+    def test_page_level_unreferenced_warnings_appear_in_the_scope_summary(self) -> None:
+        html = self.report(built_record())
+        # w0001 (page 1, no node or region references) is a page-scoped warning:
+        # it belongs in the always-reachable summary, labelled by page, and is
+        # never turned into a Component.
+        self.assertIn('Page 1: <a href="#warning-w0001"', html)
+        data = review_data(html)
+        self.assertNotIn(
+            "w0001", [wid for c in data["components"] for wid in c["warningIds"]]
         )
 
     def test_report_has_an_accessible_warnings_filter_and_disclosures(self) -> None:
         html = self.report(built_record())
         self.assertIn('id="warnings-only"', html)
         self.assertIn('aria-pressed="false"', html)
-        self.assertIn("<details>", html)
+        self.assertIn("<details", html)
         self.assertIn("Recognition Candidates", html)
+        self.assertIn('id="filter-empty"', html)
+
+    def test_splitter_is_an_accessible_separator_with_a_reset(self) -> None:
+        html = self.report(built_record())
+        self.assertIn('role="separator"', html)
+        self.assertIn('aria-orientation="vertical"', html)
+        self.assertIn('id="reset-panes"', html)
+        self.assertIn('role="toolbar"', html)
 
 
 class SchemaDriftTest(unittest.TestCase):
