@@ -193,6 +193,76 @@ class ConversionTest(unittest.TestCase):
                 },
             )
 
+    def test_public_report_cli_supports_bundle_and_standalone_modes_offline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "source.accessibilizer"
+            created = self.run_conversion(SOURCE, bundle)
+            self.assertEqual(created.returncode, 0, created.stderr + created.stdout)
+
+            (bundle / "reviewer-note.txt").write_text("keep me", encoding="utf-8")
+            bundled = self.run_bundle_command("report", bundle)
+            self.assertEqual(bundled.returncode, 0, bundled.stderr + bundled.stdout)
+            self.assertEqual((bundle / "reviewer-note.txt").read_text(), "keep me")
+            self.assertTrue((bundle / "review-report.html").is_file())
+
+            standalone = temporary / "nested" / "standalone-report"
+            command = [
+                str(ROOT / "accessibilizer"), "report",
+                "--source", str(bundle / "source.pdf"),
+                "--record", str(bundle / "review-record.yaml"),
+                "--output", str(standalone),
+                "--json",
+            ]
+            reported = subprocess.run(
+                command, cwd=ROOT, text=True, capture_output=True, check=False,
+                env=self.conversion_environment(),
+            )
+
+            self.assertEqual(reported.returncode, 0, reported.stderr + reported.stdout)
+            self.assertEqual(
+                json.loads(reported.stdout)["report"],
+                str(standalone / "review-report.html"),
+            )
+            self.assertTrue((standalone / "regions" / "page-1.png").is_file())
+
+    def test_public_report_cli_reports_container_runtime_failures_as_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "source.accessibilizer"
+            bundle.mkdir()
+            binaries = temporary / "bin"
+            binaries.mkdir()
+            docker = binaries / "docker"
+            docker.write_text("#!/bin/sh\nexit 125\n", encoding="utf-8")
+            docker.chmod(0o755)
+            environment = self.conversion_environment()
+            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "accessibilizer"),
+                    "report",
+                    "--bundle",
+                    str(bundle),
+                    "--json",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 125, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "error": "container runtime failed",
+                    "status": "operational_failure",
+                },
+            )
+
     def test_reconstruction_warnings_yield_review_required_status_and_exit_two(self) -> None:
         # A page the model reports as ambiguous produces a non-bypassable warning.
         with (
@@ -1061,7 +1131,7 @@ class LauncherHelpTest(unittest.TestCase):
         result = self.run_launcher("bogus")
 
         self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn("usage: accessibilizer {convert,review,validate,finalize}", result.stderr)
+        self.assertIn("usage: accessibilizer {convert,report,review,validate,finalize}", result.stderr)
 
 
 REAL_OCR_PROBE = """

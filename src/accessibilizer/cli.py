@@ -349,42 +349,83 @@ def _request_budget(
     return budget
 
 
-def _publish_bundle(staging: Path, bundle: Path, replace: bool) -> None:
-    if not bundle.exists():
-        os.replace(staging, bundle)
+def _exchange_directories(staging: Path, published: Path) -> bool:
+    """Atomically exchange two directories when the host exposes that operation."""
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+    except (AttributeError, OSError):
+        return False
+    exchange = 2
+    implementations = (
+        ("renameat2", -100),  # Linux AT_FDCWD
+        ("renameatx_np", -2),  # macOS AT_FDCWD
+    )
+    for function_name, at_current_working_directory in implementations:
+        try:
+            rename_exchange = getattr(libc, function_name)
+        except AttributeError:
+            continue
+        rename_exchange.argtypes = [
+            ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint,
+        ]
+        rename_exchange.restype = ctypes.c_int
+        if rename_exchange(
+            at_current_working_directory,
+            os.fsencode(staging),
+            at_current_working_directory,
+            os.fsencode(published),
+            exchange,
+        ) == 0:
+            return True
+    return False
+
+
+def _publish_protected_directory(staging: Path, published: Path, replace: bool) -> None:
+    transaction = published.parent / f".{published.name}.replacement"
+    marker = transaction / "accessibilizer-transaction"
+    previous = transaction / "previous"
+    marker_text = "accessibilizer protected directory replacement 1\n"
+    if transaction.exists():
+        expected_entries = {"accessibilizer-transaction", "previous"}
+        if (
+            not transaction.is_dir()
+            or not marker.is_file()
+            or marker.read_text(encoding="utf-8") != marker_text
+            or not {entry.name for entry in transaction.iterdir()} <= expected_entries
+            or (previous.exists() and not previous.is_dir())
+        ):
+            raise RuntimeError(f"ambiguous protected-publication state: {transaction}")
+        # Recover a fallback publication interrupted between its two renames. If
+        # the destination exists, publication completed and only cleanup remains.
+        if published.exists():
+            shutil.rmtree(transaction)
+        elif previous.is_dir():
+            os.replace(previous, published)
+            shutil.rmtree(transaction)
+        else:
+            raise RuntimeError(f"incomplete protected-publication state: {transaction}")
+    if not published.exists():
+        os.replace(staging, published)
         return
     if not replace:
-        raise FileExistsError(f"Conversion Bundle already exists: {bundle}")
-    if not bundle.is_dir():
-        raise FileExistsError(f"Conversion Bundle path is not a directory: {bundle}")
+        raise FileExistsError(f"published directory already exists: {published}")
+    if not published.is_dir():
+        raise FileExistsError(f"published path is not a directory: {published}")
 
-    rename_exchange = ctypes.CDLL(None, use_errno=True).renameat2
-    rename_exchange.argtypes = [
-        ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint,
-    ]
-    rename_exchange.restype = ctypes.c_int
-    at_current_working_directory = -100
-    exchange = 2
-    result = rename_exchange(
-        at_current_working_directory,
-        os.fsencode(staging),
-        at_current_working_directory,
-        os.fsencode(bundle),
-        exchange,
-    )
-    if result == 0:
+    if _exchange_directories(staging, published):
         shutil.rmtree(staging, ignore_errors=True)
         return
 
-    backup = Path(tempfile.mkdtemp(prefix=f".{bundle.name}.replaced.", dir=bundle.parent))
-    backup.rmdir()
-    os.replace(bundle, backup)
+    transaction.mkdir(mode=0o700)
+    atomic_write_text(marker, marker_text)
+    os.replace(published, previous)
     try:
-        os.replace(staging, bundle)
-    except Exception:
-        os.replace(backup, bundle)
+        os.replace(staging, published)
+    except BaseException:
+        os.replace(previous, published)
+        shutil.rmtree(transaction)
         raise
-    shutil.rmtree(backup, ignore_errors=True)
+    shutil.rmtree(transaction)
 
 
 def _iso_now() -> str:
@@ -567,10 +608,23 @@ def _review_page_document(
         node["id"] = f"page-{page_number}-s{index:04d}"
     for warning in document["warnings"]:
         region = warning.pop("region", None)
+        semantic_types = {
+            semantic_type
+            for semantic_type in warning.pop("semantic_types", [])
+            if isinstance(semantic_type, str)
+        }
+        warning_regions = [
+            reference
+            for reference in warning.get("source_regions", [])
+            if isinstance(reference, str)
+        ]
+        if isinstance(region, str) and region not in warning_regions:
+            warning_regions.append(region)
         semantic_nodes = [
             node["id"]
             for node in document["semantic_layer"]
-            if region and region in node["source_regions"]
+            if node["type"] in semantic_types
+            or any(reference in node["source_regions"] for reference in warning_regions)
         ]
         if isinstance(region, str) and not semantic_nodes:
             candidate_type = candidate_type_by_region.get(region)
@@ -583,7 +637,7 @@ def _review_page_document(
                 if node["type"] == node_type
             ]
         warning["semantic_nodes"] = semantic_nodes
-        warning["source_regions"] = [region] if region else []
+        warning["source_regions"] = warning_regions
     fallback = _whole_page_region_id(page_number)
     for node in document["semantic_layer"]:
         if fallback in node["source_regions"]:
@@ -1203,7 +1257,7 @@ def _convert(args: argparse.Namespace) -> int:
         "provider_model": provider.model,
         "provider_usage": budget.as_dict(),
     })
-    _publish_bundle(workspace, bundle, args.replace)
+    _publish_protected_directory(workspace, bundle, args.replace)
 
     host_bundle = _host_bundle(bundle)
     review_required = bool(review.unresolved_warnings(record))
@@ -1250,11 +1304,15 @@ def _render_report_regions(source: Path, record: dict[str, Any], regions: Path) 
                 _atomic_copy(prefix.with_suffix(".png"), regions / f"{identifier}.png")
                 continue
             x0, y0, x1, y1 = (float(value) for value in region["bbox_points"])
-            width = max(1, round((x1 - x0) * scale))
-            height = max(1, round((y1 - y0) * scale))
+            left = round(x0 * scale)
+            top = round(y0 * scale)
+            right = round(x1 * scale)
+            bottom = round(y1 * scale)
+            width = max(1, right - left)
+            height = max(1, bottom - top)
             crop = _run([
                 "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
-                "-r", str(dpi), "-x", str(round(x0 * scale)), "-y", str(round(y0 * scale)),
+                "-r", str(dpi), "-x", str(left), "-y", str(top),
                 "-W", str(width), "-H", str(height), "-png", str(source),
                 str(regions / identifier),
             ])
@@ -1280,10 +1338,10 @@ def _report(args: argparse.Namespace) -> int:
             raise RuntimeError("bundle is missing its immutable Source PDF copy")
         staging = Path(tempfile.mkdtemp(prefix=f".{args.bundle.name}.report-", dir=args.bundle.parent))
         try:
-            _generate_report(source, record, staging)
-            os.replace(staging / "review-report.html", args.bundle / "review-report.html")
-            shutil.rmtree(args.bundle / "regions", ignore_errors=True)
-            os.replace(staging / "regions", args.bundle / "regions")
+            shutil.copytree(args.bundle, staging, dirs_exist_ok=True, copy_function=shutil.copy2)
+            shutil.rmtree(staging / "regions", ignore_errors=True)
+            _generate_report(staging / "source.pdf", record, staging)
+            _publish_protected_directory(staging, args.bundle, True)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         result = {"bundle": str(_host_bundle(args.bundle)), "report": str(_host_bundle(args.bundle) / "review-report.html"), "status": "reported"}
@@ -1295,12 +1353,11 @@ def _report(args: argparse.Namespace) -> int:
         if args.output.exists() and not args.replace:
             raise FileExistsError(f"report output already exists: {args.output}")
         record = review.load_yaml(args.record.read_text(encoding="utf-8"))
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=f".{args.output.name}.report-", dir=args.output.parent))
         try:
             _generate_report(args.source, record, staging)
-            if args.output.exists():
-                shutil.rmtree(args.output)
-            os.replace(staging, args.output)
+            _publish_protected_directory(staging, args.output, args.replace)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         result = {"report": str(_host_bundle(args.output) / "review-report.html"), "status": "reported"}
@@ -1476,7 +1533,7 @@ def _finalize(args: argparse.Namespace) -> int:
             workspace / "provenance.json",
             _finalize_provenance(bundle, committed, reviewer, finalized=True),
         )
-        _publish_bundle(workspace, bundle, True)
+        _publish_protected_directory(workspace, bundle, True)
     except Exception:
         shutil.rmtree(workspace, ignore_errors=True)
         raise

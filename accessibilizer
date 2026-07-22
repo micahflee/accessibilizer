@@ -23,7 +23,93 @@ operational_failure() {
 }
 
 command=${1:-}
-if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = "review" ] || [ "$command" = "report" ]; then
+if [ "$command" = "report" ]; then
+    shift
+    bundle_path=
+    source_path=
+    record_path=
+    output_path=
+    replace_flag=
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --bundle) [ "$#" -ge 2 ] || operational_failure "--bundle requires a value"; bundle_path=$2; shift 2 ;;
+            --source) [ "$#" -ge 2 ] || operational_failure "--source requires a value"; source_path=$2; shift 2 ;;
+            --record) [ "$#" -ge 2 ] || operational_failure "--record requires a value"; record_path=$2; shift 2 ;;
+            --output) [ "$#" -ge 2 ] || operational_failure "--output requires a value"; output_path=$2; shift 2 ;;
+            --replace) replace_flag=--replace; shift ;;
+            --json) json_flag=--json; shift ;;
+            *) operational_failure "unknown argument" ;;
+        esac
+    done
+
+    image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+    if [ -n "$bundle_path" ]; then
+        if [ -n "$source_path$output_path$record_path" ]; then
+            operational_failure "--bundle cannot be combined with --source, --record, or --output"
+        fi
+        if [ ! -d "$bundle_path" ]; then
+            operational_failure "bundle must be an existing Conversion Bundle directory"
+        fi
+        case "$bundle_path" in
+            /*) host_output_path=$bundle_path ;;
+            *) host_output_path="$(pwd)/$bundle_path" ;;
+        esac
+        bundle_parent=$(cd "$(dirname "$bundle_path")" && pwd -P) || \
+            operational_failure "could not resolve the bundle directory"
+        bundle_name=$(basename "$bundle_path")
+        set -- --rm --network none \
+            --user "$(id -u):$(id -g)" \
+            --volume "$bundle_parent:/work/output" \
+            --env "ACCESSIBILIZER_HOST_BUNDLE=$host_output_path" \
+            "$image" python3 -m accessibilizer report \
+            --bundle "/work/output/$bundle_name"
+    else
+        if [ -z "$source_path" ] || [ -z "$record_path" ] || [ -z "$output_path" ]; then
+            operational_failure "standalone report requires --source, --record, and --output"
+        fi
+        if [ ! -f "$source_path" ] || [ ! -f "$record_path" ]; then
+            operational_failure "--source and --record must be files"
+        fi
+        source_directory=$(cd "$(dirname "$source_path")" && pwd -P) || \
+            operational_failure "could not resolve the Source PDF directory"
+        record_directory=$(cd "$(dirname "$record_path")" && pwd -P) || \
+            operational_failure "could not resolve the Review Record directory"
+        source_path="$source_directory/$(basename "$source_path")"
+        record_path="$record_directory/$(basename "$record_path")"
+        output_parent=$(dirname "$output_path")
+        output_name=$(basename "$output_path")
+        case "$output_path" in
+            /*) host_output_path=$output_path ;;
+            *) host_output_path="$(pwd)/$output_path" ;;
+        esac
+        mkdir -p "$output_parent" || operational_failure "could not create the report parent directory"
+        output_parent=$(cd "$output_parent" && pwd -P) || \
+            operational_failure "could not resolve the report parent directory"
+        set -- --rm --network none \
+            --user "$(id -u):$(id -g)" \
+            --volume "$source_path:/work/source.pdf:ro" \
+            --volume "$record_path:/work/review-record.yaml:ro" \
+            --volume "$output_parent:/work/output" \
+            --env "ACCESSIBILIZER_HOST_BUNDLE=$host_output_path" \
+            "$image" python3 -m accessibilizer report \
+            --source /work/source.pdf \
+            --record /work/review-record.yaml \
+            --output "/work/output/$output_name"
+        if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
+    fi
+    if [ -n "$json_flag" ]; then set -- "$@" --json; fi
+    if docker run "$@"; then
+        result=0
+    else
+        result=$?
+    fi
+    if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] && [ -n "$json_flag" ]; then
+        printf '{"error":"container runtime failed","status":"operational_failure"}\n'
+    fi
+    exit "$result"
+fi
+
+if [ "$command" = "finalize" ] || [ "$command" = "validate" ] || [ "$command" = "review" ]; then
     shift
     bundle_path=
     reviewer=

@@ -37,7 +37,7 @@ PAGE_PROMPT_VERSION = "1.4"
 PAGE_SCHEMA_VERSION = "1.1"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
-PAGE_SEMANTICS_CONTRACT_VERSION = "1.0"
+PAGE_SEMANTICS_CONTRACT_VERSION = "1.1"
 
 # This version authors exactly one representative node of each type in this order;
 # richer document trees are a later slice (issue #1, Milestone 6).
@@ -684,6 +684,8 @@ def _reconcile_formula(
                 "The Spoken Math Alternative does not read as concise mathematical "
                 "English; it may be a raw transcription or markup rather than spoken "
                 "math.",
+                semantic_types=["formula"],
+                source_regions=list(formula["source_regions"]),
             )
         )
 
@@ -706,6 +708,7 @@ def _reconcile_formula(
                     f"recognition of region {candidate.get('id')}; the transcription "
                     "may be wrong.",
                     region=candidate.get("id"),
+                    semantic_types=["formula"],
                 )
             )
     return warnings
@@ -754,6 +757,8 @@ def _reconcile_figure(
                 "figure-detail-insufficient",
                 "The Detailed Figure Description does not add substantive detail "
                 "beyond the concise Figure Alternative for this complex figure.",
+                semantic_types=["figure"],
+                source_regions=list(figure["source_regions"]),
             )
         )
 
@@ -772,6 +777,8 @@ def _reconcile_figure(
                 "figure-weak-grounding",
                 "This complex figure has no independent crop-level interpretation to "
                 "reconcile its Detailed Figure Description against.",
+                semantic_types=["figure"],
+                source_regions=list(figure["source_regions"]),
             )
         )
     return warnings
@@ -825,6 +832,8 @@ def _reconcile_table(page_response: dict[str, Any]) -> list[dict[str, Any]]:
                 "table-uncertain-boundaries",
                 "The Semantic Table's extent or grid is uncertain; its row and column "
                 "boundaries may be wrong.",
+                semantic_types=["table"],
+                source_regions=list(table["source_regions"]),
             )
         )
     if any(cell["row_span"] > 1 or cell["col_span"] > 1 for cell in cells):
@@ -833,6 +842,8 @@ def _reconcile_table(page_response: dict[str, Any]) -> list[dict[str, Any]]:
                 "table-merged-cells",
                 "The Semantic Table contains merged cells; verify that each spanned "
                 "cell's header associations were preserved.",
+                semantic_types=["table"],
+                source_regions=list(table["source_regions"]),
             )
         )
     if table["headers_are_uncertain"] or not any(
@@ -843,6 +854,8 @@ def _reconcile_table(page_response: dict[str, Any]) -> list[dict[str, Any]]:
                 "table-ambiguous-headers",
                 "The Semantic Table's headers are ambiguous; which cells are headers "
                 "or what they label could not be established with confidence.",
+                semantic_types=["table"],
+                source_regions=list(table["source_regions"]),
             )
         )
     return warnings
