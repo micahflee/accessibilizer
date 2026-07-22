@@ -318,10 +318,23 @@ def request_chat_completion(
 def parse_schema_content(response: dict[str, Any], failure_message: str) -> Any:
     """Return the JSON object the provider produced under a strict schema."""
     try:
-        content = response["choices"][0]["message"]["content"]
-        return json.loads(content)
-    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+        choice = response["choices"][0]
+        content = choice["message"]["content"]
+    except (KeyError, IndexError, TypeError) as error:
         raise RuntimeError(failure_message) from error
+    # A response capped at max_completion_tokens comes back with finish_reason
+    # "length" and truncated (or empty) content, which then fails to parse as the
+    # required JSON. Reasoning models spend part of that budget on hidden reasoning
+    # tokens, so the ceiling can be reached before any content is emitted. Surface
+    # the truncation plainly instead of letting it masquerade as a schema error.
+    if choice.get("finish_reason") == "length" or not content:
+        raise RuntimeError(
+            f"{failure_message}; provider response was truncated at the token limit"
+        )
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"{failure_message}; provider returned invalid JSON") from error
 
 
 def check_capabilities(

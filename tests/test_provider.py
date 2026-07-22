@@ -11,6 +11,7 @@ from accessibilizer.provider import (
     RequestBudget,
     RequestCeilingExceeded,
     check_capabilities,
+    parse_schema_content,
 )
 
 
@@ -117,6 +118,46 @@ class ProviderRuntimeTest(unittest.TestCase):
 
             self.assertEqual(provider.requests, 1)
             self.assertEqual(budget.actual_requests, 1)
+
+
+class SchemaContentTest(unittest.TestCase):
+    FAILURE = "region verification returned an invalid schema response"
+
+    def test_valid_content_is_parsed(self) -> None:
+        response = {"choices": [{"message": {"content": json.dumps({"ok": True})}}]}
+        self.assertEqual(parse_schema_content(response, self.FAILURE), {"ok": True})
+
+    def test_a_length_capped_response_reports_truncation(self) -> None:
+        # A reasoning model can exhaust max_completion_tokens on hidden reasoning
+        # and return truncated JSON with finish_reason "length".
+        response = {
+            "choices": [
+                {"finish_reason": "length", "message": {"content": '{"transcription": "the tab'}}
+            ]
+        }
+        with self.assertRaises(RuntimeError) as caught:
+            parse_schema_content(response, self.FAILURE)
+        self.assertEqual(
+            str(caught.exception),
+            f"{self.FAILURE}; provider response was truncated at the token limit",
+        )
+
+    def test_empty_content_reports_truncation(self) -> None:
+        response = {"choices": [{"finish_reason": "length", "message": {"content": None}}]}
+        with self.assertRaises(RuntimeError) as caught:
+            parse_schema_content(response, self.FAILURE)
+        self.assertIn("truncated at the token limit", str(caught.exception))
+
+    def test_malformed_json_without_truncation_reports_invalid_json(self) -> None:
+        response = {"choices": [{"finish_reason": "stop", "message": {"content": "not json"}}]}
+        with self.assertRaises(RuntimeError) as caught:
+            parse_schema_content(response, self.FAILURE)
+        self.assertEqual(str(caught.exception), f"{self.FAILURE}; provider returned invalid JSON")
+
+    def test_a_missing_choice_reports_the_bare_failure(self) -> None:
+        with self.assertRaises(RuntimeError) as caught:
+            parse_schema_content({"choices": []}, self.FAILURE)
+        self.assertEqual(str(caught.exception), self.FAILURE)
 
 
 if __name__ == "__main__":

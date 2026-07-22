@@ -339,6 +339,45 @@ class ConversionTest(unittest.TestCase):
                 "Conversion Warnings", (bundle / "review-report.html").read_text()
             )
 
+    def test_eleven_page_path_advances_past_tableless_page_one(self) -> None:
+        nodes: list[dict[str, Any]] = [
+            {"type": "heading", "level": 1, "text": "Chapter 20"},
+            {"type": "heading", "level": 2, "text": "Electric Current"},
+            {"type": "paragraph", "text": "Electric current is the rate at which charge flows."},
+            {
+                "type": "formula",
+                "normalized_math": "I = Q / delta t",
+                "spoken_math_alternative": "I equals Q divided by delta t.",
+            },
+            {"type": "paragraph", "text": "The SI unit of current is the ampere."},
+            {
+                "type": "figure",
+                "complexity": "simple",
+                "figure_alternative": "Positive charge moving through a wire.",
+                "detailed_figure_description": None,
+            },
+        ]
+        with (
+            FakeProvider(page_overrides={"nodes": nodes}) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "page-one.accessibilizer"
+            result = self.run_conversion(
+                SOURCE, bundle, page=None, base_url=provider.base_url
+            )
+
+            self.assertIn(result.returncode, (0, 2), result.stderr + result.stdout)
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            page_nodes = [node for node in record["semantic_layer"] if node["page"] == 1]
+            self.assertEqual([node["type"] for node in page_nodes], [node["type"] for node in nodes])
+            self.assertNotIn("table", {node["type"] for node in page_nodes})
+            page_requests = [
+                request for request in provider.requests
+                if request["response_format"]["json_schema"]["name"]
+                == "accessibilizer_page_semantics"
+            ]
+            self.assertEqual(len(page_requests), 11)
+
     def test_formula_notation_survives_the_pdf_ua_authoring_path(self) -> None:
         # Fractions, superscripts, subscripts, symbols, and units must reach the
         # tagged PDF/UA structure verbatim. The internal check reads the authored
@@ -937,7 +976,7 @@ class ConversionTest(unittest.TestCase):
                 all(candidate["id"].startswith("page-1-c") for candidate in review_record["candidates"])
             )
             self.assertTrue(all(c["source_region"] for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.4")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.5")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -974,13 +1013,13 @@ class ConversionTest(unittest.TestCase):
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
             self.assertEqual(provenance["source_pages"], [1])
-            self.assertEqual(provenance["page_prompt_version"], "1.4")
-            self.assertEqual(provenance["page_schema_version"], "1.2")
+            self.assertEqual(provenance["page_prompt_version"], "1.5")
+            self.assertEqual(provenance["page_schema_version"], "1.3")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["request_ceiling"], 100)
-            self.assertIn('<html lang="en-US">', (bundle / "review-report.html").read_text())
+            self.assertIn('<html lang="en-US"', (bundle / "review-report.html").read_text())
 
             internal = json.loads((bundle / "validation/internal.json").read_text())
             self.assertEqual(internal["checks"], [])

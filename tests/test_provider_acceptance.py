@@ -69,6 +69,15 @@ BASE_PAGE_CONTENT: dict[str, Any] = {
     "suspected_prompt_injection": False,
 }
 
+# The provider response carries the page's Logical Reading Order directly in one
+# heterogeneous nodes array. Keep the readable fixtures above, then normalize them
+# once for every fake-provider response.
+BASE_PAGE_CONTENT["nodes"] = [
+    {"type": node_type, **BASE_PAGE_CONTENT.pop(node_type)}
+    for node_type in ("heading", "paragraph", "formula", "figure", "table")
+]
+BASE_PAGE_CONTENT.pop("reading_order")
+
 
 def _find_image_url(request: dict[str, Any]) -> str:
     for message in request.get("messages", []):
@@ -162,11 +171,27 @@ class FakeProvider:
                     region_ids = evidence_document.get("source_regions") or [
                         evidence_document["recognition_candidates"][0]["id"]
                     ]
-                    for node_name in ("heading", "paragraph", "formula", "figure", "table"):
-                        body[node_name]["source_regions"] = [region_ids[1] if len(region_ids) > 1 else region_ids[0]]
-                    body.update(provider.page_overrides)
-                    for node_name in ("heading", "paragraph", "formula", "figure", "table"):
-                        body[node_name].setdefault("source_regions", [region_ids[1] if len(region_ids) > 1 else region_ids[0]])
+                    node_overrides = {
+                        node_type: provider.page_overrides[node_type]
+                        for node_type in ("heading", "paragraph", "formula", "figure", "table")
+                        if node_type in provider.page_overrides
+                    }
+                    body.update({
+                        key: value for key, value in provider.page_overrides.items()
+                        if key not in node_overrides
+                    })
+                    for node in body["nodes"]:
+                        if node["type"] in node_overrides:
+                            node.update(node_overrides[node["type"]])
+                        matching_region = next(
+                            (
+                                candidate["id"]
+                                for candidate in evidence_document["recognition_candidates"]
+                                if candidate.get("type") == node["type"]
+                            ),
+                            region_ids[1] if len(region_ids) > 1 else region_ids[0],
+                        )
+                        node["source_regions"] = [matching_region]
                 elif name == "accessibilizer_region_check":
                     body = {
                         "transcription": "I = Q / delta t",

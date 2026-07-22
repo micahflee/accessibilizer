@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+# Suppress the Docker CLI's "What's next:" hints (e.g. the Docker Desktop
+# "Debug this container error with Gordon" nudge), which the CLI prints after
+# `docker run` regardless of outcome and which is not accessibilizer's output.
+export DOCKER_CLI_HINTS=false
+
 for argument in "$@"; do
     if [ "$argument" = "-h" ] || [ "$argument" = "--help" ]; then
         image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}

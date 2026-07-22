@@ -11,7 +11,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from accessibilizer.page import (
-    CANONICAL_READING_ORDER,
+    SUPPORTED_NODE_TYPES,
     build_page_request,
     build_page_semantics_document,
     build_region_request,
@@ -35,33 +35,55 @@ PNG_BYTES = base64.b64decode(
 
 
 def valid_page_response(**overrides: Any) -> dict[str, Any]:
-    response: dict[str, Any] = {
-        "title": "Electric Current, Resistance, and Ohm's Law",
-        "language": "en-US",
-        "primary_language_is_english": True,
-        "document_class": "stem_instructional",
-        "reading_order": list(CANONICAL_READING_ORDER),
-        "reading_order_is_unambiguous": True,
-        "heading": {"level": 1, "text": "Electric Current, Resistance, and Ohm's Law", "source_regions": ["page-1-r0001"]},
-        "paragraph": {"text": "Electric current is the rate at which charge flows.", "source_regions": ["page-1-r0002"]},
-        "formula": {
+    nodes: list[dict[str, Any]] = [
+        {"type": "heading", "level": 1, "text": "Electric Current, Resistance, and Ohm's Law", "source_regions": ["page-1-r0001"]},
+        {"type": "paragraph", "text": "Electric current is the rate at which charge flows.", "source_regions": ["page-1-r0002"]},
+        {
+            "type": "formula",
             "normalized_math": "I = Q / delta t",
             "spoken_math_alternative": "I equals Q divided by delta t.",
             "source_regions": ["page-1-r0003"],
         },
-        "figure": {
+        {
+            "type": "figure",
             "complexity": "simple",
             "figure_alternative": "A wire carrying electric current.",
             "detailed_figure_description": None,
             "source_regions": ["page-1-r0004"],
         },
-        "table": valid_table(source_regions=["page-1-r0005"]),
+        {"type": "table", **valid_table(source_regions=["page-1-r0005"])},
+    ]
+    response: dict[str, Any] = {
+        "title": "Electric Current, Resistance, and Ohm's Law",
+        "language": "en-US",
+        "primary_language_is_english": True,
+        "document_class": "stem_instructional",
+        "reading_order_is_unambiguous": True,
+        "nodes": nodes,
         "suspected_source_errors": [],
         "suspected_prompt_injection": False,
     }
+    node_overrides = {
+        name: overrides.pop(name)
+        for name in tuple(overrides)
+        if name in SUPPORTED_NODE_TYPES
+    }
+    requested_order = overrides.pop("reading_order", None)
     response.update(overrides)
-    for node_name, region in (("heading", "page-1-r0001"), ("paragraph", "page-1-r0002"), ("formula", "page-1-r0003"), ("figure", "page-1-r0004"), ("table", "page-1-r0005")):
-        response[node_name].setdefault("source_regions", [region])
+    for node in nodes:
+        node_type = node["type"]
+        replacement = node_overrides.get(node_type)
+        if replacement is not None:
+            source_regions = node["source_regions"]
+            node.clear()
+            node.update(replacement)
+            node["type"] = node_type
+            node.setdefault("source_regions", source_regions)
+    if requested_order is not None:
+        response["nodes"] = [
+            next(node for node in nodes if node["type"] == node_type)
+            for node_type in requested_order
+        ]
     return response
 
 
@@ -155,7 +177,7 @@ def complex_figure(**overrides: Any) -> dict[str, Any]:
 # A verified crop-level interpretation of a figure region, as produced by the
 # region-verification path, so a complex figure has independent grounding.
 FIGURE_REGION = (
-    {"id": "page-1-r0006", "type": "figure"},
+    {"id": "page-1-r0004", "type": "figure"},
     {"transcription": "", "agrees_with_page": True, "suspected_prompt_injection": False},
 )
 
@@ -175,30 +197,60 @@ class SchemaShapeTest(unittest.TestCase):
         self.assertEqual(set(schema["required"]), set(schema["properties"]))
 
     def test_figure_schema_classifies_complexity_and_allows_a_null_description(self) -> None:
-        figure = page_response_schema()["properties"]["figure"]
-        self.assertEqual(figure["properties"]["complexity"]["enum"], ["simple", "complex"])
-        # detailed_figure_description is nullable (null for a simple figure) yet
-        # still required, so strict structured output names every property.
-        self.assertIn("null", figure["properties"]["detailed_figure_description"]["type"])
-        self.assertEqual(set(figure["required"]), set(figure["properties"]))
+        figure = page_response_schema()["properties"]["nodes"]["items"]["anyOf"][3]
+        simple, complex_figure_schema = figure["anyOf"]
+        self.assertEqual(simple["properties"]["complexity"]["enum"], ["simple"])
+        self.assertEqual(complex_figure_schema["properties"]["complexity"]["enum"], ["complex"])
+        self.assertEqual(simple["properties"]["detailed_figure_description"]["type"], "null")
+        self.assertEqual(
+            complex_figure_schema["properties"]["detailed_figure_description"]["type"],
+            "string",
+        )
+        for variant in figure["anyOf"]:
+            self.assertEqual(set(variant["required"]), set(variant["properties"]))
 
     def test_table_schema_is_strict_and_carries_cells_with_scope_and_spans(self) -> None:
-        table = page_response_schema()["properties"]["table"]
+        table = page_response_schema()["properties"]["nodes"]["items"]["anyOf"][4]
         self.assertFalse(table["additionalProperties"])
         self.assertEqual(set(table["required"]), set(table["properties"]))
         # A caption may be absent (null) yet is still a named, required property.
         self.assertIn("null", table["properties"]["caption"]["type"])
         cell = table["properties"]["rows"]["items"]["properties"]["cells"]["items"]
-        self.assertFalse(cell["additionalProperties"])
-        self.assertEqual(set(cell["required"]), set(cell["properties"]))
-        self.assertEqual(cell["properties"]["kind"]["enum"], ["header", "data"])
-        self.assertEqual(cell["properties"]["scope"]["enum"], ["col", "row", "both", "none"])
+        header, data = cell["anyOf"]
+        for variant in cell["anyOf"]:
+            self.assertFalse(variant["additionalProperties"])
+            self.assertEqual(set(variant["required"]), set(variant["properties"]))
+        self.assertEqual(header["properties"]["kind"]["enum"], ["header"])
+        self.assertEqual(header["properties"]["scope"]["enum"], ["col", "row", "both"])
+        self.assertEqual(data["properties"]["kind"]["enum"], ["data"])
+        self.assertEqual(data["properties"]["scope"]["enum"], ["none"])
+
+    def test_table_schema_rejects_empty_rows_and_cells(self) -> None:
+        schema_document = page_response_schema()
+        table = schema_document["properties"]["nodes"]["items"]["anyOf"][4]
+        rows = table["properties"]["rows"]
+        cells = rows["items"]["properties"]["cells"]
+        self.assertEqual(rows["minItems"], 1)
+        self.assertEqual(cells["minItems"], 1)
+        schema = Draft202012Validator(schema_document)
+        empty_rows = valid_page_response(table=valid_table(rows=[]))
+        empty_cells = valid_page_response(
+            table=valid_table(rows=[{"cells": []}])
+        )
+
+        self.assertTrue(list(schema.iter_errors(empty_rows)))
+        self.assertTrue(list(schema.iter_errors(empty_cells)))
+        with self.assertRaisesRegex(ValueError, "provider schema"):
+            validate_page_response(empty_rows)
+        with self.assertRaisesRegex(ValueError, "provider schema"):
+            validate_page_response(empty_cells)
 
     def test_node_regions_are_limited_to_the_deterministic_evidence_set(self) -> None:
         schema = page_response_schema(["page-1-r0000", "page-1-r0001"])
-        regions = schema["properties"]["heading"]["properties"]["source_regions"]
+        heading = schema["properties"]["nodes"]["items"]["anyOf"][0]
+        regions = heading["properties"]["source_regions"]
         self.assertEqual(regions["items"]["enum"], ["page-1-r0000", "page-1-r0001"])
-        self.assertNotIn("bbox_points", schema["properties"]["heading"]["properties"])
+        self.assertNotIn("bbox_points", heading["properties"])
 
     def test_page_schema_uses_openai_supported_structured_output_keywords(self) -> None:
         schema = page_response_schema(["page-1-r0000", "page-1-r0001"])
@@ -260,6 +312,33 @@ class RequestConstructionTest(unittest.TestCase):
         self.assertNotIn("tools", request)
         self.assertIn("I = Q / delta t", request["messages"][1]["content"][0]["text"])
 
+    def test_region_request_budgets_tokens_for_a_dense_crop_transcription(self) -> None:
+        # A crop of a page-filling table can need a transcription approaching the
+        # page itself, and a reasoning model spends part of the budget on hidden
+        # reasoning; the region ceiling must not undercut a dense crop (it once
+        # capped at 1024 and truncated), yet a region is a subset of a page and
+        # never needs more output than the whole page.
+        with tempfile.TemporaryDirectory() as directory:
+            image = self.image(directory)
+            region = build_region_request(
+                model="exact-model",
+                region_image=image,
+                candidate={"id": "page-1-r0003", "type": "formula"},
+                page_response=valid_page_response(),
+            )
+            page = build_page_request(
+                model="exact-model",
+                page_image=image,
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=["page-1-r0001"],
+            )
+
+        self.assertGreaterEqual(region["max_completion_tokens"], 4096)
+        self.assertLessEqual(
+            region["max_completion_tokens"], page["max_completion_tokens"]
+        )
+
 
 class ResponseValidationTest(unittest.TestCase):
     def test_a_valid_page_response_passes(self) -> None:
@@ -267,14 +346,14 @@ class ResponseValidationTest(unittest.TestCase):
 
     def test_an_unknown_source_region_is_rejected(self) -> None:
         response = valid_page_response()
-        response["heading"]["source_regions"] = ["page-1-r9999"]
-        with self.assertRaisesRegex(ValueError, "unknown Source Region"):
+        response["nodes"][0]["source_regions"] = ["page-1-r9999"]
+        with self.assertRaisesRegex(ValueError, "provider schema"):
             validate_page_response(response, source_region_ids=["page-1-r0000", "page-1-r0001"])
 
     def test_duplicate_source_regions_are_rejected_at_runtime(self) -> None:
         response = valid_page_response()
-        response["heading"]["source_regions"] = ["page-1-r0001", "page-1-r0001"]
-        with self.assertRaisesRegex(ValueError, "non-empty unique array"):
+        response["nodes"][0]["source_regions"] = ["page-1-r0001", "page-1-r0001"]
+        with self.assertRaisesRegex(ValueError, "unique array"):
             validate_page_response(response)
 
     def test_a_non_english_flag_is_still_schema_valid(self) -> None:
@@ -282,7 +361,9 @@ class ResponseValidationTest(unittest.TestCase):
 
     def test_missing_heading_text_is_rejected(self) -> None:
         response = valid_page_response()
-        response["heading"] = {"level": 1, "text": ""}
+        response["nodes"][0] = {
+            "type": "heading", "level": 1, "text": "", "source_regions": ["page-1-r0001"]
+        }
         with self.assertRaises(ValueError):
             validate_page_response(response)
 
@@ -305,10 +386,14 @@ class ResponseValidationTest(unittest.TestCase):
             )
 
     def test_a_complex_figure_without_a_detailed_description_is_rejected(self) -> None:
+        response = valid_page_response(
+            figure=complex_figure(detailed_figure_description=None)
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
         with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(figure=complex_figure(detailed_figure_description=None))
-            )
+            validate_page_response(response)
 
     def test_a_simple_figure_needs_no_detailed_description(self) -> None:
         validate_page_response(
@@ -331,8 +416,12 @@ class ResponseValidationTest(unittest.TestCase):
     def test_an_empty_caption_is_rejected(self) -> None:
         # An empty caption would pass here yet fail the Review Record's non-empty
         # caption rule at finalization; a table with no caption must use null.
+        response = valid_page_response(table=valid_table(caption="   "))
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
         with self.assertRaises(ValueError):
-            validate_page_response(valid_page_response(table=valid_table(caption="   ")))
+            validate_page_response(response)
 
     def test_a_merged_cell_table_is_schema_valid(self) -> None:
         validate_page_response(valid_page_response(table=merged_table()))
@@ -343,24 +432,28 @@ class ResponseValidationTest(unittest.TestCase):
 
     def test_a_data_cell_carrying_a_scope_is_rejected(self) -> None:
         # Only header cells associate through a scope; a data cell must be "none".
-        with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(
-                    table=valid_table(
-                        rows=[{"cells": [_cell("data", "1.68e-8", scope="col")]}]
-                    )
-                )
+        response = valid_page_response(
+            table=valid_table(
+                rows=[{"cells": [_cell("data", "1.68e-8", scope="col")]}]
             )
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
+        with self.assertRaises(ValueError):
+            validate_page_response(response)
 
     def test_a_header_cell_without_a_scope_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            validate_page_response(
-                valid_page_response(
-                    table=valid_table(
-                        rows=[{"cells": [_cell("header", "Material", scope="none")]}]
-                    )
-                )
+        response = valid_page_response(
+            table=valid_table(
+                rows=[{"cells": [_cell("header", "Material", scope="none")]}]
             )
+        )
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
+        with self.assertRaises(ValueError):
+            validate_page_response(response)
 
     def test_a_zero_span_cell_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -410,9 +503,55 @@ class ReconciliationTest(unittest.TestCase):
 
     def test_clean_reconstruction_yields_the_ordered_layer_and_no_warnings(self) -> None:
         layer, warnings = self.reconcile()
-        self.assertEqual([node["type"] for node in layer], list(CANONICAL_READING_ORDER))
+        self.assertEqual([node["type"] for node in layer], list(SUPPORTED_NODE_TYPES))
         self.assertEqual(layer[0]["level"], 1)
         self.assertEqual(warnings, [])
+
+    def test_tableless_page_authors_all_repeated_nodes_in_logical_reading_order(self) -> None:
+        nodes: list[dict[str, Any]] = [
+            {"type": "heading", "level": 1, "text": "Chapter 20", "source_regions": ["page-1-r0001"]},
+            {"type": "heading", "level": 2, "text": "Electric Current", "source_regions": ["page-1-r0002"]},
+            {"type": "paragraph", "text": "Current is the rate of charge flow.", "source_regions": ["page-1-r0003"]},
+            {"type": "formula", "normalized_math": "I = Q / delta t", "spoken_math_alternative": "I equals Q divided by delta t.", "source_regions": ["page-1-r0004"]},
+            {"type": "paragraph", "text": "The SI unit is the ampere.", "source_regions": ["page-1-r0005"]},
+            {"type": "figure", "complexity": "simple", "figure_alternative": "Positive charges moving through a wire.", "detailed_figure_description": None, "source_regions": ["page-1-r0006"]},
+        ]
+
+        layer, _ = self.reconcile(page_response=valid_page_response(nodes=nodes))
+
+        self.assertEqual([node["type"] for node in layer], [node["type"] for node in nodes])
+        self.assertEqual(len(layer), 6)
+        self.assertNotIn("table", {node["type"] for node in layer})
+
+    def test_empty_layer_with_recognized_text_warns_of_content_loss(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(nodes=[]),
+            pdf_words=[{"text": "Electric current"}],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
+
+    def test_one_supported_word_does_not_hide_substantial_omitted_prose(self) -> None:
+        response = valid_page_response(
+            nodes=[
+                {
+                    "type": "paragraph",
+                    "text": "Current",
+                    "source_regions": ["page-1-r0001"],
+                }
+            ]
+        )
+        evidence = (
+            "Current is the rate of flow of electric charge through a conducting "
+            "material measured in amperes over a specified interval of time"
+        )
+
+        _, warnings = self.reconcile(
+            page_response=response,
+            pdf_words=[{"text": evidence}],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
 
     def test_warnings_are_unresolved_and_thus_non_bypassable(self) -> None:
         _, warnings = self.reconcile(
@@ -431,17 +570,11 @@ class ReconciliationTest(unittest.TestCase):
         )
         self.assertIn("unsupported-input", self.codes(warnings))
 
-    def test_ambiguous_and_out_of_order_reading_both_warn(self) -> None:
+    def test_ambiguous_reading_order_warns(self) -> None:
         _, ambiguous = self.reconcile(
             page_response=valid_page_response(reading_order_is_unambiguous=False)
         )
         self.assertIn("ambiguous-reading-order", self.codes(ambiguous))
-        _, reordered = self.reconcile(
-            page_response=valid_page_response(
-                reading_order=["paragraph", "heading", "formula", "figure"]
-            )
-        )
-        self.assertIn("ambiguous-reading-order", self.codes(reordered))
 
     def test_suspected_source_errors_are_preserved_as_warnings(self) -> None:
         _, warnings = self.reconcile(
@@ -931,7 +1064,8 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.1")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.4")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.5")
+        self.assertEqual(document["reconstruction"]["page_schema_version"], "1.3")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(
             document["reconstruction"]["verified_regions"][0]["id"], "page-1-r0003"
