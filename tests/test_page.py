@@ -11,7 +11,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from accessibilizer.page import (
-    CANONICAL_READING_ORDER,
+    SUPPORTED_NODE_TYPES,
     build_page_request,
     build_page_semantics_document,
     build_region_request,
@@ -66,7 +66,7 @@ def valid_page_response(**overrides: Any) -> dict[str, Any]:
     node_overrides = {
         name: overrides.pop(name)
         for name in tuple(overrides)
-        if name in CANONICAL_READING_ORDER
+        if name in SUPPORTED_NODE_TYPES
     }
     requested_order = overrides.pop("reading_order", None)
     response.update(overrides)
@@ -231,6 +231,10 @@ class SchemaShapeTest(unittest.TestCase):
 
         self.assertTrue(list(schema.iter_errors(empty_rows)))
         self.assertTrue(list(schema.iter_errors(empty_cells)))
+        with self.assertRaisesRegex(ValueError, "table.rows must be a non-empty array"):
+            validate_page_response(empty_rows)
+        with self.assertRaisesRegex(ValueError, "non-empty cells array"):
+            validate_page_response(empty_cells)
 
     def test_node_regions_are_limited_to_the_deterministic_evidence_set(self) -> None:
         schema = page_response_schema(["page-1-r0000", "page-1-r0001"])
@@ -372,8 +376,12 @@ class ResponseValidationTest(unittest.TestCase):
     def test_an_empty_caption_is_rejected(self) -> None:
         # An empty caption would pass here yet fail the Review Record's non-empty
         # caption rule at finalization; a table with no caption must use null.
+        response = valid_page_response(table=valid_table(caption="   "))
+        self.assertTrue(
+            list(Draft202012Validator(page_response_schema()).iter_errors(response))
+        )
         with self.assertRaises(ValueError):
-            validate_page_response(valid_page_response(table=valid_table(caption="   ")))
+            validate_page_response(response)
 
     def test_a_merged_cell_table_is_schema_valid(self) -> None:
         validate_page_response(valid_page_response(table=merged_table()))
@@ -451,7 +459,7 @@ class ReconciliationTest(unittest.TestCase):
 
     def test_clean_reconstruction_yields_the_ordered_layer_and_no_warnings(self) -> None:
         layer, warnings = self.reconcile()
-        self.assertEqual([node["type"] for node in layer], list(CANONICAL_READING_ORDER))
+        self.assertEqual([node["type"] for node in layer], list(SUPPORTED_NODE_TYPES))
         self.assertEqual(layer[0]["level"], 1)
         self.assertEqual(warnings, [])
 
@@ -470,6 +478,14 @@ class ReconciliationTest(unittest.TestCase):
         self.assertEqual([node["type"] for node in layer], [node["type"] for node in nodes])
         self.assertEqual(len(layer), 6)
         self.assertNotIn("table", {node["type"] for node in layer})
+
+    def test_empty_layer_with_recognized_text_warns_of_content_loss(self) -> None:
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(nodes=[]),
+            pdf_words=[{"text": "Electric current"}],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
 
     def test_warnings_are_unresolved_and_thus_non_bypassable(self) -> None:
         _, warnings = self.reconcile(

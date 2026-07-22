@@ -25,6 +25,8 @@ from pathlib import Path
 import re
 from typing import Any, Callable, Iterable, Sequence, TypeVar
 
+from jsonschema import Draft202012Validator
+
 from accessibilizer.events import ProgressReporter
 from accessibilizer.provider import (
     ProviderConfig,
@@ -46,7 +48,7 @@ RECONSTRUCTION_ORCHESTRATION_VERSION = "1.2"
 
 # Supported Semantic Layer node types. Their order here is only the schema's stable
 # variant order; each page response's nodes array carries the Logical Reading Order.
-CANONICAL_READING_ORDER: tuple[str, ...] = (
+SUPPORTED_NODE_TYPES: tuple[str, ...] = (
     "heading",
     "paragraph",
     "formula",
@@ -201,7 +203,9 @@ def page_response_schema(source_region_ids: Sequence[str] | None = None) -> dict
                 "type": {"type": "string", "enum": ["figure"]},
                 "complexity": {"type": "string", "enum": list(FIGURE_COMPLEXITIES)},
                 "figure_alternative": {"type": "string", "minLength": 1},
-                "detailed_figure_description": {"type": ["string", "null"]},
+                "detailed_figure_description": {
+                    "type": ["string", "null"], "minLength": 1
+                },
                 "source_regions": source_regions,
             },
         },
@@ -241,7 +245,7 @@ def _table_response_schema(
         "source_regions",
     ]
     properties: dict[str, Any] = {
-        "caption": {"type": ["string", "null"]},
+        "caption": {"type": ["string", "null"], "minLength": 1},
         "boundaries_are_uncertain": {"type": "boolean"},
         "headers_are_uncertain": {"type": "boolean"},
         "rows": {
@@ -404,11 +408,11 @@ def build_region_request(
 
 def _page_region_view(candidate: dict[str, Any], page_response: dict[str, Any]) -> Any:
     candidate_type = candidate.get("type")
-    candidate_id = candidate.get("id")
+    region_id = _candidate_source_region(candidate)
     matches = [
         node for node in page_response.get("nodes", [])
         if node.get("type") == candidate_type
-        and candidate_id in node.get("source_regions", [])
+        and region_id in node.get("source_regions", [])
     ]
     if matches:
         return matches[0] if len(matches) == 1 else matches
@@ -419,6 +423,16 @@ def _page_region_view(candidate: dict[str, Any], page_response: dict[str, Any]) 
         "represented": False,
         "note": "The reconstruction does not represent this region type.",
     }
+
+
+def _candidate_source_region(candidate: dict[str, Any]) -> object:
+    """Return the Source Region supporting a recognition candidate.
+
+    Recognition currently uses Source Region IDs as candidate IDs. Also accept an
+    explicit source_region field so reconciliation keeps those domain identities
+    distinct while the older recognition contract is migrated.
+    """
+    return candidate.get("source_region", candidate.get("id"))
 
 
 # --- response validation -----------------------------------------------------
@@ -481,7 +495,7 @@ def validate_page_response(
         _require(isinstance(node, dict), f"{name} must be an object")
         assert isinstance(node, dict)
         node_type = node.get("type")
-        _require(node_type in CANONICAL_READING_ORDER, f"{name}.type must be supported")
+        _require(node_type in SUPPORTED_NODE_TYPES, f"{name}.type must be supported")
         validate_source_regions(node, name)
         if node_type == "heading":
             level = node.get("level")
@@ -509,6 +523,14 @@ def validate_page_response(
     )
     _require_bool(
         response, "suspected_prompt_injection", "suspected_prompt_injection must be boolean"
+    )
+    schema_errors = list(
+        Draft202012Validator(page_response_schema(source_region_ids)).iter_errors(response)
+    )
+    _require(
+        not schema_errors,
+        "page response does not match the provider schema: "
+        + (schema_errors[0].message if schema_errors else "unknown schema error"),
     )
 
 
@@ -670,7 +692,7 @@ def _reconcile_formula(
     for candidate in candidates:
         if (
             candidate.get("type") != "formula"
-            or candidate.get("id") not in formula["source_regions"]
+            or _candidate_source_region(candidate) not in formula["source_regions"]
         ):
             continue
         candidate_tokens = _formula_tokens(str(candidate.get("text") or ""))
@@ -749,7 +771,7 @@ def _reconcile_figure(
     # disagreement — become Conversion Warnings.
     grounded = any(
         candidate.get("type") == "figure"
-        and candidate.get("id") in figure["source_regions"]
+        and _candidate_source_region(candidate) in figure["source_regions"]
         for candidate, _ in region_verifications
     )
     if not grounded:
@@ -961,9 +983,15 @@ def reconcile_page(
         ]
     )
     evidence_tokens = _tokens(evidence_text)
-    if evidence_tokens and len(reconstructed) >= GROUNDING_MIN_TOKENS:
-        grounded = len(evidence_tokens & reconstructed) / len(reconstructed)
-        if grounded < GROUNDING_MIN_OVERLAP:
+    if evidence_tokens:
+        grounded = (
+            len(evidence_tokens & reconstructed) / len(reconstructed)
+            if reconstructed else 0.0
+        )
+        if not reconstructed or (
+            len(reconstructed) >= GROUNDING_MIN_TOKENS
+            and grounded < GROUNDING_MIN_OVERLAP
+        ):
             warnings.append(
                 _warning(
                     "recognition-disagreement",
@@ -1065,12 +1093,12 @@ def _region_verification_targets(
         if candidate.get("type") in REGION_VERIFY_TYPES
     ]
     covered_regions = {
-        (target.get("type"), target.get("id")) for target in targets
+        (target.get("type"), _candidate_source_region(target)) for target in targets
     }
     candidates_by_id = {
-        candidate.get("id"): candidate
+        _candidate_source_region(candidate): candidate
         for candidate in candidates
-        if isinstance(candidate.get("id"), str)
+        if isinstance(_candidate_source_region(candidate), str)
     }
     for node in page_response["nodes"]:
         semantic_type = node["type"]

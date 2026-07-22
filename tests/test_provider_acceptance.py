@@ -191,7 +191,7 @@ class FakeProvider:
                             ),
                             region_ids[1] if len(region_ids) > 1 else region_ids[0],
                         )
-                        node.setdefault("source_regions", [matching_region])
+                        node["source_regions"] = [matching_region]
                 elif name == "accessibilizer_region_check":
                     body = {
                         "transcription": "I = Q / delta t",

@@ -339,7 +339,7 @@ class ConversionTest(unittest.TestCase):
                 "Conversion Warnings", (bundle / "review-report.html").read_text()
             )
 
-    def test_bundled_source_page_one_can_emit_repeated_nodes_without_a_table(self) -> None:
+    def test_eleven_page_path_advances_past_tableless_page_one(self) -> None:
         nodes: list[dict[str, Any]] = [
             {"type": "heading", "level": 1, "text": "Chapter 20"},
             {"type": "heading", "level": 2, "text": "Electric Current"},
@@ -362,13 +362,21 @@ class ConversionTest(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary_directory,
         ):
             bundle = Path(temporary_directory) / "page-one.accessibilizer"
-            result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
+            result = self.run_conversion(
+                SOURCE, bundle, page=None, base_url=provider.base_url
+            )
 
             self.assertIn(result.returncode, (0, 2), result.stderr + result.stdout)
             record = yaml.safe_load((bundle / "review-record.yaml").read_text())
             page_nodes = [node for node in record["semantic_layer"] if node["page"] == 1]
             self.assertEqual([node["type"] for node in page_nodes], [node["type"] for node in nodes])
             self.assertNotIn("table", {node["type"] for node in page_nodes})
+            page_requests = [
+                request for request in provider.requests
+                if request["response_format"]["json_schema"]["name"]
+                == "accessibilizer_page_semantics"
+            ]
+            self.assertEqual(len(page_requests), 11)
 
     def test_formula_notation_survives_the_pdf_ua_authoring_path(self) -> None:
         # Fractions, superscripts, subscripts, symbols, and units must reach the
