@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from typing import Any
 
@@ -88,12 +89,16 @@ class FakeProvider:
         usage: dict[str, int] | None = None,
         page_overrides: dict[str, Any] | None = None,
         region_agrees: bool = True,
+        page_response_delay: float = 0.0,
     ) -> None:
         self.compatible = compatible
         self.transient_failures = transient_failures
         self.usage = usage
         self.page_overrides = page_overrides or {}
         self.region_agrees = region_agrees
+        # Seconds a page-reconstruction request lingers before responding, so a
+        # test can interrupt a conversion while a provider request is in flight.
+        self.page_response_delay = page_response_delay
         self.requests: list[dict[str, Any]] = []
         self.authorizations: list[str | None] = []
         provider = self
@@ -149,6 +154,8 @@ class FakeProvider:
                 if name == "accessibilizer_capability_check":
                     body: Any = {"blue_square_count": 3}
                 elif name == "accessibilizer_page_semantics":
+                    if provider.page_response_delay:
+                        time.sleep(provider.page_response_delay)
                     body = json.loads(json.dumps(BASE_PAGE_CONTENT))
                     evidence = request["messages"][1]["content"][1]["text"]
                     evidence_document = json.loads(evidence.split("\n", 1)[1])

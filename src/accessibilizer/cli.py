@@ -7,10 +7,14 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
+import signal
 import stat
 import sys
 import tempfile
+import time
+from types import FrameType
 from typing import Any, TypedDict
 
 from accessibilizer import __version__, page, recognition, review
@@ -21,8 +25,17 @@ from accessibilizer.checkpoint import (
     dependency_key,
     file_sha256,
 )
+from accessibilizer.events import (
+    CONVERSION_EVENTS_FILENAME,
+    STATE_COMPLETED,
+    STATE_STARTED,
+    VALIDATION_STAGES,
+    ConversionInterrupted,
+    ProgressReporter,
+)
 from accessibilizer.process import run as _run, tool_version as _tool_version
 from accessibilizer.provider import (
+    ProviderConfig,
     RequestBudget,
     RequestCeilingExceeded,
     authorize_remote,
@@ -199,6 +212,15 @@ def _parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="print machine-readable JSON instead of human-readable text",
+    )
+    convert.add_argument(
+        "--verbose",
+        action="store_true",
+        help=(
+            "emit finer-grained technical progress to stderr (backend and model "
+            "versions, checkpoint identifiers, provider retry detail, and timings); "
+            "progress goes only to stderr, never to the stdout result"
+        ),
     )
     validate = subparsers.add_parser(
         "validate",
@@ -434,6 +456,52 @@ def _iso_now() -> str:
 
 def _host_bundle(bundle: Path) -> Path:
     return Path(os.environ.get("ACCESSIBILIZER_HOST_BUNDLE", str(bundle)))
+
+
+def _host_source(source: Path) -> Path:
+    """The Source PDF path as the user typed it, for a copy-pasteable resume command.
+
+    The conversion runs inside the container against ``/work/source.pdf``; the
+    launcher exports the original host path so the printed resume command names
+    the file the user actually passed.
+    """
+    return Path(os.environ.get("ACCESSIBILIZER_HOST_SOURCE", str(source)))
+
+
+def _resume_command(args: argparse.Namespace) -> str:
+    """Build the exact command that resumes this interrupted conversion."""
+    parts = [
+        "accessibilizer",
+        "convert",
+        str(_host_source(args.source)),
+        "--bundle",
+        str(_host_bundle(args.bundle)),
+    ]
+    if args.page:
+        parts += ["--page", args.page]
+    provider_flags = (
+        ("--provider-base-url", args.provider_base_url),
+        ("--provider-model", args.provider_model),
+        ("--provider-api-key-env", args.provider_api_key_env),
+        ("--provider-data-location", args.provider_data_location),
+    )
+    for flag, value in provider_flags:
+        if value:
+            parts += [flag, str(value)]
+    if args.allow_remote:
+        parts.append("--allow-remote")
+    if args.max_requests is not None:
+        parts += ["--max-requests", str(args.max_requests)]
+    if args.json:
+        parts.append("--json")
+    if getattr(args, "verbose", False):
+        parts.append("--verbose")
+    parts.append("--resume")
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def _raise_interrupt(signum: int, frame: FrameType | None) -> None:
+    raise ConversionInterrupted()
 
 
 def _pdf_page_count(pdf: Path) -> int:
@@ -882,25 +950,32 @@ def _run_output_gates(
     internal_artifact: Path,
     visual_artifact: Path,
     verapdf_artifact: Path,
+    reporter: ProgressReporter | None = None,
 ) -> None:
     """Run internal semantic checks, the visual comparison, and veraPDF PDF/UA-1.
 
     Writes each report as a bundle artifact and raises if any gate fails.
     """
-    inspected = _run(["java", "-jar", PDF_AUTHOR_JAR, "--inspect", str(output)])
-    if inspected.returncode:
-        raise RuntimeError(f"PDF semantic inspection failed: {inspected.stderr}")
-    try:
-        extracted: dict[str, Any] = json.loads(inspected.stdout)
-    except json.JSONDecodeError as error:
-        raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
-    internal = _internal_checks(record, extracted)
-    atomic_write_json(internal_artifact, internal)
-    visual = _visual_report(source_pdf, output, list(record["pages"]), workspace)
-    atomic_write_json(visual_artifact, visual)
-    verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
-    atomic_write_text(verapdf_artifact, verapdf.stdout)
-    compliant = 'isCompliant="true"' in verapdf.stdout
+    quiet = reporter if reporter is not None else ProgressReporter(
+        log_path=None, emit_terminal=False, heartbeat_interval=0
+    )
+    with quiet.operation("internal-checks"):
+        inspected = _run(["java", "-jar", PDF_AUTHOR_JAR, "--inspect", str(output)])
+        if inspected.returncode:
+            raise RuntimeError(f"PDF semantic inspection failed: {inspected.stderr}")
+        try:
+            extracted: dict[str, Any] = json.loads(inspected.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("PDF semantic inspection returned invalid JSON") from error
+        internal = _internal_checks(record, extracted)
+        atomic_write_json(internal_artifact, internal)
+    with quiet.operation("visual-comparison"):
+        visual = _visual_report(source_pdf, output, list(record["pages"]), workspace)
+        atomic_write_json(visual_artifact, visual)
+    with quiet.operation("verapdf-validation"):
+        verapdf = _run(["verapdf", "--format", "xml", "-f", "ua1", str(output)])
+        atomic_write_text(verapdf_artifact, verapdf.stdout)
+        compliant = 'isCompliant="true"' in verapdf.stdout
     if not internal["passed"] or not visual["passed"] or not compliant:
         raise RuntimeError("conversion failed its accessibility or visual-preservation gates")
 
@@ -908,6 +983,7 @@ def _run_output_gates(
 def _source_stage(
     *, checkpoints: CheckpointStore, source: Path,
     source_copy: Path, source_sha256: str, preflight_artifact: Path,
+    reporter: ProgressReporter,
 ) -> None:
     """Copy, verify, and preflight the immutable Source PDF (once per bundle)."""
     source_key = dependency_key({
@@ -917,25 +993,27 @@ def _source_stage(
         "source_sha256": source_sha256,
     })
     if checkpoints.is_reusable("source", source_key):
+        reporter.reused("source-preflight")
         return
-    _atomic_copy(source, source_copy, stat.S_IRUSR)
-    if file_sha256(source_copy) != source_sha256:
-        raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
-    preflight = _run(["java", "-jar", PDF_AUTHOR_JAR, "--preflight", str(source_copy)])
-    if preflight.returncode:
-        raise RuntimeError(f"Source PDF preflight failed: {preflight.stderr.strip()}")
-    try:
-        preflight_result: dict[str, Any] = json.loads(preflight.stdout)
-    except json.JSONDecodeError as error:
-        raise RuntimeError("Source PDF preflight returned invalid JSON") from error
-    unsupported_features = preflight_result.get("unsupported_features")
-    if not isinstance(unsupported_features, list):
-        raise RuntimeError("Source PDF preflight returned an invalid result")
-    if unsupported_features:
-        features = ", ".join(str(feature) for feature in unsupported_features)
-        raise RuntimeError(f"Unsupported Source PDF: {features}")
-    atomic_write_json(preflight_artifact, preflight_result)
-    checkpoints.complete("source", source_key, [source_copy, preflight_artifact])
+    with reporter.operation("source-preflight"):
+        _atomic_copy(source, source_copy, stat.S_IRUSR)
+        if file_sha256(source_copy) != source_sha256:
+            raise RuntimeError("immutable Source PDF copy failed SHA-256 verification")
+        preflight = _run(["java", "-jar", PDF_AUTHOR_JAR, "--preflight", str(source_copy)])
+        if preflight.returncode:
+            raise RuntimeError(f"Source PDF preflight failed: {preflight.stderr.strip()}")
+        try:
+            preflight_result: dict[str, Any] = json.loads(preflight.stdout)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Source PDF preflight returned invalid JSON") from error
+        unsupported_features = preflight_result.get("unsupported_features")
+        if not isinstance(unsupported_features, list):
+            raise RuntimeError("Source PDF preflight returned an invalid result")
+        if unsupported_features:
+            features = ", ".join(str(feature) for feature in unsupported_features)
+            raise RuntimeError(f"Unsupported Source PDF: {features}")
+        atomic_write_json(preflight_artifact, preflight_result)
+        checkpoints.complete("source", source_key, [source_copy, preflight_artifact])
 
 
 def _recognize_page(
@@ -943,6 +1021,7 @@ def _recognize_page(
     source_sha256: str, page_number: int, backend: recognition.RecognitionBackend,
     regions: Path, recognition_directory: Path,
     pdftoppm_version: str, pdftotext_version: str,
+    reporter: ProgressReporter, page_count: int,
 ) -> str:
     """Run the region-crop and specialized-recognition stages for one page.
 
@@ -958,15 +1037,8 @@ def _recognize_page(
         "rendering_dpi": 144,
         "source_sha256": source_sha256,
     })
-    if not checkpoints.is_reusable(f"region-page-{page_number}", region_key):
-        crop = _run([
-            "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
-            "-r", "144", "-png", str(source_copy), str(regions / f"page-{page_number}"),
-        ])
-        if crop.returncode:
-            raise RuntimeError(f"source-region crop failed: {crop.stderr}")
-        checkpoints.complete(f"region-page-{page_number}", region_key, [crop_artifact])
-
+    region_stage = f"region-page-{page_number}"
+    region_reusable = checkpoints.is_reusable(region_stage, region_key)
     recognition_key = dependency_key({
         "backend": backend.name,
         "backend_version": backend.version,
@@ -981,30 +1053,88 @@ def _recognize_page(
         "weights_version": backend.weights_version,
     })
     recognition_stage = f"recognition-page-{page_number}"
-    if not checkpoints.is_reusable(recognition_stage, recognition_key):
-        recognized = recognition.recognize_page(
-            source_pdf=source_copy,
-            page=page_number,
-            dpi=recognition.RECOGNITION_DPI,
-            regions_dir=regions,
-            recognition_dir=recognition_directory,
-            backend=backend,
-            source_sha256=source_sha256,
-            renderer_version=pdftoppm_version,
-            extractor_version=pdftotext_version,
-        )
-        checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
+    recognition_reusable = checkpoints.is_reusable(recognition_stage, recognition_key)
+    if region_reusable and recognition_reusable:
+        reporter.reused("page-recognition", page=page_number, page_count=page_count)
+        return recognition_key
+    with reporter.operation("page-recognition", page=page_number, page_count=page_count):
+        if not region_reusable:
+            crop = _run([
+                "pdftoppm", "-f", str(page_number), "-l", str(page_number), "-singlefile",
+                "-r", "144", "-png", str(source_copy), str(regions / f"page-{page_number}"),
+            ])
+            if crop.returncode:
+                raise RuntimeError(f"source-region crop failed: {crop.stderr}")
+            checkpoints.complete(region_stage, region_key, [crop_artifact])
+        if not recognition_reusable:
+            recognized = recognition.recognize_page(
+                source_pdf=source_copy,
+                page=page_number,
+                dpi=recognition.RECOGNITION_DPI,
+                regions_dir=regions,
+                recognition_dir=recognition_directory,
+                backend=backend,
+                source_sha256=source_sha256,
+                renderer_version=pdftoppm_version,
+                extractor_version=pdftotext_version,
+            )
+            checkpoints.complete(recognition_stage, recognition_key, recognized.artifacts)
     return recognition_key
 
 
 def _convert(args: argparse.Namespace) -> int:
-    source: Path = args.source
-    bundle: Path = args.bundle
     provider = resolve_provider(args)
     limits = resolve_conversion_limits(args)
     authorize_remote(provider, allow_remote=args.allow_remote)
-    bundle.parent.mkdir(parents=True, exist_ok=True)
-    workspace = _prepare_workspace(bundle, replace=args.replace, resume=args.resume)
+    args.bundle.parent.mkdir(parents=True, exist_ok=True)
+    workspace = _prepare_workspace(args.bundle, replace=args.replace, resume=args.resume)
+    reporter = ProgressReporter(
+        log_path=workspace / CONVERSION_EVENTS_FILENAME,
+        verbose=getattr(args, "verbose", False),
+    )
+    # Handle Ctrl-C (SIGINT) and the launcher's SIGTERM as an intentional
+    # interruption rather than a traceback: the in-progress bundle and its
+    # checkpoints/events are already on disk, so recording the interruption and
+    # printing the resume command is all that remains.
+    previous_int = signal.signal(signal.SIGINT, _raise_interrupt)
+    previous_term = signal.signal(signal.SIGTERM, _raise_interrupt)
+    try:
+        return _run_conversion(args, provider, limits, workspace, reporter)
+    except ConversionInterrupted:
+        return _handle_interruption(args, reporter)
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
+
+
+def _handle_interruption(args: argparse.Namespace, reporter: ProgressReporter) -> int:
+    command = _resume_command(args)
+    stage = reporter.active_stage or "conversion"
+    reporter.interrupted(resume_command=command)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "bundle": str(_host_bundle(args.bundle)),
+                    "resume_command": command,
+                    "stage": stage,
+                    "status": "interrupted",
+                },
+                sort_keys=True,
+            )
+        )
+    return 130
+
+
+def _run_conversion(
+    args: argparse.Namespace,
+    provider: ProviderConfig,
+    limits: ConversionLimits,
+    workspace: Path,
+    reporter: ProgressReporter,
+) -> int:
+    source: Path = args.source
+    bundle: Path = args.bundle
     checkpoints = CheckpointStore(workspace)
 
     capability_key = dependency_key({
@@ -1017,19 +1147,38 @@ def _convert(args: argparse.Namespace) -> int:
     capability_reusable = checkpoints.is_reusable("provider-capability", capability_key)
     capability_estimate = 0 if capability_reusable else 1
     budget = _request_budget(workspace, limits, estimated_requests=capability_estimate)
-    if not capability_reusable:
+    if capability_reusable:
+        reporter.reused("provider-capability")
+    else:
         if budget.actual_requests + 1 > budget.ceiling:
             raise RequestCeilingExceeded(
                 f"conversion paused before exceeding request ceiling {budget.ceiling}; "
                 "resume with a higher --max-requests value"
             )
-        check_capabilities(
-            provider,
-            budget=budget,
-            max_retries=limits.provider_max_retries,
-            retry_base_seconds=limits.provider_retry_base_seconds,
-            retry_max_seconds=limits.provider_retry_max_seconds,
-        )
+        before_capability = dict(budget.reported_token_usage)
+
+        def capability_retry(attempt: int, delay: float, reason: str) -> None:
+            reporter.retrying(
+                "provider-capability", purpose="capability-check",
+                request=budget.actual_requests, attempt=attempt, delay=delay, detail=reason,
+            )
+
+        with reporter.operation(
+            "provider-capability", purpose="capability-check",
+            request=budget.actual_requests + 1, request_total=budget.estimated_requests,
+            endpoint=provider.base_url, model=provider.model,
+        ) as capability_handle:
+            check_capabilities(
+                provider,
+                budget=budget,
+                max_retries=limits.provider_max_retries,
+                retry_base_seconds=limits.provider_retry_base_seconds,
+                retry_max_seconds=limits.provider_retry_max_seconds,
+                on_retry=capability_retry,
+            )
+            capability_usage = budget.usage_since(before_capability)
+            if capability_usage:
+                capability_handle.extra["token_usage"] = capability_usage
         checkpoints.complete("provider-capability", capability_key, [])
 
     validation = workspace / "validation"
@@ -1040,9 +1189,11 @@ def _convert(args: argparse.Namespace) -> int:
         checkpoints=checkpoints, source=source,
         source_copy=source_copy, source_sha256=source_sha256,
         preflight_artifact=validation / "preflight.json",
+        reporter=reporter,
     )
 
     pages = _parse_page_selection(args.page, _pdf_page_count(source_copy))
+    page_count = len(pages)
 
     regions = workspace / "regions"
     regions.mkdir(mode=0o700, exist_ok=True)
@@ -1070,6 +1221,7 @@ def _convert(args: argparse.Namespace) -> int:
             source_sha256=source_sha256, page_number=page_number, backend=backend,
             regions=regions, recognition_directory=recognition_directory,
             pdftoppm_version=pdftoppm_version, pdftotext_version=pdftotext_version,
+            reporter=reporter, page_count=page_count,
         )
         recognition_document: dict[str, Any] = json.loads(
             (recognition_directory / f"page-{page_number}.json").read_text(encoding="utf-8")
@@ -1098,16 +1250,21 @@ def _convert(args: argparse.Namespace) -> int:
             total_estimate += page.expected_request_count(candidates)
 
     budget.update_estimate(total_estimate)
-    if not args.json:
-        print(
-            f"Estimated provider requests: {budget.estimated_requests} "
-            f"(ceiling: {budget.ceiling})"
-        )
+    # Progress belongs on stderr so a --json run still keeps a single result on
+    # stdout; the estimate is useful default output, not verbose-only.
+    print(
+        f"Estimated provider requests: {budget.estimated_requests} "
+        f"(ceiling: {budget.ceiling})",
+        file=sys.stderr,
+    )
 
     # Second pass: reconstruct each page that cannot be reused, enforcing the
     # request ceiling against the running total before every page.
     for page_number in pages:
         if page_semantics_reusable[page_number]:
+            reporter.reused(
+                "provider-reconstruction", page=page_number, page_count=page_count
+            )
             continue
         page_requests = page.expected_request_count(page_candidates[page_number])
         if budget.actual_requests + page_requests > budget.ceiling:
@@ -1131,6 +1288,8 @@ def _convert(args: argparse.Namespace) -> int:
             max_retries=limits.provider_max_retries,
             retry_base_seconds=limits.provider_retry_base_seconds,
             retry_max_seconds=limits.provider_retry_max_seconds,
+            reporter=reporter,
+            page_count=page_count,
         )
         atomic_write_json(
             page_semantics_dir / f"page-{page_number}.json", semantics_document
@@ -1143,37 +1302,38 @@ def _convert(args: argparse.Namespace) -> int:
 
     # Assemble the whole-document Review Record from every page's reconstruction,
     # injecting each page's retained recognition candidates.
-    page_documents: list[dict[str, Any]] = []
-    for page_number in pages:
-        document = json.loads(
-            (page_semantics_dir / f"page-{page_number}.json").read_text(encoding="utf-8")
-        )
-        page_documents.append(
-            _review_page_document(
-                document,
-                recognition_documents[page_number],
-                regions / f"page-{page_number}-recognition.png",
-                _displayed_page_dimensions(source_copy, page_number),
+    with reporter.operation("review-record"):
+        page_documents: list[dict[str, Any]] = []
+        for page_number in pages:
+            document = json.loads(
+                (page_semantics_dir / f"page-{page_number}.json").read_text(encoding="utf-8")
             )
+            page_documents.append(
+                _review_page_document(
+                    document,
+                    recognition_documents[page_number],
+                    regions / f"page-{page_number}-recognition.png",
+                    _displayed_page_dimensions(source_copy, page_number),
+                )
+            )
+            _atomic_copy(
+                regions / f"page-{page_number}.png",
+                regions / f"page-{page_number}-r0000.png",
+            )
+        first = page_documents[0]
+        record = review.build_review_record(
+            source_sha256=source_sha256,
+            title=first["title"],
+            language=first["language"],
+            provider_endpoint=provider.base_url,
+            provider_model=provider.model,
+            page_prompt_version=page.PAGE_PROMPT_VERSION,
+            page_schema_version=page.PAGE_SCHEMA_VERSION,
+            region_prompt_version=page.REGION_PROMPT_VERSION,
+            region_schema_version=page.REGION_SCHEMA_VERSION,
+            pages=page_documents,
         )
-        _atomic_copy(
-            regions / f"page-{page_number}.png",
-            regions / f"page-{page_number}-r0000.png",
-        )
-    first = page_documents[0]
-    record = review.build_review_record(
-        source_sha256=source_sha256,
-        title=first["title"],
-        language=first["language"],
-        provider_endpoint=provider.base_url,
-        provider_model=provider.model,
-        page_prompt_version=page.PAGE_PROMPT_VERSION,
-        page_schema_version=page.PAGE_SCHEMA_VERSION,
-        region_prompt_version=page.REGION_PROMPT_VERSION,
-        region_schema_version=page.REGION_SCHEMA_VERSION,
-        pages=page_documents,
-    )
-    review.validate_review_record(record)
+        review.validate_review_record(record)
 
     document_key = dependency_key({
         "authoring_contract_version": "2.0",
@@ -1190,21 +1350,24 @@ def _convert(args: argparse.Namespace) -> int:
     review_report = workspace / "review-report.html"
     authoring_contract = workspace / "authoring.json"
     output = workspace / "output.pdf"
-    if not checkpoints.is_reusable("document", document_key):
-        atomic_write_text(review_record, review.dump_yaml(record))
-        atomic_write_json(review_baseline, record)
-        _generate_report(source_copy, record, workspace)
-        _author_pdf(
-            source_pdf=source_copy,
-            output=output,
-            authoring_contract=authoring_contract,
-            record=record,
-        )
-        checkpoints.complete(
-            "document",
-            document_key,
-            [review_record, review_baseline, review_report, authoring_contract, output],
-        )
+    if checkpoints.is_reusable("document", document_key):
+        reporter.reused("pdf-authoring")
+    else:
+        with reporter.operation("pdf-authoring"):
+            atomic_write_text(review_record, review.dump_yaml(record))
+            atomic_write_json(review_baseline, record)
+            _generate_report(source_copy, record, workspace)
+            _author_pdf(
+                source_pdf=source_copy,
+                output=output,
+                authoring_contract=authoring_contract,
+                record=record,
+            )
+            checkpoints.complete(
+                "document",
+                document_key,
+                [review_record, review_baseline, review_report, authoring_contract, output],
+            )
 
     validation_key = dependency_key({
         "document_stage": document_key,
@@ -1218,7 +1381,10 @@ def _convert(args: argparse.Namespace) -> int:
     internal_artifact = validation / "internal.json"
     visual_artifact = validation / "visual.json"
     verapdf_artifact = validation / "verapdf.xml"
-    if not checkpoints.is_reusable("validation", validation_key):
+    if checkpoints.is_reusable("validation", validation_key):
+        for validation_stage in VALIDATION_STAGES:
+            reporter.reused(validation_stage)
+    else:
         _run_output_gates(
             workspace=workspace,
             source_pdf=source_copy,
@@ -1227,6 +1393,7 @@ def _convert(args: argparse.Namespace) -> int:
             internal_artifact=internal_artifact,
             visual_artifact=visual_artifact,
             verapdf_artifact=verapdf_artifact,
+            reporter=reporter,
         )
         checkpoints.complete(
             "validation",
@@ -1257,7 +1424,18 @@ def _convert(args: argparse.Namespace) -> int:
         "provider_model": provider.model,
         "provider_usage": budget.as_dict(),
     })
-    _publish_protected_directory(workspace, bundle, args.replace)
+    # Publication atomically renames the workspace onto the bundle, so the
+    # start event is written to the workspace log (which becomes the bundle log)
+    # and the completion event is appended to the published log afterwards.
+    publication_start = time.monotonic()
+    reporter.emit("bundle-publication", STATE_STARTED)
+    with reporter.tracked("bundle-publication"):
+        _publish_protected_directory(workspace, bundle, args.replace)
+    reporter.retarget(bundle / CONVERSION_EVENTS_FILENAME)
+    reporter.emit(
+        "bundle-publication", STATE_COMPLETED,
+        elapsed_seconds=round(time.monotonic() - publication_start, 3),
+    )
 
     host_bundle = _host_bundle(bundle)
     review_required = bool(review.unresolved_warnings(record))

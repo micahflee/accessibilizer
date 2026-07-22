@@ -44,6 +44,14 @@ Before conversion, Accessibilizer rejects encrypted or digitally signed Source P
 
 With `--json`, every outcome is machine-readable. Exit `0` reports `accessible`, exit `2` reports `review_required` when unresolved Conversion Warnings remain, and exit `1` reports `operational_failure`.
 
+## Progress and interruption
+
+Conversion reports concise, stable progress to `stderr` while `stdout` is reserved for the single final result — so a `--json` run still emits exactly one machine-readable value on `stdout`. Each major stage (provider capability check, Source PDF preflight, per-page rendering and recognition, provider reconstruction and verification requests, Review Record assembly, PDF authoring, internal, visual, and veraPDF validation, and Conversion Bundle publication) prints a start and a completion line with elapsed time. Per-page lines name the current page and the selected page count; provider lines name the request's purpose, its number and estimated total, and — immediately before a document-bearing request is sent — the configured endpoint and model. Reused checkpoints are reported as `reused`, so a `--resume` run does not look as though stages were skipped by accident. A long recognition or provider operation prints a plain elapsed-time heartbeat line every ten seconds. There are no spinners, colors, or carriage-return rewriting. Pass `--verbose` for finer technical detail (model, endpoint, reported token usage, and retry specifics); no flag is required for ordinary progress.
+
+Every run also appends durable, metadata-only events to `conversion-events.jsonl` in the Conversion Bundle (schema `schemas/conversion-events-1.0.schema.json`). The log survives `--resume` and is published with the finished bundle. It records timestamps, stage, state, elapsed time, page/request context, and safe operational metadata only — never credentials, authorization headers, images, Source PDF text, prompts, raw request or response bodies, model-produced Semantic Layer content, or hidden reasoning. Heartbeats are terminal feedback and are not persisted, and no telemetry ever leaves the machine.
+
+Interrupting a conversion with Ctrl-C is treated as an intentional pause, not an error: Accessibilizer records the active stage, page, and provider request, preserves the in-progress Conversion Bundle and its checkpoints and events, prints the exact command needed to resume, and exits `130` without a traceback. Under `--json`, it emits one `interrupted` result on `stdout` while all progress and diagnostics stay on `stderr`.
+
 ## Provider configuration and consent
 
 Provider settings resolve in this order, from lowest to highest precedence:
@@ -97,6 +105,7 @@ The generated protected directory contains:
 - `authoring.json`: versioned Python-to-Java contract (`schemas/authoring-2.0.schema.json`)
 - `provenance.json`: source hash, converted pages, authoring versions, and resolved provider identity
 - `request-usage.json`: resumable request ceiling, count, estimate, and reported token totals
+- `conversion-events.jsonl`: durable, metadata-only progress event log (`schemas/conversion-events-1.0.schema.json`), preserved across `--resume`
 - `checkpoints/*.json`: atomic dependency keys and hashes for completed stages
 - `validation/preflight.json`: Source PDF preflight result
 - `validation/internal.json`: internal semantic-check categories (source-region coverage, alternatives, table relationships, reading order, recognition agreement, and Review Record consistency)

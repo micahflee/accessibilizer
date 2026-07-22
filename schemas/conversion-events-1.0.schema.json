@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/conversion-events-1.0.schema.json",
+  "title": "Accessibilizer conversion event 1.0",
+  "description": "One durable, metadata-only conversion event. The bundle's conversion-events.jsonl holds one such object per line, in order. This contract pins the core envelope; later releases may add fields, so unknown properties are permitted, but the log never carries a credential, API key, authorization header, base64 image, Source PDF text, prompt, raw request or response body, model-produced Semantic Layer content, or hidden reasoning.",
+  "type": "object",
+  "required": ["schema_version", "timestamp", "stage", "state"],
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "description": "The event/schema contract version. Consumers should accept additive fields within a major version."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "UTC time the event was recorded, to the second."
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The major stage the event belongs to (e.g. provider-capability, source-preflight, page-recognition, provider-reconstruction, review-record, pdf-authoring, internal-checks, visual-comparison, verapdf-validation, bundle-publication)."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["started", "completed", "reused", "retrying", "failed", "interrupted"],
+      "description": "Lifecycle state. Heartbeats are terminal feedback only and are never persisted here."
+    },
+    "elapsed_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Wall-clock seconds the operation took, present on completion."
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The current source page, for per-page stages."
+    },
+    "page_count": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The count of selected pages, for per-page stages."
+    },
+    "request": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The provider request number, for provider events."
+    },
+    "request_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The estimated total provider request count at the time of the event."
+    },
+    "purpose": {
+      "type": "string",
+      "description": "The purpose of a provider request (capability-check, page-reconstruction, region-verification)."
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "The configured provider base URL (credential-free by construction)."
+    },
+    "model": {
+      "type": "string",
+      "description": "The configured exact provider model identifier."
+    },
+    "token_usage": {
+      "type": "object",
+      "description": "Provider-reported token counts for the request, when supplied.",
+      "additionalProperties": {"type": "integer"}
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The upcoming retry attempt number, on a retrying event."
+    },
+    "delay": {
+      "type": "number",
+      "minimum": 0,
+      "description": "The backoff delay in seconds before the retry, on a retrying event."
+    },
+    "detail": {
+      "type": "string",
+      "description": "A short, safe operational detail (for example a response-body-free retry reason)."
+    },
+    "resume_command": {
+      "type": "string",
+      "description": "The exact command that resumes an interrupted conversion, on an interrupted event."
+    }
+  }
+}

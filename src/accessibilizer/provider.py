@@ -99,6 +99,18 @@ class RequestBudget:
         if changed:
             self._changed()
 
+    def usage_since(self, before: Mapping[str, int]) -> dict[str, int]:
+        """Positive per-token-kind usage accrued since a prior snapshot.
+
+        Reported usage is cumulative over the whole conversion; a single
+        request's contribution is the difference from a snapshot taken before it.
+        """
+        return {
+            name: self.reported_token_usage[name] - before.get(name, 0)
+            for name in self.reported_token_usage
+            if self.reported_token_usage[name] - before.get(name, 0) > 0
+        }
+
     def as_dict(self) -> dict[str, object]:
         return {
             "actual_requests": self.actual_requests,
@@ -243,11 +255,16 @@ def request_chat_completion(
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
     sleep: Callable[[float], None] = time.sleep,
+    on_retry: Callable[[int, float, str], None] | None = None,
 ) -> dict[str, Any]:
     """POST one chat completion with bounded retries and request accounting.
 
     ``payload`` must never carry a ``tools`` or ``functions`` key: Source PDF
     content is untrusted data and is never allowed to reach a tool surface.
+
+    ``on_retry`` is invoked before each backoff sleep with the upcoming attempt
+    number, the delay, and a short, response-body-free reason, so a caller can
+    surface retry progress without the raw error ever being logged.
     """
     if max_retries < 0:
         raise ValueError("provider max retries must not be negative")
@@ -277,15 +294,20 @@ def request_chat_completion(
             break
         except HTTPError as error:
             transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
+            code = error.code
             error.close()
             if not transient or attempt == max_retries:
                 raise RuntimeError(failure_message) from error
+            reason = f"HTTP {code}"
         except (URLError, TimeoutError) as error:
             if attempt == max_retries:
                 raise RuntimeError(failure_message) from error
+            reason = "connection error"
         except json.JSONDecodeError as error:
             raise RuntimeError(f"{failure_message}; provider returned invalid JSON") from error
         delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
+        if on_retry is not None:
+            on_retry(attempt + 1, delay, reason)
         if delay:
             sleep(delay)
     if not isinstance(result, dict):
@@ -310,6 +332,7 @@ def check_capabilities(
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
     sleep: Callable[[float], None] = time.sleep,
+    on_retry: Callable[[int, float, str], None] | None = None,
 ) -> None:
     schema = {
         "type": "object",
@@ -352,6 +375,7 @@ def check_capabilities(
         retry_base_seconds=retry_base_seconds,
         retry_max_seconds=retry_max_seconds,
         sleep=sleep,
+        on_retry=on_retry,
     )
     checked = parse_schema_content(
         result, "provider capability check failed; provider returned an invalid schema response"
