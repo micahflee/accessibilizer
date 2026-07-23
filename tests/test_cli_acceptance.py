@@ -321,6 +321,7 @@ class ConversionTest(unittest.TestCase):
                             "total_tokens": 0,
                         },
                     },
+                    "resume_command": None,
                     "status": "interrupted",
                 },
             )

@@ -86,11 +86,12 @@ container_runtime_failure() {
 early_conversion_interruption() {
     trap - HUP INT TERM
     if [ -n "$json_flag" ]; then
-        printf '{"reported_token_usage":{"this_run":{"total_tokens":%s,"complete":%s},"conversion_total":{"total_tokens":%s,"complete":%s}},"status":"interrupted"}\n' \
+        printf '{"reported_token_usage":{"this_run":{"total_tokens":%s,"complete":%s},"conversion_total":{"total_tokens":%s,"complete":%s}},"resume_command":null,"status":"interrupted"}\n' \
             "$reported_this_run_total" "$reported_this_run_complete" \
             "$reported_conversion_total" "$reported_conversion_complete"
     else
         echo "accessibilizer: interrupted" >&2
+        echo "Resume command unavailable before conversion starts." >&2
         emit_reported_token_usage
     fi
     exit 130
