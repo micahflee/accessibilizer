@@ -30,12 +30,19 @@ RUN apt-get update \
 # no model artifacts are downloaded at runtime. HOME is fixed so the container's
 # arbitrary runtime uid resolves the same world-readable weight cache.
 ENV HOME="/opt/accessibilizer"
-ARG PADDLEPADDLE_VERSION=2.6.2
+# PaddlePaddle 2.6.x crashes in its SelfAttentionFusePass on otherwise
+# supported x86-64 CPUs (including GitHub's hosted runners). 2.5.2 predates
+# that regression and remains compatible with the pinned PaddleOCR release.
+ARG PADDLEPADDLE_VERSION=2.5.2
 ARG PADDLEOCR_VERSION=2.7.3
 # numpy is pinned below 2 because the pinned paddlepaddle and opencv wheels are
-# built against the NumPy 1 ABI ("_ARRAY_API not found" otherwise).
+# built against the NumPy 1 ABI ("_ARRAY_API not found" otherwise). Pin the
+# headless OpenCV wheel to the version pip already resolves so cold builds do
+# not download and reject several newer 50-60 MB candidates first.
 RUN python3 -m pip install --no-cache-dir \
+      --find-links https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html \
       "numpy==1.26.4" \
+      "opencv-python-headless==4.11.0.86" \
       "paddlepaddle==${PADDLEPADDLE_VERSION}" \
       "paddleocr==${PADDLEOCR_VERSION}"
 COPY docker/paddle-warmup.py /tmp/paddle-warmup.py
