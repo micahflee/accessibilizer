@@ -648,13 +648,15 @@
                 "type": "string",
                 "pattern": "^page-[0-9]+-r[0-9]{4,}$"
               },
-              "type": {
-                "enum": [
-                  "formula",
-                  "table",
-                  "figure"
-                ]
-              }
+            "type": {
+              "enum": [
+                "heading",
+                "paragraph",
+                "formula",
+                "table",
+                "figure"
+              ]
+            }
             }
           }
         }

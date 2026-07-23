@@ -24,7 +24,11 @@ from accessibilizer.page import (
     validate_page_response,
     validate_region_response,
 )
-from accessibilizer.provider import ProviderConfig
+from accessibilizer.provider import (
+    ProviderConfig,
+    RequestBudget,
+    RequestCeilingExceeded,
+)
 
 
 # A minimal valid 1x1 PNG so request builders have real bytes to base64-encode.
@@ -737,6 +741,44 @@ class ReconciliationTest(unittest.TestCase):
         self.assertTrue(insufficient)
         self.assertNotIn("recognition-disagreement", self.codes(warnings))
 
+    def test_each_formula_requires_eligible_evidence_for_its_selected_regions(self) -> None:
+        formulas = [
+            {
+                "type": "formula",
+                "normalized_math": "I = Q / delta t",
+                "spoken_math_alternative": "I equals Q divided by delta t.",
+                "source_regions": ["page-1-r0001"],
+            },
+            {
+                "type": "formula",
+                "normalized_math": "V = I R",
+                "spoken_math_alternative": "V equals I times R.",
+                "source_regions": ["page-1-r0002"],
+            },
+        ]
+        candidate = {
+            "id": "page-1-c0001",
+            "source_region": "page-1-r0001",
+            "type": "formula",
+            "text": "I = Q / delta t",
+            "verification": {"eligible": True, "reason_codes": []},
+        }
+
+        _, warnings = self.reconcile(
+            page_response=valid_page_response(nodes=formulas),
+            candidates=[candidate],
+            require_verification=True,
+        )
+
+        insufficient = [
+            warning
+            for warning in warnings
+            if warning["code"] == "insufficient-verification"
+        ]
+        self.assertEqual(len(insufficient), 1)
+        self.assertEqual(insufficient[0]["semantic_types"], ["formula"])
+        self.assertEqual(insufficient[0]["source_regions"], ["page-1-r0002"])
+
     def test_localized_eligible_candidate_still_warns_on_true_disagreement(self) -> None:
         candidate = {
             "id": "page-1-c0001",
@@ -1291,14 +1333,216 @@ class DocumentAndBudgetTest(unittest.TestCase):
             verified_types,
             [
                 ("formula", "page-1-r0003"),
+                ("heading", "page-1-r0001"),
+                ("paragraph", "page-1-r0002"),
                 ("figure", "page-1-r0004"),
                 ("table", "page-1-r0005"),
             ],
         )
         self.assertEqual(
             {region["type"] for region in document["reconstruction"]["verified_regions"]},
-            {"formula", "figure", "table"},
+            {"heading", "paragraph", "formula", "figure", "table"},
         )
+
+    def test_disagreeing_semantic_backfill_uses_only_insufficient_verification(self) -> None:
+        response = valid_page_response(nodes=[{
+            "type": "formula",
+            "normalized_math": "I = Q / delta t",
+            "spoken_math_alternative": "I equals Q divided by delta t.",
+            "source_regions": ["page-1-r0003"],
+        }])
+
+        with (
+            patch(
+                "accessibilizer.page.generate_page_semantics",
+                return_value=response,
+            ),
+            patch(
+                "accessibilizer.page.verify_region",
+                return_value={
+                    "transcription": "V = I R",
+                    "agrees_with_page": False,
+                    "suspected_prompt_injection": False,
+                },
+            ),
+        ):
+            document = reconstruct_page(
+                CONFIG,
+                page=1,
+                source_sha256="a" * 64,
+                page_image=Path("page.png"),
+                regions_dir=Path("regions"),
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=["page-1-r0003"],
+            )
+
+        self.assertEqual(
+            [warning["code"] for warning in document["warnings"]],
+            ["insufficient-verification"],
+        )
+        self.assertEqual(
+            document["warnings"][0]["source_regions"],
+            ["page-1-r0003"],
+        )
+
+    def test_agreeing_semantic_backfill_satisfies_verification_coverage(self) -> None:
+        response = valid_page_response(nodes=[{
+            "type": "formula",
+            "normalized_math": "I = Q / delta t",
+            "spoken_math_alternative": "I equals Q divided by delta t.",
+            "source_regions": ["page-1-r0003"],
+        }])
+        target = {
+            "id": "page-1-r0003",
+            "type": "formula",
+            "verification_target_kind": "semantic-backfill",
+        }
+
+        _, warnings = reconcile_page(
+            page_response=response,
+            region_verifications=[(
+                target,
+                {
+                    "transcription": "I = Q / delta t",
+                    "agrees_with_page": True,
+                    "suspected_prompt_injection": False,
+                },
+            )],
+            candidates=[],
+            pdf_words=[],
+            require_verification=True,
+        )
+
+        self.assertNotIn(
+            "insufficient-verification",
+            [warning["code"] for warning in warnings],
+        )
+
+    def test_agreeing_prose_backfill_satisfies_verification_coverage(self) -> None:
+        response = valid_page_response(nodes=[{
+            "type": "paragraph",
+            "text": "Current is charge flow.",
+            "source_regions": ["page-1-r0002"],
+        }])
+        target = {
+            "id": "page-1-r0002",
+            "type": "paragraph",
+            "verification_target_kind": "semantic-backfill",
+        }
+
+        _, warnings = reconcile_page(
+            page_response=response,
+            region_verifications=[(
+                target,
+                {
+                    "transcription": "Current is charge flow.",
+                    "agrees_with_page": True,
+                    "suspected_prompt_injection": False,
+                },
+            )],
+            candidates=[],
+            pdf_words=[],
+            require_verification=True,
+        )
+
+        self.assertEqual(warnings, [])
+
+    def test_reconstruction_backfills_prose_without_strong_local_evidence(self) -> None:
+        response = valid_page_response(nodes=[{
+            "type": "paragraph",
+            "text": "Current is charge flow.",
+            "source_regions": ["page-1-r0002"],
+        }])
+        verified_types: list[tuple[str, str]] = []
+
+        def verify(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            candidate = kwargs["candidate"]
+            verified_types.append((candidate["type"], candidate["id"]))
+            return {
+                "transcription": "Current is charge flow.",
+                "agrees_with_page": True,
+                "suspected_prompt_injection": False,
+            }
+
+        with (
+            patch(
+                "accessibilizer.page.generate_page_semantics",
+                return_value=response,
+            ),
+            patch("accessibilizer.page.verify_region", side_effect=verify),
+        ):
+            document = reconstruct_page(
+                CONFIG,
+                page=1,
+                source_sha256="a" * 64,
+                page_image=Path("page.png"),
+                regions_dir=Path("regions"),
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=["page-1-r0002"],
+            )
+
+        self.assertEqual(verified_types, [("paragraph", "page-1-r0002")])
+        self.assertEqual(document["warnings"], [])
+
+    def test_multi_formula_targets_update_the_estimate_and_pause_at_the_ceiling(
+        self,
+    ) -> None:
+        formulas = [
+            {
+                "type": "formula",
+                "normalized_math": f"x_{index} = {index}",
+                "spoken_math_alternative": f"x sub {index} equals {index}.",
+                "source_regions": [f"page-1-r{index:04d}"],
+            }
+            for index in range(1, 5)
+        ]
+        budget = RequestBudget(estimated_requests=4, ceiling=2)
+        completed_verifications: list[str] = []
+
+        def page_call(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            budget.reserve()
+            return valid_page_response(nodes=formulas)
+
+        def verify_call(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            budget.reserve()
+            completed_verifications.append(str(kwargs["candidate"]["id"]))
+            return {
+                "transcription": "independent crop check",
+                "agrees_with_page": True,
+                "suspected_prompt_injection": False,
+            }
+
+        with (
+            patch(
+                "accessibilizer.page.generate_page_semantics",
+                side_effect=page_call,
+            ),
+            patch(
+                "accessibilizer.page.verify_region",
+                side_effect=verify_call,
+            ) as verify,
+            self.assertRaises(RequestCeilingExceeded),
+        ):
+            reconstruct_page(
+                CONFIG,
+                page=1,
+                source_sha256="a" * 64,
+                page_image=Path("page.png"),
+                regions_dir=Path("regions"),
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=[
+                    f"page-1-r{index:04d}" for index in range(1, 5)
+                ],
+                budget=budget,
+            )
+
+        self.assertEqual(budget.estimated_requests, 5)
+        self.assertEqual(budget.actual_requests, 2)
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(completed_verifications, ["page-1-r0001"])
 
     def test_expected_request_count_includes_missing_semantic_type_checks(self) -> None:
         candidates = [{"type": "formula"}]

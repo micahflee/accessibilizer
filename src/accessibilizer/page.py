@@ -45,7 +45,7 @@ PAGE_SCHEMA_VERSION = "1.3"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
 PAGE_SEMANTICS_CONTRACT_VERSION = "1.1"
-RECONSTRUCTION_ORCHESTRATION_VERSION = "1.3"
+RECONSTRUCTION_ORCHESTRATION_VERSION = "1.4"
 
 # Supported Semantic Layer node types. Their order here is only the schema's stable
 # variant order; each page response's nodes array carries the Logical Reading Order.
@@ -494,6 +494,8 @@ def _candidate_is_eligible(candidate: dict[str, Any]) -> bool:
     eligible for checkpoint compatibility. Contract-2.0 Candidates must opt in
     explicitly after deterministic geometry and evidence checks.
     """
+    if candidate.get("verification_target_kind") == "semantic-backfill":
+        return False
     verification = candidate.get("verification")
     if verification is None:
         return True
@@ -822,6 +824,83 @@ def _reconcile_table(table: dict[str, Any]) -> list[dict[str, Any]]:
     return warnings
 
 
+def _source_region_bounds(
+    source_regions: Sequence[dict[str, Any]],
+) -> dict[str, list[Any]]:
+    return {
+        str(region.get("id")): region["bbox_points"]
+        for region in source_regions
+        if isinstance(region.get("id"), str)
+        and isinstance(region.get("bbox_points"), list)
+        and len(region["bbox_points"]) == 4
+    }
+
+
+def _word_is_local(
+    word: dict[str, Any],
+    region_ids: Sequence[str],
+    region_bounds: dict[str, list[Any]],
+) -> bool:
+    word_bbox = word.get("bbox_points")
+    if not isinstance(word_bbox, list) or len(word_bbox) != 4:
+        return not region_bounds
+    wx0, wy0, wx1, wy1 = (float(value) for value in word_bbox)
+    word_area = max(0.0, wx1 - wx0) * max(0.0, wy1 - wy0)
+    if word_area == 0:
+        return False
+    for region_id in region_ids:
+        bounds = region_bounds.get(region_id)
+        if bounds is None:
+            continue
+        rx0, ry0, rx1, ry1 = (float(value) for value in bounds)
+        intersection = max(0.0, min(wx1, rx1) - max(wx0, rx0)) * max(
+            0.0, min(wy1, ry1) - max(wy0, ry0)
+        )
+        if intersection / word_area >= 0.5:
+            return True
+    return False
+
+
+def _localized_prose_evidence(
+    node: dict[str, Any],
+    *,
+    candidates: Sequence[dict[str, Any]],
+    pdf_words: Sequence[dict[str, Any]],
+    region_bounds: dict[str, list[Any]],
+) -> set[str]:
+    region_ids = node["source_regions"]
+    evidence = [
+        str(word.get("text", ""))
+        for word in pdf_words
+        if _word_is_local(word, region_ids, region_bounds)
+    ]
+    evidence.extend(
+        str(candidate.get("text", ""))
+        for candidate in candidates
+        if candidate.get("type") in {"text", "handwriting", "document_structure"}
+        and _candidate_is_eligible(candidate)
+        and _candidate_source_region(candidate) in region_ids
+    )
+    return _tokens(" ".join(evidence))
+
+
+def _prose_evidence_is_strong(
+    node: dict[str, Any], evidence_tokens: set[str]
+) -> bool:
+    if not evidence_tokens:
+        return False
+    reconstructed = _tokens(node["text"])
+    overlap = evidence_tokens & reconstructed
+    reconstruction_support = (
+        len(overlap) / len(reconstructed) if reconstructed else 0.0
+    )
+    evidence_coverage = len(overlap) / len(evidence_tokens)
+    return (
+        reconstruction_support >= GROUNDING_MIN_OVERLAP
+        and evidence_coverage >= GROUNDING_MIN_EVIDENCE_COVERAGE
+    )
+
+
 def reconcile_page(
     *,
     page_response: dict[str, Any],
@@ -929,49 +1008,7 @@ def reconcile_page(
     for table in (node for node in page_response["nodes"] if node["type"] == "table"):
         warnings.extend(_reconcile_table(table))
 
-    region_bounds = {
-        str(region.get("id")): region.get("bbox_points")
-        for region in source_regions
-        if isinstance(region.get("id"), str)
-        and isinstance(region.get("bbox_points"), list)
-        and len(region["bbox_points"]) == 4
-    }
-
-    def word_is_local(word: dict[str, Any], region_ids: Sequence[str]) -> bool:
-        word_bbox = word.get("bbox_points")
-        if not isinstance(word_bbox, list) or len(word_bbox) != 4:
-            return not region_bounds
-        wx0, wy0, wx1, wy1 = (float(value) for value in word_bbox)
-        word_area = max(0.0, wx1 - wx0) * max(0.0, wy1 - wy0)
-        if word_area == 0:
-            return False
-        for region_id in region_ids:
-            bounds = region_bounds.get(region_id)
-            if bounds is None:
-                continue
-            rx0, ry0, rx1, ry1 = (float(value) for value in bounds)
-            intersection = max(0.0, min(wx1, rx1) - max(wx0, rx0)) * max(
-                0.0, min(wy1, ry1) - max(wy0, ry0)
-            )
-            if intersection / word_area >= 0.5:
-                return True
-        return False
-
-    def prose_evidence(node: dict[str, Any]) -> set[str]:
-        region_ids = node["source_regions"]
-        evidence = [
-            str(word.get("text", ""))
-            for word in pdf_words
-            if word_is_local(word, region_ids)
-        ]
-        evidence.extend(
-            str(candidate.get("text", ""))
-            for candidate in candidates
-            if candidate.get("type") in {"text", "handwriting", "document_structure"}
-            and _candidate_is_eligible(candidate)
-            and _candidate_source_region(candidate) in region_ids
-        )
-        return _tokens(" ".join(evidence))
+    region_bounds = _source_region_bounds(source_regions)
 
     # Ground each prose node only in evidence localized to its selected regions. A
     # well-recognized paragraph elsewhere on the page must not corroborate this one.
@@ -981,18 +1018,24 @@ def reconcile_page(
     ]
     localized_prose_evidence: dict[int, set[str]] = {}
     for node in prose_nodes:
-        evidence_tokens = prose_evidence(node)
+        evidence_tokens = _localized_prose_evidence(
+            node,
+            candidates=candidates,
+            pdf_words=pdf_words,
+            region_bounds=region_bounds,
+        )
         localized_prose_evidence[id(node)] = evidence_tokens
         if not evidence_tokens:
             continue
-        reconstructed = _tokens(node["text"])
-        overlap = evidence_tokens & reconstructed
-        reconstruction_support = len(overlap) / len(reconstructed) if reconstructed else 0.0
-        evidence_coverage = len(overlap) / len(evidence_tokens)
-        if (
-            reconstruction_support < GROUNDING_MIN_OVERLAP
-            or evidence_coverage < GROUNDING_MIN_EVIDENCE_COVERAGE
-        ):
+        agreeing_prose_verification = any(
+            target.get("type") == node["type"]
+            and _candidate_source_region(target) in node["source_regions"]
+            and verification["agrees_with_page"]
+            for target, verification in region_verifications
+        )
+        if not _prose_evidence_is_strong(
+            node, evidence_tokens
+        ) and not agreeing_prose_verification:
             warnings.append(
                 _warning(
                     "recognition-disagreement",
@@ -1026,30 +1069,36 @@ def reconcile_page(
 
     if require_verification:
         eligible = [candidate for candidate in candidates if _candidate_is_eligible(candidate)]
-        required: list[tuple[str, set[str], list[str]]] = []
-        prose_regions = [
-            region
-            for node in page_response["nodes"]
-            if node["type"] in {"heading", "paragraph"}
-            for region in node["source_regions"]
+        agreeing_targets = [
+            target
+            for target, verification in region_verifications
+            if verification["agrees_with_page"]
         ]
-        if prose_regions:
-            prose_covered = all(
-                bool(localized_prose_evidence[id(node)]) for node in prose_nodes
+        required: list[tuple[str, set[str], list[str]]] = [
+            ("prose", {node["type"]}, list(node["source_regions"]))
+            for node in prose_nodes
+            if not _prose_evidence_is_strong(
+                node, localized_prose_evidence[id(node)]
             )
-            if not prose_covered:
-                required.append(("prose", {"heading", "paragraph"}, prose_regions))
-        for content_type in ("formula", "table", "figure"):
-            regions = [
-                region
-                for node in page_response["nodes"]
-                if node["type"] == content_type
-                for region in node["source_regions"]
-            ]
-            if regions and not any(
+            and not any(
+                target.get("type") == node["type"]
+                and _candidate_source_region(target) in node["source_regions"]
+                for target in agreeing_targets
+            )
+        ]
+        for node in page_response["nodes"]:
+            content_type = node["type"]
+            if content_type not in REGION_VERIFY_TYPES:
+                continue
+            regions = list(node["source_regions"])
+            if not any(
                 candidate.get("type") == content_type
                 and _candidate_source_region(candidate) in regions
                 for candidate in eligible
+            ) and not any(
+                target.get("type") == content_type
+                and _candidate_source_region(target) in regions
+                for target in agreeing_targets
             ):
                 required.append((content_type, {content_type}, regions))
         for content_class, semantic_types, regions in required:
@@ -1127,7 +1176,7 @@ def build_page_semantics_document(
 
 
 def expected_request_count(candidates: Sequence[dict[str, Any]]) -> int:
-    """Provider calls made for one page, including reconstructed-type backfills."""
+    """Pre-response estimate for one page, including semantic-type backfills."""
     specialized = [
         candidate
         for candidate in candidates
@@ -1139,19 +1188,27 @@ def expected_request_count(candidates: Sequence[dict[str, Any]]) -> int:
 
 
 def _region_verification_targets(
-    candidates: Sequence[dict[str, Any]], page_response: dict[str, Any]
+    candidates: Sequence[dict[str, Any]],
+    page_response: dict[str, Any],
+    *,
+    pdf_words: Sequence[dict[str, Any]] = (),
+    source_regions: Sequence[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """Return crop checks for specialized evidence and reconstructed semantics.
+    """Return crop checks for recognition evidence and reconstructed semantics.
 
     Full-page vision can discover a Formula, Figure, or Semantic Table that the
     specialized recognizer classified as another type. Preserve every specialized
-    crop check, then backfill one target for each reconstructed type that otherwise
-    has no independent crop verification. A backfill is a verification target, not
-    a new Recognition Candidate; its type selects the matching page-level semantic
-    view for the crop prompt.
+    crop check, then backfill each reconstructed region set that otherwise lacks
+    sufficiently strong localized evidence. A backfill is a verification target,
+    not a new Recognition Candidate; its type selects the matching page-level
+    semantic view for the crop prompt.
     """
     targets = [
-        {**candidate, "id": _candidate_source_region(candidate)}
+        {
+            **candidate,
+            "id": _candidate_source_region(candidate),
+            "verification_target_kind": "recognition-candidate",
+        }
         for candidate in candidates
         if candidate.get("type") in REGION_VERIFY_TYPES
         and _candidate_is_eligible(candidate)
@@ -1164,9 +1221,23 @@ def _region_verification_targets(
         for candidate in candidates
         if isinstance(_candidate_source_region(candidate), str)
     }
+    region_bounds = _source_region_bounds(source_regions)
     for node in page_response["nodes"]:
         semantic_type = node["type"]
-        if semantic_type not in REGION_VERIFY_TYPES:
+        if semantic_type in {"heading", "paragraph"} and _prose_evidence_is_strong(
+            node,
+            _localized_prose_evidence(
+                node,
+                candidates=candidates,
+                pdf_words=pdf_words,
+                region_bounds=region_bounds,
+            ),
+        ):
+            continue
+        if semantic_type not in REGION_VERIFY_TYPES and semantic_type not in {
+            "heading",
+            "paragraph",
+        }:
             continue
         region_id = node["source_regions"][0]
         if (semantic_type, region_id) in covered_regions:
@@ -1174,7 +1245,9 @@ def _region_verification_targets(
         targets.append({
             **candidates_by_id.get(region_id, {}),
             "id": region_id,
+            "source_region": region_id,
             "type": semantic_type,
+            "verification_target_kind": "semantic-backfill",
         })
         covered_regions.add((semantic_type, region_id))
     return targets
@@ -1349,7 +1422,19 @@ def reconstruct_page(
         ),
     )
     region_verifications: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for candidate in _region_verification_targets(candidates, page_response):
+    verification_targets = _region_verification_targets(
+        candidates,
+        page_response,
+        pdf_words=pdf_words,
+        source_regions=source_regions or (),
+    )
+    if budget is not None:
+        estimated_for_page = expected_request_count(candidates)
+        exact_for_page = 1 + len(verification_targets)
+        budget.update_estimate(
+            budget.estimated_requests + exact_for_page - estimated_for_page
+        )
+    for candidate in verification_targets:
         crop = regions_dir / f"{candidate.get('id')}.png"
         if not crop.is_file() and source_pdf is not None and source_regions is not None:
             region = next(

@@ -92,6 +92,16 @@ class RasterProposalTest(unittest.TestCase):
             all((x1 - x0) * (y1 - y0) < width * height * 0.8 for x0, y0, x1, y1 in proposals)
         )
 
+    def test_model_binding_keeps_usefully_distinct_scales_in_one_geometry_bucket(
+        self,
+    ) -> None:
+        compact = (800, 496, 1376, 820)
+        containing = (784, 332, 1392, 832)
+
+        selected = select_model_binding_boxes([compact, containing])
+
+        self.assertEqual(selected, {compact, containing})
+
 
 @unittest.skipUnless(POPPLER, "poppler is required for gold proposal coverage")
 class GoldProposalCoverageTest(unittest.TestCase):
@@ -123,7 +133,7 @@ class GoldProposalCoverageTest(unittest.TestCase):
                         raster_proposals
                     )
                 ]
-                self.assertLessEqual(len(model_binding_proposals), 1500)
+                self.assertLessEqual(len(model_binding_proposals), 1800)
                 for expected in gold_by_page[page]:
                     self.assertTrue(
                         any(self.usefully_covers(proposal, expected) for proposal in proposals),
@@ -263,6 +273,41 @@ class DocumentValidationTest(unittest.TestCase):
         self.assertFalse(candidate["verification"]["eligible"])
         self.assertIn("source-region-too-large", candidate["verification"]["reason_codes"])
 
+    def test_optional_layout_confidence_does_not_disqualify_localized_evidence(
+        self,
+    ) -> None:
+        document = build_recognition_document(
+            page=1,
+            source_sha256="a" * 64,
+            dpi=300,
+            renderer="pdftoppm",
+            renderer_version="pdftoppm version 24.0",
+            backend=FakeBackend(),
+            page_size=(1000, 1000),
+            candidates=[
+                (
+                    "ignored",
+                    RawCandidate(
+                        "formula",
+                        (100, 100, 300, 180),
+                        "I = Q / delta t",
+                        0.9,
+                        "paddleocr-equation",
+                        raw_class="equation",
+                        layout_confidence=None,
+                    ),
+                ),
+            ],
+            words=[],
+            extractor="pdftotext",
+            extractor_version="pdftotext version 24.0",
+        )
+
+        candidate = document["candidates"][0]
+        self.assertTrue(candidate["verification"]["eligible"])
+        self.assertEqual(candidate["verification"]["reason_codes"], [])
+        self.assertNotIn("layout_confidence", candidate)
+
     def test_source_regions_are_type_neutral_deduplicated_and_keep_useful_parents(
         self,
     ) -> None:
@@ -290,6 +335,63 @@ class DocumentValidationTest(unittest.TestCase):
         self.assertEqual(
             [candidate["source_region"] for candidate in document["candidates"]],
             ["page-2-r0001", "page-2-r0002", "page-2-r0002"],
+        )
+
+    def test_near_identical_cross_source_proposals_merge_but_parent_survives(
+        self,
+    ) -> None:
+        document = build_recognition_document(
+            page=2,
+            source_sha256="a" * 64,
+            dpi=72,
+            renderer="pdftoppm",
+            renderer_version="pdftoppm version 24.0",
+            backend=FakeBackend(),
+            page_size=(1000, 1000),
+            candidates=[
+                (
+                    "ignored",
+                    RawCandidate(
+                        "formula",
+                        (100, 100, 300, 180),
+                        "I = Q / delta t",
+                        0.9,
+                        "fake-formula",
+                        layout_confidence=0.95,
+                    ),
+                ),
+            ],
+            words=[
+                {
+                    "text": "I = Q / delta t",
+                    "bbox_points": [103.0, 98.0, 302.0, 182.0],
+                }
+            ],
+            raster_proposals=[
+                (98, 102, 299, 181),
+                (60, 60, 360, 260),
+            ],
+            extractor="pdftotext",
+            extractor_version="pdftotext version 24.0",
+        )
+
+        nonfallback = document["source_regions"][1:]
+        self.assertEqual(len(nonfallback), 2)
+        merged = next(
+            region
+            for region in nonfallback
+            if len(region["proposal_sources"]) == 3
+        )
+        self.assertEqual(
+            merged["proposal_sources"],
+            ["native-pdf-word", "raster-ink", "recognition"],
+        )
+        parent = next(region for region in nonfallback if region is not merged)
+        self.assertEqual(parent["bbox_pixels"], [60, 60, 360, 260])
+        self.assertEqual(parent["proposal_sources"], ["raster-ink"])
+        self.assertEqual(
+            document["candidates"][0]["source_region"],
+            merged["id"],
         )
 
     def test_unknown_candidate_type_is_rejected(self) -> None:

@@ -25,15 +25,15 @@ from accessibilizer.process import run as _run
 RECOGNITION_CONTRACT_VERSION = "2.0"
 RECOGNITION_DPI = 300
 PROPOSAL_ALGORITHM = "hybrid-source-regions"
-PROPOSAL_ALGORITHM_VERSION = "1.0"
+PROPOSAL_ALGORITHM_VERSION = "1.1"
 MAX_NONFALLBACK_AREA_RATIO = 0.8
 PROPOSAL_DEDUPLICATION_PIXELS = 112
 MODEL_BINDING_DEDUPLICATION_PIXELS = 200
+MODEL_BINDING_SCALE_VARIANT_AREA_RATIO = 1.4
 MODEL_BINDING_OVERLAY_COLUMNS = 4
 MODEL_BINDING_OVERLAY_ROWS = 4
 CONFIDENCE_KINDS = ("layout_confidence", "ocr_text_confidence")
 VERIFICATION_INELIGIBILITY_REASON_CODES = (
-    "missing-layout-confidence",
     "missing-ocr-text-confidence",
     "missing-recognized-content",
     "source-region-too-large",
@@ -305,24 +305,27 @@ def build_recognition_document(
 ) -> dict[str, Any]:
     width, height = page_size
     fallback_id = f"page-{page}-r0000"
-    proposal_sources: dict[Bbox, set[str]] = {}
+    raw_proposal_sources: dict[Bbox, set[str]] = {}
     normalized_candidate_boxes: list[Bbox] = []
     for _, candidate in candidates:
         normalized = clamp_bbox_to_page(candidate.bbox_pixels, page_size)
         normalized_candidate_boxes.append(normalized)
         if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
-            proposal_sources.setdefault(normalized, set()).add("recognition")
+            raw_proposal_sources.setdefault(normalized, set()).add("recognition")
     for word in words:
         bbox_points = word.get("bbox_points")
         if isinstance(bbox_points, list) and len(bbox_points) == 4:
             normalized = clamp_bbox_to_page(points_to_pixels(bbox_points, dpi), page_size)
             if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
-                proposal_sources.setdefault(normalized, set()).add("native-pdf-word")
+                raw_proposal_sources.setdefault(normalized, set()).add("native-pdf-word")
     for proposal in raster_proposals:
         normalized = clamp_bbox_to_page(proposal, page_size)
         if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
-            proposal_sources.setdefault(normalized, set()).add("raster-ink")
+            raw_proposal_sources.setdefault(normalized, set()).add("raster-ink")
 
+    proposal_sources, representative_by_bbox = _deduplicate_proposals(
+        raw_proposal_sources
+    )
     ordered_proposals = sorted(
         proposal_sources, key=lambda bbox: (bbox[1], bbox[0], bbox[3], bbox[2])
     )
@@ -333,7 +336,9 @@ def build_recognition_document(
     model_visible_boxes = select_model_binding_boxes(
         ordered_proposals,
         candidate_boxes=(
-            bbox for bbox in normalized_candidate_boxes if bbox in region_id_by_bbox
+            representative_by_bbox[bbox]
+            for bbox in normalized_candidate_boxes
+            if bbox in representative_by_bbox
         ),
     )
     source_regions: list[dict[str, object]] = [
@@ -365,7 +370,12 @@ def build_recognition_document(
         key=lambda item: (item[0][1], item[0][0]),
     )
     for index, (bbox, candidate) in enumerate(ordered_candidates, start=1):
-        source_region = region_id_by_bbox.get(bbox, fallback_id)
+        representative = representative_by_bbox.get(bbox)
+        source_region = (
+            region_id_by_bbox[representative]
+            if representative is not None
+            else fallback_id
+        )
         reasons = _candidate_ineligibility_reasons(
             candidate, bbox=bbox, page_size=page_size, source_region=source_region
         )
@@ -426,6 +436,45 @@ def _bbox_area(bbox: Bbox) -> int:
     return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
 
 
+def _deduplicate_proposals(
+    proposal_sources: Mapping[Bbox, set[str]],
+) -> tuple[dict[Bbox, set[str]], dict[Bbox, Bbox]]:
+    """Merge near-identical geometry across every proposal source.
+
+    Stable representatives are chosen only from normalized input boxes. Substantially
+    larger parents survive even when all four edges fall in the same coarse bucket.
+    """
+    merged: dict[Bbox, set[str]] = {}
+    representative_by_bbox: dict[Bbox, Bbox] = {}
+    ordered = sorted(
+        proposal_sources,
+        key=lambda bbox: (bbox[1], bbox[0], bbox[3], bbox[2]),
+    )
+    for bbox in ordered:
+        area = _bbox_area(bbox)
+        representative = next(
+            (
+                existing
+                for existing in merged
+                if max(abs(bbox[index] - existing[index]) for index in range(4))
+                <= PROPOSAL_DEDUPLICATION_PIXELS
+                and _bbox_intersection_area(bbox, existing)
+                / max(area, _bbox_area(existing))
+                >= 0.8
+            ),
+            bbox,
+        )
+        merged.setdefault(representative, set()).update(proposal_sources[bbox])
+        representative_by_bbox[bbox] = representative
+    return merged, representative_by_bbox
+
+
+def _bbox_intersection_area(first: Bbox, second: Bbox) -> int:
+    return max(0, min(first[2], second[2]) - max(first[0], second[0])) * max(
+        0, min(first[3], second[3]) - max(first[1], second[1])
+    )
+
+
 def select_model_binding_boxes(
     proposals: Sequence[Bbox], *, candidate_boxes: Iterable[Bbox] = (),
 ) -> set[Bbox]:
@@ -439,16 +488,21 @@ def select_model_binding_boxes(
             round(bbox[3] / MODEL_BINDING_DEDUPLICATION_PIXELS),
         )
         binding_clusters.setdefault(key, []).append(bbox)
-    selected = {
-        min(
+    selected: set[Bbox] = set()
+    for key, cluster in binding_clusters.items():
+        primary = min(
             cluster,
             key=lambda bbox: sum(
                 abs(bbox[index] - key[index] * MODEL_BINDING_DEDUPLICATION_PIXELS)
                 for index in range(4)
             ),
         )
-        for key, cluster in binding_clusters.items()
-    }
+        selected.add(primary)
+        compact = min(cluster, key=_bbox_area)
+        if _bbox_area(primary) >= (
+            _bbox_area(compact) * MODEL_BINDING_SCALE_VARIANT_AREA_RATIO
+        ):
+            selected.add(compact)
     selected.update(candidate_boxes)
     return selected
 
@@ -465,8 +519,6 @@ def _candidate_ineligibility_reasons(
         reasons.append("whole-page-fallback")
     if _bbox_area(bbox) >= page_size[0] * page_size[1] * MAX_NONFALLBACK_AREA_RATIO:
         reasons.append("source-region-too-large")
-    if candidate.layout_confidence is None:
-        reasons.append("missing-layout-confidence")
     if candidate.type in {"text", "handwriting", "formula"}:
         if candidate.confidence is None:
             reasons.append("missing-ocr-text-confidence")

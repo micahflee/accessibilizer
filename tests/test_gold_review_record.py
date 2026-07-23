@@ -10,6 +10,8 @@ migration does not claim that approval.
 
 from __future__ import annotations
 
+import gzip
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -19,7 +21,7 @@ from typing import Any
 import unittest
 
 from accessibilizer.checkpoint import file_sha256
-from accessibilizer.page import reconcile_page
+from accessibilizer.page import reconcile_page, validate_page_response
 from accessibilizer.review import (
     REVIEW_RECORD_SCHEMA_VERSION,
     load_yaml,
@@ -29,6 +31,7 @@ from accessibilizer.review import (
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
 GOLD = ROOT / "testdata" / "gold-review-record.yaml"
+REPLAY = ROOT / "testdata" / "sample-replay-1.0.json.gz"
 
 EXPECTED_PAGES = list(range(1, 12))
 
@@ -408,6 +411,135 @@ class GoldReviewRecordTests(unittest.TestCase):
                 self.assertGreater(
                     (output / "regions" / f"{identifier}.png").stat().st_size, 0
                 )
+
+
+class OfflineSampleReplayTests(unittest.TestCase):
+    replay: dict[str, Any]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        with gzip.open(REPLAY, "rt", encoding="utf-8") as stream:
+            cls.replay = json.load(stream)
+
+    @staticmethod
+    def usefully_covers(proposal: list[float], gold: list[float]) -> bool:
+        px0, py0, px1, py1 = proposal
+        gx0, gy0, gx1, gy1 = gold
+        intersection = max(0.0, min(px1, gx1) - max(px0, gx0)) * max(
+            0.0, min(py1, gy1) - max(py0, gy0)
+        )
+        proposal_area = (px1 - px0) * (py1 - py0)
+        gold_area = (gx1 - gx0) * (gy1 - gy0)
+        union = proposal_area + gold_area - intersection
+        iou = intersection / union if union else 0.0
+        containment = intersection / gold_area
+        return iou >= 0.5 or (
+            containment >= 0.8 and proposal_area <= 2 * gold_area
+        )
+
+    def test_real_recognition_selection_and_reconciliation_replay_the_oracle(
+        self,
+    ) -> None:
+        self.assertEqual(self.replay["schema_version"], "1.0")
+        self.assertEqual(self.replay["source_sha256"], file_sha256(SOURCE))
+        self.assertEqual(
+            self.replay["recognition_capture"],
+            "paddleocr-2.7.3-ppstructure-default",
+        )
+
+        warning_multiset: list[tuple[int, str]] = []
+        selected_nodes = 0
+        matched_gold_regions = 0
+        eligible_candidates = 0
+        for replay_page in self.replay["pages"]:
+            page_number = replay_page["page"]
+            response = replay_page["page_response"]
+            regions = {
+                region["id"]: region
+                for region in replay_page["source_regions"]
+            }
+            validate_page_response(
+                response,
+                source_region_ids=list(regions),
+            )
+            self.assertEqual(
+                replay_page["proposal_generation"]["algorithm_version"],
+                "1.1",
+            )
+            for node in response["nodes"]:
+                selected_nodes += 1
+                self.assertTrue(node["source_regions"])
+                for identifier in node["source_regions"]:
+                    self.assertFalse(identifier.endswith("-r0000"))
+                    self.assertTrue(identifier.startswith(f"page-{page_number}-r"))
+                    self.assertIn(identifier, regions)
+
+            for match in replay_page["gold_region_matches"]:
+                matched_gold_regions += 1
+                proposal = regions[match["source_region"]]["bbox_points"]
+                self.assertTrue(
+                    self.usefully_covers(
+                        proposal,
+                        match["gold_bbox_points"],
+                    ),
+                    (page_number, proposal, match["gold_bbox_points"]),
+                )
+
+            candidates = replay_page["candidates"]
+            eligible_candidates += sum(
+                candidate["verification"]["eligible"]
+                for candidate in candidates
+            )
+            region_verifications = [
+                (verification["target"], verification["response"])
+                for verification in replay_page["region_verifications"]
+            ]
+            _, warnings = reconcile_page(
+                page_response=response,
+                region_verifications=region_verifications,
+                candidates=candidates,
+                pdf_words=replay_page["pdf_words"],
+                source_regions=list(regions.values()),
+                require_verification=True,
+            )
+            warning_multiset.extend(
+                (page_number, warning["code"]) for warning in warnings
+            )
+
+        self.assertEqual(selected_nodes, 115)
+        self.assertEqual(matched_gold_regions, 119)
+        self.assertGreater(eligible_candidates, 0)
+        self.assertEqual(
+            warning_multiset,
+            [
+                (1, "ambiguous-reading-order"),
+                (3, "ambiguous-reading-order"),
+                (3, "table-merged-cells"),
+                (6, "ambiguous-reading-order"),
+                (6, "suspected-source-error"),
+                (7, "ambiguous-reading-order"),
+            ],
+        )
+
+    def test_page_one_oversized_formula_candidate_is_retained_and_ineligible(
+        self,
+    ) -> None:
+        page_one = next(
+            page for page in self.replay["pages"] if page["page"] == 1
+        )
+        candidate = next(
+            candidate
+            for candidate in page_one["candidates"]
+            if candidate.get("ocr_text_confidence") == 0.8203
+        )
+
+        self.assertEqual(candidate["type"], "formula")
+        self.assertEqual(candidate["source_region"], "page-1-r0000")
+        self.assertFalse(candidate["verification"]["eligible"])
+        self.assertIn(
+            "source-region-too-large",
+            candidate["verification"]["reason_codes"],
+        )
 
 
 if __name__ == "__main__":

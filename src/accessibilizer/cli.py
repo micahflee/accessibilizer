@@ -1427,20 +1427,17 @@ def _run_conversion(
         file=sys.stderr,
     )
 
-    # Second pass: reconstruct each page that cannot be reused, enforcing the
-    # request ceiling against the running total before every page.
+    # Second pass: reconstruct each page that cannot be reused. The pre-response
+    # estimate cannot know how many same-type nodes the page model will reconstruct,
+    # so RequestBudget enforces the ceiling immediately before every actual request;
+    # reconstruct_page replaces this estimate with the exact target count once the
+    # validated page response is available.
     for page_number in pages:
         if page_semantics_reusable[page_number]:
             reporter.reused(
                 "provider-reconstruction", page=page_number, page_count=page_count
             )
             continue
-        page_requests = page.expected_request_count(page_candidates[page_number])
-        if budget.actual_requests + page_requests > budget.ceiling:
-            raise RequestCeilingExceeded(
-                f"conversion paused before exceeding request ceiling {budget.ceiling}; "
-                "resume with a higher --max-requests value"
-            )
         semantics_document = page.reconstruct_page(
             provider,
             page=page_number,

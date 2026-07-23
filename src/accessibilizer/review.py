@@ -272,7 +272,15 @@ def _page_reconstruction_schema() -> dict[str, Any]:
                     "properties": {
                         "agrees_with_page": {"type": "boolean"},
                         "source_region": {"type": "string", "pattern": _SOURCE_REGION_ID},
-                        "type": {"enum": ["formula", "table", "figure"]},
+                        "type": {
+                            "enum": [
+                                "heading",
+                                "paragraph",
+                                "formula",
+                                "table",
+                                "figure",
+                            ]
+                        },
                     },
                 },
             },
