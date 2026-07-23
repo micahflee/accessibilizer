@@ -239,6 +239,92 @@ class ConversionTest(unittest.TestCase):
                 },
             )
 
+    def test_early_resume_failure_preserves_persisted_cumulative_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "resume.accessibilizer"
+            workspace = temporary / ".resume.accessibilizer.in-progress"
+            workspace.mkdir()
+            (workspace / "request-usage.json").write_text(
+                json.dumps(
+                    {
+                        "actual_requests": 2,
+                        "estimated_requests": 4,
+                        "reported_token_usage": {"total_tokens": 37},
+                        "reported_total_tokens": 37,
+                        "requests_with_reported_total": 2,
+                        "request_ceiling": 100,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = self.run_conversion(
+                temporary / "missing.pdf", bundle, resume=True
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 0},
+                    "conversion_total": {"complete": True, "total_tokens": 37},
+                },
+            )
+
+    def test_signal_during_launcher_preparation_is_a_controlled_interruption(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            binaries = temporary / "bin"
+            binaries.mkdir()
+            marker = temporary / "provider-key-env.started"
+            docker = binaries / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                ': > "$EARLY_SIGNAL_MARKER"\n'
+                "while :; do sleep 1; done\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            environment = self.conversion_environment()
+            environment["EARLY_SIGNAL_MARKER"] = str(marker)
+            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+
+            process = subprocess.Popen(
+                self.conversion_command(
+                    SOURCE, temporary / "interrupted.accessibilizer"
+                ),
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                start_new_session=True,
+            )
+            deadline = time.monotonic() + 5
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(marker.exists(), "launcher did not begin provider resolution")
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=5)
+
+            self.assertEqual(process.returncode, 130, stderr)
+            self.assertEqual(
+                json.loads(stdout),
+                {
+                    "reported_token_usage": {
+                        "this_run": {"complete": True, "total_tokens": 0},
+                        "conversion_total": {
+                            "complete": True,
+                            "total_tokens": 0,
+                        },
+                    },
+                    "status": "interrupted",
+                },
+            )
+
     def test_public_convert_cli_reports_argument_validation_as_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary = Path(temporary_directory)
@@ -269,6 +355,48 @@ class ConversionTest(unittest.TestCase):
                         },
                     },
                     "status": "operational_failure",
+                },
+            )
+
+    def test_resume_argument_validation_preserves_persisted_cumulative_usage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "resume.accessibilizer"
+            workspace = temporary / ".resume.accessibilizer.in-progress"
+            workspace.mkdir()
+            (workspace / "request-usage.json").write_text(
+                json.dumps(
+                    {
+                        "actual_requests": 2,
+                        "estimated_requests": 4,
+                        "reported_token_usage": {"total_tokens": 37},
+                        "reported_total_tokens": 37,
+                        "requests_with_reported_total": 2,
+                        "request_ceiling": 100,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            command = self.conversion_command(SOURCE, bundle, resume=True)
+            command[-1:-1] = ["--max-requests", "not-an-integer"]
+
+            result = subprocess.run(
+                command,
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=self.conversion_environment(),
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 0},
+                    "conversion_total": {"complete": True, "total_tokens": 37},
                 },
             )
 
@@ -319,6 +447,62 @@ class ConversionTest(unittest.TestCase):
                         "conversion_total": {
                             "complete": False,
                             "total_tokens": None,
+                        },
+                    },
+                    "status": "operational_failure",
+                },
+            )
+            self.assertEqual(len(result.stdout.strip().splitlines()), 1)
+
+    def test_resume_runtime_failure_preserves_the_known_cumulative_floor(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            binaries = temporary / "bin"
+            binaries.mkdir()
+            docker = binaries / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                'case "$*" in\n'
+                "  *reported-token-usage*) printf '%s\\n' '0 true 37 true'; exit 0 ;;\n"
+                "  *provider-key-env*) exit 0 ;;\n"
+                "esac\n"
+                "printf '%s\\n' '{\"status\":\"accessible\"}'\n"
+                "exit 125\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            environment = self.conversion_environment()
+            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "accessibilizer"),
+                    "convert",
+                    str(SOURCE),
+                    "--bundle",
+                    str(temporary / "runtime-failure.accessibilizer"),
+                    "--resume",
+                    "--json",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "error": "container runtime failed",
+                    "reported_token_usage": {
+                        "this_run": {"complete": False, "total_tokens": None},
+                        "conversion_total": {
+                            "complete": False,
+                            "total_tokens": 37,
                         },
                     },
                     "status": "operational_failure",

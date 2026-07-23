@@ -280,10 +280,16 @@ def _parser() -> argparse.ArgumentParser:
 
     provider_key_env = subparsers.add_parser("provider-key-env", help=argparse.SUPPRESS)
     _add_provider_arguments(provider_key_env)
+    reported_token_usage = subparsers.add_parser(
+        "reported-token-usage", help=argparse.SUPPRESS
+    )
+    reported_token_usage.add_argument("--bundle", type=Path, required=True)
     # argparse.SUPPRESS on add_parser() hides the description but not the
-    # subcommand's own list entry; drop its pseudo-action to hide it fully.
+    # subcommands' own list entries; drop their pseudo-actions to hide them fully.
     subparsers._choices_actions[:] = [
-        action for action in subparsers._choices_actions if action.dest != "provider-key-env"
+        action
+        for action in subparsers._choices_actions
+        if action.dest not in {"provider-key-env", "reported-token-usage"}
     ]
     return parser
 
@@ -1161,6 +1167,29 @@ def _zero_reported_token_usage() -> ReportedTokenUsage:
     }
 
 
+def _reported_token_usage_after_argument_failure(
+    arguments: list[str],
+) -> ReportedTokenUsage:
+    if "--resume" not in arguments:
+        return _zero_reported_token_usage()
+    unavailable: ReportedTokenUsage = {
+        "this_run": {"total_tokens": 0, "complete": True},
+        "conversion_total": {"total_tokens": None, "complete": False},
+    }
+    bundle: Path | None = None
+    for index, argument in enumerate(arguments):
+        if argument == "--bundle" and index + 1 < len(arguments):
+            bundle = Path(arguments[index + 1])
+    if bundle is None:
+        return unavailable
+    try:
+        return _load_request_usage(
+            _workspace_for(bundle)
+        ).summary_after_zero_request_run()
+    except RuntimeError:
+        return unavailable
+
+
 def _reported_tokens_text(total: ReportedTokenTotal) -> str:
     value = total["total_tokens"]
     if value is None:
@@ -1883,7 +1912,7 @@ def main() -> int:
     except SystemExit as error:
         code = error.code if isinstance(error.code, int) else 1
         if code != 0 and len(sys.argv) > 1 and sys.argv[1] == "convert":
-            usage = _zero_reported_token_usage()
+            usage = _reported_token_usage_after_argument_failure(sys.argv[2:])
             if "--json" in sys.argv[2:]:
                 print(
                     json.dumps(
@@ -1915,8 +1944,29 @@ def main() -> int:
             if provider.api_key_env is not None:
                 print(provider.api_key_env)
             return 0
+        if args.command == "reported-token-usage":
+            usage = _load_request_usage(
+                _workspace_for(args.bundle)
+            ).summary_after_zero_request_run()
+            fields = (
+                usage["this_run"]["total_tokens"],
+                usage["this_run"]["complete"],
+                usage["conversion_total"]["total_tokens"],
+                usage["conversion_total"]["complete"],
+            )
+            print(
+                " ".join(
+                    "null"
+                    if field is None
+                    else str(field).lower()
+                    if isinstance(field, bool)
+                    else str(field)
+                    for field in fields
+                )
+            )
+            return 0
     except Exception as error:
-        if args.json:
+        if getattr(args, "json", False):
             print(json.dumps({"error": str(error), "status": "operational_failure"}, sort_keys=True))
         else:
             print(f"accessibilizer: {error}", file=sys.stderr)
