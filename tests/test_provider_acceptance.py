@@ -186,8 +186,12 @@ class FakeProvider:
                     body = json.loads(json.dumps(BASE_PAGE_CONTENT))
                     evidence = request["messages"][1]["content"][1]["text"]
                     evidence_document = json.loads(evidence.split("\n", 1)[1])
-                    region_ids = evidence_document.get("source_regions") or [
-                        evidence_document["recognition_candidates"][0]["id"]
+                    region_entries = evidence_document.get("source_regions") or []
+                    region_ids = [
+                        entry.get("id") if isinstance(entry, dict) else entry
+                        for entry in region_entries
+                    ] or [
+                        evidence_document["recognition_candidates"][0]["source_region"]
                     ]
                     node_overrides = {
                         node_type: provider.page_overrides[node_type]
@@ -203,7 +207,7 @@ class FakeProvider:
                             node.update(node_overrides[node["type"]])
                         matching_region = next(
                             (
-                                candidate["id"]
+                                candidate["source_region"]
                                 for candidate in evidence_document["recognition_candidates"]
                                 if candidate.get("type") == node["type"]
                             ),

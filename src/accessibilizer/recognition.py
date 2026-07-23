@@ -13,14 +13,21 @@ import html
 import os
 from pathlib import Path
 import re
-from typing import Mapping, Protocol, Sequence, runtime_checkable
+import shutil
+import struct
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+import zlib
 
 from accessibilizer.checkpoint import atomic_write_json
 from accessibilizer.process import run as _run
 
 
-RECOGNITION_CONTRACT_VERSION = "1.0"
+RECOGNITION_CONTRACT_VERSION = "2.0"
 RECOGNITION_DPI = 300
+PROPOSAL_ALGORITHM = "hybrid-source-regions"
+PROPOSAL_ALGORITHM_VERSION = "1.0"
+MAX_NONFALLBACK_AREA_RATIO = 0.8
+PROPOSAL_DEDUPLICATION_PIXELS = 112
 
 CANDIDATE_TYPES = frozenset(
     {"text", "handwriting", "formula", "table", "figure", "document_structure"}
@@ -31,13 +38,15 @@ Bbox = tuple[int, int, int, int]
 
 @dataclass(frozen=True)
 class RawCandidate:
-    """A recognized region before it receives a stable identifier or a crop."""
+    """Recognition evidence before it receives a stable Candidate identity."""
 
     type: str
     bbox_pixels: Bbox
     text: str | None
     confidence: float | None
     backend: str
+    raw_class: str | None = None
+    layout_confidence: float | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,8 @@ class FakeBackend:
                     text=text,
                     confidence=confidence,
                     backend=f"fake-{kind}",
+                    raw_class=kind,
+                    layout_confidence=confidence,
                 )
             )
         return candidates
@@ -161,6 +172,13 @@ class PaddleBackend:
                 continue
             bbox: Bbox = (int(box[0]), int(box[1]), int(box[2]), int(box[3]))
             text, confidence = _paddle_region_text(region.get("res"))
+            layout_confidence_value = region.get("score")
+            layout_confidence = (
+                float(layout_confidence_value)
+                if isinstance(layout_confidence_value, (int, float))
+                and not isinstance(layout_confidence_value, bool)
+                else None
+            )
             candidates.append(
                 RawCandidate(
                     type=candidate_type,
@@ -168,38 +186,11 @@ class PaddleBackend:
                     text=text,
                     confidence=confidence,
                     backend=f"paddleocr-{label or 'region'}",
+                    raw_class=label or "region",
+                    layout_confidence=layout_confidence,
                 )
             )
-        structure = _page_structure_candidate(candidates)
-        if structure is not None:
-            candidates.append(structure)
         return candidates
-
-
-def _page_structure_candidate(regions: Sequence[RawCandidate]) -> RawCandidate | None:
-    """Derive a Document Structure candidate from the detected page layout.
-
-    The layout model rarely emits an explicit title/header region, so the page's
-    reading order (the detected regions ordered top-to-bottom, left-to-right) is
-    itself the Document Structure evidence. This is derived from real detections,
-    not fabricated, and is preserved for later reconciliation of reading order.
-    """
-    if not regions:
-        return None
-    ordered = sorted(regions, key=lambda region: (region.bbox_pixels[1], region.bbox_pixels[0]))
-    bbox: Bbox = (
-        min(region.bbox_pixels[0] for region in regions),
-        min(region.bbox_pixels[1] for region in regions),
-        max(region.bbox_pixels[2] for region in regions),
-        max(region.bbox_pixels[3] for region in regions),
-    )
-    return RawCandidate(
-        type="document_structure",
-        bbox_pixels=bbox,
-        text="; ".join(region.type for region in ordered),
-        confidence=None,
-        backend="paddleocr-layout",
-    )
 
 
 def _paddle_region_text(res: object) -> tuple[str | None, float | None]:
@@ -253,6 +244,10 @@ def pixels_to_points(bbox: Sequence[float], dpi: int) -> list[float]:
     return [round(value * 72.0 / dpi, 2) for value in bbox]
 
 
+def points_to_pixels(bbox: Sequence[float], dpi: int) -> Bbox:
+    return tuple(round(float(value) * dpi / 72.0) for value in bbox)  # type: ignore[return-value]
+
+
 _WORD_PATTERN = re.compile(
     r'<word\s+xMin="(?P<x_min>[\d.]+)"\s+yMin="(?P<y_min>[\d.]+)"'
     r'\s+xMax="(?P<x_max>[\d.]+)"\s+yMax="(?P<y_max>[\d.]+)"\s*>'
@@ -287,25 +282,85 @@ def build_recognition_document(
     renderer: str,
     renderer_version: str,
     backend: RecognitionBackend,
+    page_size: tuple[int, int],
+    raster_proposals: Sequence[Bbox] = (),
     candidates: Sequence[tuple[str, RawCandidate]],
     words: Sequence[dict[str, object]],
     extractor: str,
     extractor_version: str,
-) -> dict[str, object]:
+) -> dict[str, Any]:
+    width, height = page_size
+    fallback_id = f"page-{page}-r0000"
+    proposal_sources: dict[Bbox, set[str]] = {}
+    normalized_candidate_boxes: list[Bbox] = []
+    for _, candidate in candidates:
+        normalized = clamp_bbox_to_page(candidate.bbox_pixels, page_size)
+        normalized_candidate_boxes.append(normalized)
+        if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
+            proposal_sources.setdefault(normalized, set()).add("recognition")
+    for word in words:
+        bbox_points = word.get("bbox_points")
+        if isinstance(bbox_points, list) and len(bbox_points) == 4:
+            normalized = clamp_bbox_to_page(points_to_pixels(bbox_points, dpi), page_size)
+            if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
+                proposal_sources.setdefault(normalized, set()).add("native-pdf-word")
+    for proposal in raster_proposals:
+        normalized = clamp_bbox_to_page(proposal, page_size)
+        if _bbox_area(normalized) < width * height * MAX_NONFALLBACK_AREA_RATIO:
+            proposal_sources.setdefault(normalized, set()).add("raster-ink")
+
+    ordered_proposals = sorted(
+        proposal_sources, key=lambda bbox: (bbox[1], bbox[0], bbox[3], bbox[2])
+    )
+    region_id_by_bbox = {
+        bbox: f"page-{page}-r{index:04d}"
+        for index, bbox in enumerate(ordered_proposals, start=1)
+    }
+    source_regions: list[dict[str, object]] = [
+        {
+            "bbox_pixels": [0, 0, width, height],
+            "bbox_points": pixels_to_points((0, 0, width, height), dpi),
+            "crop": f"regions/{fallback_id}.png",
+            "id": fallback_id,
+            "proposal_sources": ["whole-page-fallback"],
+        }
+    ]
+    for bbox in ordered_proposals:
+        identifier = region_id_by_bbox[bbox]
+        source_regions.append(
+            {
+                "bbox_pixels": list(bbox),
+                "bbox_points": pixels_to_points(bbox, dpi),
+                "crop": f"regions/{identifier}.png",
+                "id": identifier,
+                "proposal_sources": sorted(proposal_sources[bbox]),
+            }
+        )
+
     candidate_documents: list[dict[str, object]] = []
-    for identifier, candidate in candidates:
+    ordered_candidates = sorted(
+        zip(normalized_candidate_boxes, (candidate for _, candidate in candidates)),
+        key=lambda item: (item[0][1], item[0][0]),
+    )
+    for index, (bbox, candidate) in enumerate(ordered_candidates, start=1):
+        source_region = region_id_by_bbox.get(bbox, fallback_id)
+        reasons = _candidate_ineligibility_reasons(
+            candidate, bbox=bbox, page_size=page_size, source_region=source_region
+        )
         entry: dict[str, object] = {
             "backend": candidate.backend,
-            "bbox_pixels": [int(value) for value in candidate.bbox_pixels],
-            "bbox_points": pixels_to_points(candidate.bbox_pixels, dpi),
-            "crop": f"regions/{identifier}.png",
-            "id": identifier,
+            "id": f"page-{page}-c{index:04d}",
+            "raw_class": candidate.raw_class or candidate.type,
+            "source_region": source_region,
             "type": candidate.type,
+            "verification": {"eligible": not reasons, "reason_codes": reasons},
         }
         if candidate.text is not None:
             entry["text"] = candidate.text
         if candidate.confidence is not None:
-            entry["confidence"] = candidate.confidence
+            entry["ocr_text_confidence"] = candidate.confidence
+        if candidate.layout_confidence is not None:
+            entry["layout_confidence"] = candidate.layout_confidence
         candidate_documents.append(entry)
     return {
         "candidates": candidate_documents,
@@ -322,17 +377,52 @@ def build_recognition_document(
             "backend_version": backend.version,
             "weights_version": backend.weights_version,
         },
+        "proposal_generation": {
+            "algorithm": PROPOSAL_ALGORITHM,
+            "algorithm_version": PROPOSAL_ALGORITHM_VERSION,
+            "deduplication_pixels": PROPOSAL_DEDUPLICATION_PIXELS,
+            "max_nonfallback_area_ratio": MAX_NONFALLBACK_AREA_RATIO,
+            "sources": ["native-pdf-word", "raster-ink", "recognition"],
+        },
         "rendering": {
             "dpi": dpi,
             "renderer": renderer,
             "renderer_version": renderer_version,
         },
         "schema_version": RECOGNITION_CONTRACT_VERSION,
+        "source_regions": source_regions,
         "source_sha256": source_sha256,
     }
 
 
-_ID_PATTERN = re.compile(r"^page-[0-9]+-r[0-9]{4,}$")
+def _bbox_area(bbox: Bbox) -> int:
+    return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+
+def _candidate_ineligibility_reasons(
+    candidate: RawCandidate,
+    *,
+    bbox: Bbox,
+    page_size: tuple[int, int],
+    source_region: str,
+) -> list[str]:
+    reasons: list[str] = []
+    if source_region.endswith("-r0000"):
+        reasons.append("whole-page-fallback")
+    if _bbox_area(bbox) >= page_size[0] * page_size[1] * MAX_NONFALLBACK_AREA_RATIO:
+        reasons.append("source-region-too-large")
+    if candidate.layout_confidence is None:
+        reasons.append("missing-layout-confidence")
+    if candidate.type in {"text", "handwriting", "formula"}:
+        if candidate.confidence is None:
+            reasons.append("missing-ocr-text-confidence")
+        if not (candidate.text or "").strip():
+            reasons.append("missing-recognized-content")
+    return reasons
+
+
+_REGION_ID_PATTERN = re.compile(r"^page-[0-9]+-r[0-9]{4,}$")
+_CANDIDATE_ID_PATTERN = re.compile(r"^page-[0-9]+-c[0-9]{4,}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -351,10 +441,10 @@ def _validate_bbox(value: object, message: str) -> None:
 
 
 def validate_recognition_document(document: object) -> None:
-    """Validate a recognition document against the recognition-1.0 contract."""
+    """Validate a recognition document against the recognition-2.0 contract."""
     _require(isinstance(document, dict), "recognition document must be an object")
     assert isinstance(document, dict)
-    _require(document.get("schema_version") == "1.0", "recognition schema_version must be 1.0")
+    _require(document.get("schema_version") == "2.0", "recognition schema_version must be 2.0")
     page = document.get("page")
     _require(isinstance(page, int) and not isinstance(page, bool) and page >= 1, "page must be a positive integer")
     _require(
@@ -385,6 +475,28 @@ def validate_recognition_document(document: object) -> None:
             f"recognition.{field} must be a non-empty string",
         )
 
+    source_regions = document.get("source_regions")
+    _require(isinstance(source_regions, list) and bool(source_regions), "source_regions must be a nonempty array")
+    assert isinstance(source_regions, list)
+    region_ids: set[str] = set()
+    for region in source_regions:
+        _require(isinstance(region, dict), "each Source Region must be an object")
+        assert isinstance(region, dict)
+        identifier = region.get("id")
+        _require(isinstance(identifier, str) and bool(_REGION_ID_PATTERN.match(identifier)), "Source Region id is invalid")
+        assert isinstance(identifier, str)
+        region_ids.add(identifier)
+        _validate_bbox(region.get("bbox_pixels"), "Source Region bbox_pixels must be four numbers")
+        _validate_bbox(region.get("bbox_points"), "Source Region bbox_points must be four numbers")
+        _require(isinstance(region.get("crop"), str), "Source Region crop must be a string")
+        _require(isinstance(region.get("proposal_sources"), list), "proposal_sources must be an array")
+
+    proposal_generation = document.get("proposal_generation")
+    _require(isinstance(proposal_generation, dict), "proposal_generation must be an object")
+    assert isinstance(proposal_generation, dict)
+    for field in ("algorithm", "algorithm_version"):
+        _require(isinstance(proposal_generation.get(field), str) and bool(str(proposal_generation[field]).strip()), f"proposal_generation.{field} must be a non-empty string")
+
     candidates = document.get("candidates")
     _require(isinstance(candidates, list), "candidates must be an array")
     assert isinstance(candidates, list)
@@ -392,15 +504,13 @@ def validate_recognition_document(document: object) -> None:
         _require(isinstance(candidate, dict), "each candidate must be an object")
         assert isinstance(candidate, dict)
         _require(
-            isinstance(candidate.get("id"), str) and bool(_ID_PATTERN.match(str(candidate["id"]))),
-            "candidate id must match page-<n>-r<index>",
+            isinstance(candidate.get("id"), str) and bool(_CANDIDATE_ID_PATTERN.match(str(candidate["id"]))),
+            "candidate id must match page-<n>-c<index>",
         )
         _require(candidate.get("type") in CANDIDATE_TYPES, f"unsupported candidate type: {candidate.get('type')}")
-        _validate_bbox(candidate.get("bbox_pixels"), "candidate bbox_pixels must be four numbers")
-        _validate_bbox(candidate.get("bbox_points"), "candidate bbox_points must be four numbers")
         _require(
-            isinstance(candidate.get("crop"), str) and bool(str(candidate["crop"]).strip()),
-            "candidate crop must be a non-empty string",
+            isinstance(candidate.get("source_region"), str) and candidate["source_region"] in region_ids,
+            "candidate source_region must resolve",
         )
         _require(
             isinstance(candidate.get("backend"), str) and bool(str(candidate["backend"]).strip()),
@@ -408,13 +518,21 @@ def validate_recognition_document(document: object) -> None:
         )
         if "text" in candidate:
             _require(isinstance(candidate["text"], str), "candidate text must be a string")
-        if "confidence" in candidate:
-            confidence = candidate["confidence"]
+        _require(isinstance(candidate.get("raw_class"), str), "candidate raw_class must be a string")
+        verification = candidate.get("verification")
+        _require(isinstance(verification, dict), "candidate verification must be an object")
+        assert isinstance(verification, dict)
+        _require(isinstance(verification.get("eligible"), bool), "candidate verification eligibility must be boolean")
+        _require(isinstance(verification.get("reason_codes"), list), "candidate verification reason_codes must be an array")
+        for confidence_field in ("layout_confidence", "ocr_text_confidence"):
+            if confidence_field not in candidate:
+                continue
+            confidence = candidate[confidence_field]
             _require(
                 isinstance(confidence, (int, float))
                 and not isinstance(confidence, bool)
                 and 0.0 <= float(confidence) <= 1.0,
-                "candidate confidence must be between 0 and 1",
+                f"candidate {confidence_field} must be between 0 and 1",
             )
 
     evidence = document.get("pdf_text_evidence")
@@ -444,6 +562,382 @@ def png_size(path: Path) -> tuple[int, int]:
     width = int.from_bytes(header[16:20], "big")
     height = int.from_bytes(header[20:24], "big")
     return width, height
+
+
+_DIGITS: dict[str, tuple[str, ...]] = {
+    "0": ("111", "101", "101", "101", "111"),
+    "1": ("010", "110", "010", "010", "111"),
+    "2": ("111", "001", "111", "100", "111"),
+    "3": ("111", "001", "111", "001", "111"),
+    "4": ("101", "101", "111", "001", "001"),
+    "5": ("111", "100", "111", "001", "111"),
+    "6": ("111", "100", "111", "101", "111"),
+    "7": ("111", "001", "010", "010", "010"),
+    "8": ("111", "101", "111", "101", "111"),
+    "9": ("111", "101", "111", "001", "111"),
+}
+
+
+def _read_ppm(path: Path) -> tuple[int, int, bytearray]:
+    data = path.read_bytes()
+    tokens: list[bytes] = []
+    offset = 0
+    while len(tokens) < 4:
+        while offset < len(data) and data[offset] in b" \t\r\n":
+            offset += 1
+        if offset < len(data) and data[offset] == ord("#"):
+            offset = data.find(b"\n", offset) + 1
+            continue
+        end = offset
+        while end < len(data) and data[end] not in b" \t\r\n":
+            end += 1
+        tokens.append(data[offset:end])
+        offset = end
+    if tokens[0] != b"P6" or tokens[3] != b"255":
+        raise ValueError(f"unsupported overlay render: {path}")
+    while offset < len(data) and data[offset] in b" \t\r\n":
+        offset += 1
+    width, height = int(tokens[1]), int(tokens[2])
+    pixels = bytearray(data[offset:])
+    if len(pixels) != width * height * 3:
+        raise ValueError(f"truncated overlay render: {path}")
+    return width, height, pixels
+
+
+def _set_pixel(
+    pixels: bytearray, width: int, height: int, x: int, y: int,
+    color: tuple[int, int, int],
+) -> None:
+    if not (0 <= x < width and 0 <= y < height):
+        return
+    offset = (y * width + x) * 3
+    pixels[offset:offset + 3] = bytes(color)
+
+
+def _draw_region_label(
+    pixels: bytearray, width: int, height: int, bbox: Bbox, label: str,
+) -> None:
+    x0, y0, x1, y1 = bbox
+    color = (220, 0, 80)
+    for thickness in range(3):
+        for x in range(x0, x1):
+            _set_pixel(pixels, width, height, x, y0 + thickness, color)
+            _set_pixel(pixels, width, height, x, y1 - 1 - thickness, color)
+        for y in range(y0, y1):
+            _set_pixel(pixels, width, height, x0 + thickness, y, color)
+            _set_pixel(pixels, width, height, x1 - 1 - thickness, y, color)
+    digits = label[-4:]
+    label_width = len(digits) * 8 + 4
+    label_height = 14
+    for y in range(y0, min(y0 + label_height, height)):
+        for x in range(x0, min(x0 + label_width, width)):
+            _set_pixel(pixels, width, height, x, y, color)
+    for digit_index, digit in enumerate(digits):
+        glyph = _DIGITS[digit]
+        for row, bits in enumerate(glyph):
+            for column, bit in enumerate(bits):
+                if bit == "1":
+                    for dy in range(2):
+                        for dx in range(2):
+                            _set_pixel(
+                                pixels, width, height,
+                                x0 + 3 + digit_index * 8 + column * 2 + dx,
+                                y0 + 2 + row * 2 + dy,
+                                (255, 255, 255),
+                            )
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+
+def _write_rgb_png(path: Path, width: int, height: int, pixels: bytearray) -> None:
+    rows = b"".join(
+        b"\x00" + bytes(pixels[y * width * 3:(y + 1) * width * 3])
+        for y in range(height)
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(rows, 6))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
+def raster_region_proposals(
+    width: int, height: int, pixels: bytearray, *, cell_size: int = 4
+) -> list[Bbox]:
+    """Derive deterministic type-neutral line and block geometry from page ink."""
+    columns = (width + cell_size - 1) // cell_size
+    rows = (height + cell_size - 1) // cell_size
+    occupied: list[set[int]] = [set() for _ in range(rows)]
+    for cell_y in range(rows):
+        y = min(cell_y * cell_size + cell_size // 2, height - 1)
+        for cell_x in range(columns):
+            x = min(cell_x * cell_size + cell_size // 2, width - 1)
+            offset = (y * width + x) * 3
+            if min(pixels[offset:offset + 3]) < 210:
+                occupied[cell_y].add(cell_x)
+
+    bands: list[tuple[int, int]] = []
+    start: int | None = None
+    last_ink = -1
+    for row, ink_columns in enumerate(occupied):
+        if len(ink_columns) >= 3:
+            if start is None:
+                start = row
+            last_ink = row
+        elif start is not None and row - last_ink > 2:
+            bands.append((start, last_ink + 1))
+            start = None
+    if start is not None:
+        bands.append((start, last_ink + 1))
+
+    lines: list[Bbox] = []
+    band_lines: list[Bbox] = []
+    for top, bottom in bands:
+        band_columns = sorted({column for row in range(top, bottom) for column in occupied[row]})
+        if not band_columns:
+            continue
+        band_lines.append(
+            (
+                band_columns[0] * cell_size,
+                top * cell_size,
+                min((band_columns[-1] + 1) * cell_size, width),
+                min(bottom * cell_size, height),
+            )
+        )
+        run_start = band_columns[0]
+        previous = band_columns[0]
+        for column in band_columns[1:] + [columns + 20]:
+            if column - previous <= 10:
+                previous = column
+                continue
+            if previous - run_start >= 2:
+                lines.append(
+                    (
+                        run_start * cell_size,
+                        top * cell_size,
+                        min((previous + 1) * cell_size, width),
+                        min(bottom * cell_size, height),
+                    )
+                )
+            run_start = column
+            previous = column
+
+    proposals: set[Bbox] = set()
+
+    def padded(box: Bbox, padding: int) -> Bbox:
+        return clamp_bbox_to_page(
+            (box[0] - padding, box[1] - padding, box[2] + padding, box[3] + padding),
+            (width, height),
+        )
+
+    def add_aspect_variants(box: Bbox) -> None:
+        box_width = box[2] - box[0]
+        center = (box[0] + box[2]) // 2
+        horizontal_variants = {box}
+        for numerator, denominator in ((3, 2), (2, 1), (3, 1), (4, 1)):
+            expanded_width = box_width * numerator // denominator
+            horizontal_variants.add((box[0], box[1], box[0] + expanded_width, box[3]))
+            horizontal_variants.add((box[2] - expanded_width, box[1], box[2], box[3]))
+            horizontal_variants.add(
+                (center - expanded_width // 2, box[1], center + expanded_width // 2, box[3])
+            )
+        for variant in horizontal_variants:
+            for vertical_padding in (8, 24, 48, 72):
+                proposals.add(
+                    clamp_bbox_to_page(
+                        (
+                            variant[0] - 8, variant[1] - vertical_padding,
+                            variant[2] + 8, variant[3] + vertical_padding,
+                        ),
+                        (width, height),
+                    )
+                )
+
+    def morphology_components(horizontal: int, vertical: int) -> list[Bbox]:
+        horizontal_rows: list[set[int]] = []
+        for ink in occupied:
+            difference = [0] * (columns + 1)
+            for column in ink:
+                left = max(0, column - horizontal)
+                right = min(columns, column + horizontal + 1)
+                difference[left] += 1
+                difference[right] -= 1
+            active = 0
+            expanded_row: set[int] = set()
+            for column, delta in enumerate(difference[:-1]):
+                active += delta
+                if active:
+                    expanded_row.add(column)
+            horizontal_rows.append(expanded_row)
+
+        expanded: set[int] = set()
+        for row in range(rows):
+            columns_on_row: set[int] = set()
+            for source_row in range(max(0, row - vertical), min(rows, row + vertical + 1)):
+                columns_on_row.update(horizontal_rows[source_row])
+            expanded.update(row * columns + column for column in columns_on_row)
+
+        components: list[Bbox] = []
+        while expanded:
+            seed = expanded.pop()
+            stack = [seed]
+            min_row = max_row = seed // columns
+            min_column = max_column = seed % columns
+            while stack:
+                current = stack.pop()
+                row, column = divmod(current, columns)
+                neighbors = []
+                if column:
+                    neighbors.append(current - 1)
+                if column + 1 < columns:
+                    neighbors.append(current + 1)
+                if row:
+                    neighbors.append(current - columns)
+                if row + 1 < rows:
+                    neighbors.append(current + columns)
+                for neighbor in neighbors:
+                    if neighbor not in expanded:
+                        continue
+                    expanded.remove(neighbor)
+                    stack.append(neighbor)
+                    neighbor_row, neighbor_column = divmod(neighbor, columns)
+                    min_row = min(min_row, neighbor_row)
+                    max_row = max(max_row, neighbor_row)
+                    min_column = min(min_column, neighbor_column)
+                    max_column = max(max_column, neighbor_column)
+            ink_width = max_column - min_column + 1 - 2 * horizontal
+            ink_height = max_row - min_row + 1 - 2 * vertical
+            if ink_width < 3 or ink_height < 2:
+                continue
+            components.append(
+                clamp_bbox_to_page(
+                    (
+                        (min_column + horizontal) * cell_size,
+                        (min_row + vertical) * cell_size,
+                        (max_column - horizontal + 1) * cell_size,
+                        (max_row - vertical + 1) * cell_size,
+                    ),
+                    (width, height),
+                )
+            )
+        return components
+
+    for horizontal, vertical in (
+        (3, 1), (8, 2), (16, 4),
+        (28, 1), (40, 1), (55, 1), (70, 2),
+        (28, 8), (44, 14),
+    ):
+        for component in morphology_components(horizontal, vertical):
+            add_aspect_variants(component)
+            for padding in (8, 24, 48, 72):
+                proposals.add(padded(component, padding))
+
+    for line in [*lines, *band_lines]:
+        add_aspect_variants(line)
+        for padding in (8, 24, 48):
+            proposals.add(padded(line, padding))
+
+    for sequence in (lines, band_lines):
+        ordered = sorted(sequence, key=lambda box: (box[1], box[0], -box[2]))
+        for start_index, first in enumerate(ordered):
+            union = first
+            included = 1
+            for following in ordered[start_index + 1:start_index + 14]:
+                vertical_gap = following[1] - union[3]
+                horizontal_overlap = min(union[2], following[2]) - max(union[0], following[0])
+                horizontal_gap = max(following[0] - union[2], union[0] - following[2], 0)
+                if vertical_gap > 140:
+                    break
+                if horizontal_overlap <= 0 and horizontal_gap > 72:
+                    continue
+                union = (
+                    min(union[0], following[0]), min(union[1], following[1]),
+                    max(union[2], following[2]), max(union[3], following[3]),
+                )
+                included += 1
+                for padding in (8, 24, 48, 72, 96):
+                    proposals.add(padded(union, padding))
+                if included == 8:
+                    break
+
+    # Same-column content can be interleaved with another column in reading-order
+    # geometry. Pair nearby components directly so the intervening column does not
+    # prevent a useful multi-line parent proposal.
+    for index, first in enumerate(lines):
+        first_width = first[2] - first[0]
+        first_center = (first[0] + first[2]) / 2
+        for following in lines[index + 1:]:
+            if following[1] - first[3] > 520:
+                continue
+            following_width = following[2] - following[0]
+            following_center = (following[0] + following[2]) / 2
+            overlap = min(first[2], following[2]) - max(first[0], following[0])
+            if (
+                overlap < min(first_width, following_width) * 0.2
+                and abs(first_center - following_center) > max(first_width, following_width) * 0.65
+            ):
+                continue
+            union = (
+                min(first[0], following[0]), min(first[1], following[1]),
+                max(first[2], following[2]), max(first[3], following[3]),
+            )
+            for padding in (8, 24, 48, 72, 96):
+                proposals.add(padded(union, padding))
+
+    ordered_proposals = sorted(
+        (
+            proposal for proposal in proposals
+            if _bbox_area(proposal) < width * height * MAX_NONFALLBACK_AREA_RATIO
+        ),
+        key=lambda bbox: (bbox[1], bbox[0], bbox[3], bbox[2]),
+    )
+    deduplicated: dict[tuple[int, int, int, int], Bbox] = {}
+    for proposal in ordered_proposals:
+        key = (
+            round(proposal[0] / PROPOSAL_DEDUPLICATION_PIXELS),
+            round(proposal[1] / PROPOSAL_DEDUPLICATION_PIXELS),
+            round(proposal[2] / PROPOSAL_DEDUPLICATION_PIXELS),
+            round(proposal[3] / PROPOSAL_DEDUPLICATION_PIXELS),
+        )
+        deduplicated.setdefault(key, proposal)
+    return sorted(
+        deduplicated.values(), key=lambda bbox: (bbox[1], bbox[0], bbox[3], bbox[2])
+    )
+
+
+def _render_page_rgb(
+    *, source_pdf: Path, page: int, dpi: int, temporary_base: Path,
+) -> tuple[int, int, bytearray]:
+    rendered = _run([
+        "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-r", str(dpi),
+        str(source_pdf), str(temporary_base),
+    ])
+    ppm = temporary_base.with_suffix(".ppm")
+    if rendered.returncode:
+        raise RuntimeError(f"Source Region overlay render failed: {rendered.stderr.strip()}")
+    try:
+        return _read_ppm(ppm)
+    finally:
+        ppm.unlink(missing_ok=True)
+
+
+def _create_region_overlay(
+    *, destination: Path, width: int, height: int, pixels: bytearray,
+    regions: Sequence[dict[str, Any]],
+) -> None:
+    for region in regions:
+        identifier = str(region["id"])
+        if identifier.endswith("-r0000"):
+            continue
+        bbox_value = region["bbox_pixels"]
+        assert isinstance(bbox_value, list)
+        bbox: Bbox = tuple(int(value) for value in bbox_value)  # type: ignore[assignment]
+        _draw_region_label(pixels, width, height, bbox, identifier)
+    _write_rgb_png(destination, width, height, pixels)
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -483,22 +977,7 @@ def recognize_page(
         raise RuntimeError(f"recognition render failed: {rendered.stderr.strip()}")
     width, height = png_size(page_render)
 
-    ordered = assign_region_ids(page, backend.detect(page_render, (width, height)))
-    artifacts: list[Path] = [page_render]
-    for identifier, candidate in ordered:
-        crop_x, crop_y, crop_right, crop_bottom = clamp_bbox_to_page(
-            candidate.bbox_pixels, (width, height)
-        )
-        crop_width = crop_right - crop_x
-        crop_height = crop_bottom - crop_y
-        cropped = _run([
-            "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-r", str(dpi),
-            "-png", "-x", str(crop_x), "-y", str(crop_y), "-W", str(crop_width),
-            "-H", str(crop_height), str(source_pdf), str(regions_dir / identifier),
-        ])
-        if cropped.returncode:
-            raise RuntimeError(f"source-region crop failed for {identifier}: {cropped.stderr.strip()}")
-        artifacts.append(regions_dir / f"{identifier}.png")
+    detected = backend.detect(page_render, (width, height))
 
     extracted = _run([
         "pdftotext", "-f", str(page), "-l", str(page), "-bbox", str(source_pdf), "-",
@@ -506,6 +985,15 @@ def recognize_page(
     if extracted.returncode:
         raise RuntimeError(f"PDF text evidence extraction failed: {extracted.stderr.strip()}")
     words = parse_pdf_text_bbox(extracted.stdout)
+    overlay_width, overlay_height, overlay_pixels = _render_page_rgb(
+        source_pdf=source_pdf,
+        page=page,
+        dpi=dpi,
+        temporary_base=recognition_dir / f".page-{page}-overlay-base",
+    )
+    raster_proposals = raster_region_proposals(
+        overlay_width, overlay_height, overlay_pixels
+    )
 
     document = build_recognition_document(
         page=page,
@@ -514,12 +1002,51 @@ def recognize_page(
         renderer="pdftoppm",
         renderer_version=renderer_version,
         backend=backend,
-        candidates=ordered,
+        page_size=(width, height),
+        raster_proposals=raster_proposals,
+        candidates=assign_region_ids(page, detected),
         words=words,
         extractor="pdftotext",
         extractor_version=extractor_version,
     )
+    overlay = regions_dir / f"page-{page}-overlay.png"
+    source_regions_value = document["source_regions"]
+    assert isinstance(source_regions_value, list)
+    _create_region_overlay(
+        destination=overlay, width=overlay_width, height=overlay_height,
+        pixels=overlay_pixels, regions=source_regions_value,
+    )
+    document["overlay"] = f"regions/{overlay.name}"
     validate_recognition_document(document)
+    artifacts: list[Path] = [page_render, overlay]
+    source_regions = document["source_regions"]
+    assert isinstance(source_regions, list)
+    candidate_regions = {
+        str(candidate["source_region"])
+        for candidate in document["candidates"]
+        if isinstance(candidate, dict)
+    }
+    for region in source_regions:
+        assert isinstance(region, dict)
+        identifier = str(region["id"])
+        if identifier not in candidate_regions and not identifier.endswith("-r0000"):
+            continue
+        if identifier.endswith("-r0000"):
+            destination = regions_dir / f"{identifier}.png"
+            shutil.copyfile(page_render, destination)
+            artifacts.append(destination)
+            continue
+        bbox_pixels = region["bbox_pixels"]
+        assert isinstance(bbox_pixels, list)
+        crop_x, crop_y, crop_right, crop_bottom = (int(value) for value in bbox_pixels)
+        cropped = _run([
+            "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile", "-r", str(dpi),
+            "-png", "-x", str(crop_x), "-y", str(crop_y), "-W", str(crop_right - crop_x),
+            "-H", str(crop_bottom - crop_y), str(source_pdf), str(regions_dir / identifier),
+        ])
+        if cropped.returncode:
+            raise RuntimeError(f"source-region crop failed for {identifier}: {cropped.stderr.strip()}")
+        artifacts.append(regions_dir / f"{identifier}.png")
     document_path = recognition_dir / f"page-{page}.json"
     atomic_write_json(document_path, document)
     artifacts.append(document_path)

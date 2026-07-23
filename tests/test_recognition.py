@@ -8,6 +8,10 @@ import tempfile
 from types import ModuleType
 import unittest
 from unittest.mock import patch
+from typing import Any
+
+import yaml
+from jsonschema import Draft202012Validator
 
 from accessibilizer import recognition
 from accessibilizer.recognition import (
@@ -18,6 +22,7 @@ from accessibilizer.recognition import (
     parse_pdf_text_bbox,
     pixels_to_points,
     recognize_page,
+    raster_region_proposals,
     select_backend,
     validate_recognition_document,
 )
@@ -68,6 +73,69 @@ class PixelConversionTest(unittest.TestCase):
         self.assertEqual(pixels_to_points((150, 300, 450, 600), 300), [36.0, 72.0, 108.0, 144.0])
 
 
+class RasterProposalTest(unittest.TestCase):
+    def test_multiscale_raster_geometry_keeps_lines_and_a_useful_parent(self) -> None:
+        width, height = 200, 160
+        pixels = bytearray([255] * width * height * 3)
+        for y0, y1 in ((20, 28), (38, 46)):
+            for y in range(y0, y1):
+                for x in range(20, 150):
+                    offset = (y * width + x) * 3
+                    pixels[offset:offset + 3] = b"\x00\x00\x00"
+
+        proposals = raster_region_proposals(width, height, pixels)
+
+        self.assertTrue(any(y0 <= 20 and y1 >= 28 for x0, y0, x1, y1 in proposals))
+        self.assertTrue(any(y0 <= 20 and y1 >= 46 for x0, y0, x1, y1 in proposals))
+        self.assertTrue(
+            all((x1 - x0) * (y1 - y0) < width * height * 0.8 for x0, y0, x1, y1 in proposals)
+        )
+
+
+@unittest.skipUnless(POPPLER, "poppler is required for gold proposal coverage")
+class GoldProposalCoverageTest(unittest.TestCase):
+    def test_every_gold_source_region_has_a_useful_deterministic_proposal(self) -> None:
+        gold = yaml.safe_load((ROOT / "testdata" / "gold-review-record.yaml").read_text())
+        gold_by_page: dict[int, list[list[float]]] = {
+            page: [] for page in range(1, 12)
+        }
+        for region in gold["source_regions"]:
+            gold_by_page[region["page"]].append(region["bbox_points"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            for page in range(1, 12):
+                width, height, pixels = recognition._render_page_rgb(
+                    source_pdf=SOURCE,
+                    page=page,
+                    dpi=recognition.RECOGNITION_DPI,
+                    temporary_base=temporary / f"page-{page}",
+                )
+                proposals = [
+                    pixels_to_points(proposal, recognition.RECOGNITION_DPI)
+                    for proposal in raster_region_proposals(width, height, pixels)
+                ]
+                for expected in gold_by_page[page]:
+                    self.assertTrue(
+                        any(self.usefully_covers(proposal, expected) for proposal in proposals),
+                        f"page {page} gold Source Region {expected} has no useful proposal",
+                    )
+
+    @staticmethod
+    def usefully_covers(proposal: list[float], gold: list[float]) -> bool:
+        px0, py0, px1, py1 = proposal
+        gx0, gy0, gx1, gy1 = gold
+        intersection = max(0.0, min(px1, gx1) - max(px0, gx0)) * max(
+            0.0, min(py1, gy1) - max(py0, gy0)
+        )
+        proposal_area = (px1 - px0) * (py1 - py0)
+        gold_area = (gx1 - gx0) * (gy1 - gy0)
+        union = proposal_area + gold_area - intersection
+        iou = intersection / union if union else 0.0
+        containment = intersection / gold_area
+        return iou >= 0.5 or (containment >= 0.8 and proposal_area <= 2 * gold_area)
+
+
 class PdfTextEvidenceTest(unittest.TestCase):
     def test_words_and_geometry_are_parsed_from_pdftotext_bbox_output(self) -> None:
         xhtml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -101,7 +169,7 @@ class PdfTextEvidenceTest(unittest.TestCase):
 
 
 class DocumentValidationTest(unittest.TestCase):
-    def valid_document(self) -> dict[str, object]:
+    def valid_document(self) -> dict[str, Any]:
         return build_recognition_document(
             page=1,
             source_sha256="a" * 64,
@@ -109,6 +177,7 @@ class DocumentValidationTest(unittest.TestCase):
             renderer="pdftoppm",
             renderer_version="pdftoppm version 24.0",
             backend=FakeBackend(),
+            page_size=(1000, 1400),
             candidates=[
                 (
                     "page-1-r0001",
@@ -126,24 +195,97 @@ class DocumentValidationTest(unittest.TestCase):
         document = self.valid_document()
 
         validate_recognition_document(document)
+        published = json.loads(
+            (ROOT / "schemas" / "recognition-2.0.schema.json").read_text()
+        )
+        self.assertEqual(list(Draft202012Validator(published).iter_errors(document)), [])
 
-        self.assertEqual(document["schema_version"], "1.0")
-        self.assertFalse(document["pdf_text_evidence"]["authoritative"])  # type: ignore[index]
-        candidate = document["candidates"][0]  # type: ignore[index]
-        self.assertEqual(candidate["id"], "page-1-r0001")
-        self.assertEqual(candidate["crop"], "regions/page-1-r0001.png")
-        self.assertEqual(candidate["bbox_points"], [2.4, 4.8, 19.2, 9.6])
+        self.assertEqual(document["schema_version"], "2.0")
+        self.assertFalse(document["pdf_text_evidence"]["authoritative"])
+        candidate = document["candidates"][0]
+        self.assertEqual(candidate["id"], "page-1-c0001")
+        self.assertRegex(candidate["source_region"], r"^page-1-r[0-9]{4}$")
+        self.assertNotIn("bbox_points", candidate)
+        self.assertEqual(candidate["raw_class"], "text")
+        self.assertEqual(candidate["ocr_text_confidence"], 0.9)
+        self.assertIn("verification", candidate)
+        regions = document["source_regions"]
+        self.assertEqual(regions[0]["id"], "page-1-r0000")
+        self.assertEqual(regions[0]["bbox_pixels"], [0, 0, 1000, 1400])
+        self.assertTrue(
+            any(region["bbox_points"] == [2.4, 4.8, 19.2, 9.6] for region in regions)
+        )
+
+    def test_broad_candidate_is_retained_on_fallback_but_cannot_trigger_disagreement(
+        self,
+    ) -> None:
+        document = build_recognition_document(
+            page=1,
+            source_sha256="a" * 64,
+            dpi=300,
+            renderer="pdftoppm",
+            renderer_version="pdftoppm version 24.0",
+            backend=FakeBackend(),
+            page_size=(1000, 1000),
+            candidates=[
+                (
+                    "ignored",
+                    RawCandidate(
+                        "formula", (20, 10, 980, 930), "not the formula", 0.8203,
+                        "paddleocr-formula", raw_class="formula", layout_confidence=0.99,
+                    ),
+                )
+            ],
+            words=[],
+            extractor="pdftotext",
+            extractor_version="pdftotext version 24.0",
+        )
+
+        validate_recognition_document(document)
+        candidate = document["candidates"][0]
+        self.assertEqual(candidate["source_region"], "page-1-r0000")
+        self.assertFalse(candidate["verification"]["eligible"])
+        self.assertIn("source-region-too-large", candidate["verification"]["reason_codes"])
+
+    def test_source_regions_are_type_neutral_deduplicated_and_keep_useful_parents(
+        self,
+    ) -> None:
+        document = build_recognition_document(
+            page=2,
+            source_sha256="a" * 64,
+            dpi=100,
+            renderer="pdftoppm",
+            renderer_version="pdftoppm version 24.0",
+            backend=FakeBackend(),
+            page_size=(1000, 1000),
+            candidates=[
+                ("ignored", RawCandidate("text", (10, 10, 100, 40), "one", 0.9, "a")),
+                ("ignored", RawCandidate("formula", (10, 10, 100, 40), "one", 0.9, "b")),
+                ("ignored", RawCandidate("figure", (5, 5, 300, 300), None, None, "c")),
+            ],
+            words=[],
+            extractor="pdftotext",
+            extractor_version="pdftotext version 24.0",
+        )
+
+        nonfallback = document["source_regions"][1:]
+        self.assertEqual(len(nonfallback), 2)
+        self.assertTrue(all("type" not in region for region in nonfallback))
+        self.assertEqual(
+            [candidate["source_region"] for candidate in document["candidates"]],
+            ["page-2-r0001", "page-2-r0002", "page-2-r0002"],
+        )
 
     def test_unknown_candidate_type_is_rejected(self) -> None:
         document = self.valid_document()
-        document["candidates"][0]["type"] = "sidebar"  # type: ignore[index]
+        document["candidates"][0]["type"] = "sidebar"
 
         with self.assertRaises(ValueError):
             validate_recognition_document(document)
 
     def test_authoritative_evidence_is_rejected(self) -> None:
         document = self.valid_document()
-        document["pdf_text_evidence"]["authoritative"] = True  # type: ignore[index]
+        document["pdf_text_evidence"]["authoritative"] = True
 
         with self.assertRaises(ValueError):
             validate_recognition_document(document)
@@ -226,10 +368,19 @@ class RecognizePageOnHostTest(unittest.TestCase):
                 },
             )
             for candidate in document["candidates"]:
-                crop = workspace / candidate["crop"]
-                self.assertTrue(crop.is_file(), candidate["crop"])
+                region = next(
+                    region for region in document["source_regions"]
+                    if region["id"] == candidate["source_region"]
+                )
+                crop = workspace / region["crop"]
+                self.assertTrue(crop.is_file(), region["crop"])
                 self.assertGreater(crop.stat().st_size, 0)
-                self.assertEqual(candidate["crop"], f"regions/{candidate['id']}.png")
+                self.assertTrue(candidate["id"].startswith("page-1-c"))
+            self.assertTrue(document["proposal_generation"]["algorithm_version"])
+            overlay = workspace / document["overlay"]
+            self.assertTrue(overlay.is_file())
+            self.assertGreater(overlay.stat().st_size, 0)
+            self.assertIn(overlay, result.artifacts)
             self.assertIn(result.document_path, result.artifacts)
             self.assertFalse(document["pdf_text_evidence"]["authoritative"])
 

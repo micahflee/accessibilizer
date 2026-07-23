@@ -1206,7 +1206,7 @@ class ConversionTest(unittest.TestCase):
             self.assertTrue(expected_files.issubset(actual_files))
 
             recognition = json.loads((bundle / "recognition/page-1.json").read_text())
-            self.assertEqual(recognition["schema_version"], "1.0")
+            self.assertEqual(recognition["schema_version"], "2.0")
             self.assertEqual(recognition["page"], 1)
             self.assertEqual(recognition["recognition"]["backend"], "fake")
             self.assertEqual(recognition["rendering"]["dpi"], 300)
@@ -1223,14 +1223,20 @@ class ConversionTest(unittest.TestCase):
                 },
             )
             for candidate in recognition["candidates"]:
-                crop = bundle / candidate["crop"]
-                self.assertTrue(crop.is_file(), candidate["crop"])
-                self.assertEqual(candidate["crop"], f"regions/{candidate['id']}.png")
+                self.assertTrue(candidate["id"].startswith("page-1-c"))
+                self.assertTrue(candidate["source_region"].startswith("page-1-r"))
+                self.assertIn("verification", candidate)
+            self.assertTrue(recognition["source_regions"])
+            self.assertTrue((bundle / recognition["overlay"]).is_file())
             self.assertFalse(recognition["pdf_text_evidence"]["authoritative"])
 
             recognition_provenance = json.loads((bundle / "provenance.json").read_text())
             self.assertEqual(recognition_provenance["recognition_backend"], "fake")
             self.assertEqual(recognition_provenance["recognition_dpi"], 300)
+            self.assertEqual(
+                recognition_provenance["source_region_proposal_algorithm_version"],
+                "1.0",
+            )
 
             # The Semantic Layer is reconstructed by the provider, not supplied.
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
@@ -1274,7 +1280,7 @@ class ConversionTest(unittest.TestCase):
                 all(candidate["id"].startswith("page-1-c") for candidate in review_record["candidates"])
             )
             self.assertTrue(all(c["source_region"] for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.5")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.6")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -1311,7 +1317,7 @@ class ConversionTest(unittest.TestCase):
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
             self.assertEqual(provenance["source_pages"], [1])
-            self.assertEqual(provenance["page_prompt_version"], "1.5")
+            self.assertEqual(provenance["page_prompt_version"], "1.6")
             self.assertEqual(provenance["page_schema_version"], "1.3")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
@@ -1953,10 +1959,10 @@ class RealPaddleOcrRecognitionTest(unittest.TestCase):
             self.assertEqual(summary["pages"], 11)
             self.assertEqual(summary["selected_pages"], [1, 3])
             self.assertEqual(summary["validated"], 2)
-            # Criterion 2: the sample yields candidates for text (or handwriting),
-            # Formulas, tables, figures, and Document Structure.
+            # Raw backend output is retained without a synthesized union-box
+            # Document Structure Candidate.
             self.assertLessEqual(
-                {"text", "formula", "table", "figure", "document_structure"},
+                {"text", "formula", "table", "figure"},
                 set(summary["types"]),
             )
 

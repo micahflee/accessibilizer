@@ -209,6 +209,44 @@ class BuildRecordTest(unittest.TestCase):
             record["reconstruction"]["pages"][0]["document_class"], "stem_instructional"
         )
 
+    def test_candidate_eligibility_confidence_and_backend_provenance_round_trip(self) -> None:
+        candidate = {
+            "id": "page-1-c0001",
+            "source_region": "page-1-r0001",
+            "type": "text",
+            "raw_class": "title",
+            "text": "current",
+            "backend": "paddleocr-title",
+            "layout_confidence": 0.91,
+            "ocr_text_confidence": 0.82,
+            "verification": {
+                "eligible": False,
+                "reason_codes": ["source-region-too-large"],
+            },
+        }
+        page = page_document(1, candidates=[candidate])
+        page["reconstruction"]["recognition"] = {
+            "backend": "paddleocr",
+            "backend_version": "2.7.3",
+            "weights_version": "PP-Structure",
+            "proposal_generation": {
+                "algorithm": "hybrid-source-regions",
+                "algorithm_version": "1.0",
+                "deduplication_pixels": 112,
+                "max_nonfallback_area_ratio": 0.8,
+                "sources": ["native-pdf-word", "raster-ink", "recognition"],
+            },
+        }
+
+        record = build([page])
+
+        self.assertEqual(record["candidates"], [candidate])
+        self.assertEqual(
+            record["reconstruction"]["pages"][0]["recognition"],
+            page["reconstruction"]["recognition"],
+        )
+        validate_review_record(record)
+
     def test_warnings_get_stable_ids_and_start_unresolved_with_empty_history(self) -> None:
         record = built_record()
         self.assertEqual([w["id"] for w in record["warnings"]], ["w0001", "w0002"])

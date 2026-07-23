@@ -284,6 +284,29 @@ class RequestConstructionTest(unittest.TestCase):
         system = request["messages"][0]["content"]
         self.assertIn("untrusted", system.lower())
 
+    def test_page_request_includes_a_separate_identifiable_region_overlay(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image = self.image(directory)
+            request = build_page_request(
+                model="exact-model",
+                page_image=image,
+                region_overlay=image,
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=["page-1-r0000", "page-1-r0001"],
+                source_regions=[
+                    {"id": "page-1-r0000", "bbox_points": [0, 0, 612, 792]},
+                    {"id": "page-1-r0001", "bbox_points": [10, 20, 200, 80]},
+                ],
+            )
+
+        content = request["messages"][1]["content"]
+        images = [part for part in content if part["type"] == "image_url"]
+        self.assertEqual(len(images), 2)
+        evidence = content[1]["text"]
+        self.assertIn("page-1-r0001", evidence)
+        self.assertIn("bbox_points", evidence)
+
     def test_recognition_evidence_travels_as_data_not_as_a_control_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             request = build_page_request(
@@ -598,6 +621,69 @@ class ReconciliationTest(unittest.TestCase):
             ]
         )
         self.assertIn("recognition-disagreement", self.codes(warnings))
+
+    def test_ineligible_candidate_disagreement_is_retained_without_a_warning(self) -> None:
+        candidate = {
+            "id": "page-1-c0001",
+            "source_region": "page-1-r0003",
+            "type": "formula",
+            "text": "wrong",
+            "verification": {
+                "eligible": False,
+                "reason_codes": ["source-region-too-large"],
+            },
+        }
+        _, warnings = self.reconcile(
+            candidates=[candidate],
+            region_verifications=[
+                (
+                    candidate,
+                    {
+                        "transcription": "wrong",
+                        "agrees_with_page": False,
+                        "suspected_prompt_injection": False,
+                    },
+                )
+            ],
+        )
+
+        self.assertNotIn("recognition-disagreement", self.codes(warnings))
+        self.assertNotIn("formula-recognition-disagreement", self.codes(warnings))
+
+    def test_missing_required_eligible_evidence_has_a_distinct_warning(self) -> None:
+        _, warnings = self.reconcile(require_verification=True)
+
+        insufficient = [
+            warning for warning in warnings
+            if warning["code"] == "insufficient-verification"
+        ]
+        self.assertTrue(insufficient)
+        self.assertNotIn("recognition-disagreement", self.codes(warnings))
+
+    def test_localized_eligible_candidate_still_warns_on_true_disagreement(self) -> None:
+        candidate = {
+            "id": "page-1-c0001",
+            "source_region": "page-1-r0003",
+            "type": "formula",
+            "text": "sin theta over lambda",
+            "verification": {"eligible": True, "reason_codes": []},
+        }
+        _, warnings = self.reconcile(
+            candidates=[candidate],
+            region_verifications=[
+                (
+                    candidate,
+                    {
+                        "transcription": "sin theta over lambda",
+                        "agrees_with_page": False,
+                        "suspected_prompt_injection": False,
+                    },
+                )
+            ],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
+        self.assertIn("formula-recognition-disagreement", self.codes(warnings))
 
     def test_a_detected_table_candidate_alone_does_not_warn(self) -> None:
         # Recognition candidates are non-authoritative; only a disagreeing crop
@@ -1064,7 +1150,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.1")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.5")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.6")
         self.assertEqual(document["reconstruction"]["page_schema_version"], "1.3")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(

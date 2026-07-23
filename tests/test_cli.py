@@ -161,22 +161,42 @@ class AuthoringContractTest(unittest.TestCase):
 
 
 class SourceEvidenceTest(unittest.TestCase):
+    @staticmethod
+    def recognition_document(region_id: str, candidate_type: str) -> dict[str, Any]:
+        return {
+            "recognition": {
+                "backend": "fake", "backend_version": "1.0",
+                "weights_version": "fake-weights-1.0",
+            },
+            "proposal_generation": {
+                "algorithm": "hybrid-source-regions", "algorithm_version": "1.0",
+                "deduplication_pixels": 112,
+                "max_nonfallback_area_ratio": 0.8,
+                "sources": ["recognition"],
+            },
+            "source_regions": [
+                {"id": "page-1-r0000", "bbox_points": [0, 0, 72, 72]},
+                {"id": region_id, "bbox_points": [0, 0, 24, 24]},
+            ],
+            "candidates": [{
+                "id": "page-1-c0001", "source_region": region_id,
+                "type": candidate_type, "raw_class": candidate_type,
+                "backend": f"fake-{candidate_type}", "text": None,
+                "verification": {"eligible": True, "reason_codes": []},
+            }],
+        }
+
     def test_whole_page_fallback_warns_with_node_and_region_references(self) -> None:
         document = page_document(1)
         document["semantic_layer"][0]["source_regions"] = ["page-1-r0000"]
         for verified in document["reconstruction"]["verified_regions"]:
             verified["id"] = verified.pop("source_region")
-        recognition_document = {
-            "rendering": {"dpi": 300},
-            "candidates": [{
-                "id": "page-1-r0001", "type": "document_structure",
-                "bbox_pixels": [0, 0, 100, 100],
-            }],
-        }
-        with patch("accessibilizer.cli.recognition.png_size", return_value=(100, 100)):
-            reviewed = _review_page_document(
-                document, recognition_document, Path("page.png"), (72.0, 72.0)
-            )
+        recognition_document = self.recognition_document(
+            "page-1-r0001", "document_structure"
+        )
+        reviewed = _review_page_document(
+            document, recognition_document, Path("page.png"), (72.0, 72.0)
+        )
 
         warning = next(w for w in reviewed["warnings"] if w["code"] == "imprecise-source-grounding")
         self.assertEqual(warning["semantic_nodes"], ["page-1-s0001"])
@@ -193,17 +213,10 @@ class SourceEvidenceTest(unittest.TestCase):
         }]
         for verified in document["reconstruction"]["verified_regions"]:
             verified["id"] = verified.pop("source_region")
-        recognition_document = {
-            "rendering": {"dpi": 300},
-            "candidates": [{
-                "id": "page-1-r0003", "type": "formula",
-                "bbox_pixels": [0, 0, 100, 100],
-            }],
-        }
-        with patch("accessibilizer.cli.recognition.png_size", return_value=(100, 100)):
-            reviewed = _review_page_document(
-                document, recognition_document, Path("page.png"), (72.0, 72.0)
-            )
+        recognition_document = self.recognition_document("page-1-r0003", "formula")
+        reviewed = _review_page_document(
+            document, recognition_document, Path("page.png"), (72.0, 72.0)
+        )
 
         warning = reviewed["warnings"][0]
         self.assertEqual(warning["semantic_nodes"], ["page-1-s0003"])

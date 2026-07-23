@@ -218,6 +218,38 @@ def _page_reconstruction_schema() -> dict[str, Any]:
                 "items": {"enum": ["heading", "paragraph", "formula", "figure", "table"]},
             },
             "reading_order_is_unambiguous": {"type": "boolean"},
+            "recognition": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "backend", "backend_version", "proposal_generation", "weights_version"
+                ],
+                "properties": {
+                    "backend": {"type": "string", "minLength": 1},
+                    "backend_version": {"type": "string", "minLength": 1},
+                    "weights_version": {"type": "string", "minLength": 1},
+                    "proposal_generation": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": [
+                            "algorithm", "algorithm_version",
+                            "deduplication_pixels", "max_nonfallback_area_ratio", "sources",
+                        ],
+                        "properties": {
+                            "algorithm": {"type": "string", "minLength": 1},
+                            "algorithm_version": {"type": "string", "minLength": 1},
+                            "deduplication_pixels": {"type": "integer", "minimum": 1},
+                            "max_nonfallback_area_ratio": {
+                                "type": "number", "exclusiveMinimum": 0, "maximum": 1,
+                            },
+                            "sources": {
+                                "type": "array", "minItems": 1, "uniqueItems": True,
+                                "items": {"type": "string", "minLength": 1},
+                            },
+                        },
+                    },
+                },
+            },
             "verified_regions": {
                 "type": "array",
                 "items": {
@@ -379,6 +411,22 @@ def review_record_schema() -> dict[str, Any]:
                     "source_region": {"type": "string", "pattern": _SOURCE_REGION_ID},
                     "type": {"enum": list(CANDIDATE_TYPES)},
                     "text": {"type": ["string", "null"]},
+                    "backend": {"type": "string", "minLength": 1},
+                    "raw_class": {"type": "string", "minLength": 1},
+                    "layout_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "ocr_text_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "verification": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["eligible", "reason_codes"],
+                        "properties": {
+                            "eligible": {"type": "boolean"},
+                            "reason_codes": {
+                                "type": "array", "uniqueItems": True,
+                                "items": {"type": "string", "minLength": 1},
+                            },
+                        },
+                    },
                 },
             },
             "resolution": {
@@ -477,14 +525,9 @@ def build_review_record(
             tagged = {"page": page_number, **copy.deepcopy(node)}
             semantic_layer.append(tagged)
         for candidate in page_document.get("candidates", []):
-            candidates.append(
-                {
-                    "id": candidate["id"],
-                    "type": candidate["type"],
-                    "text": candidate.get("text"),
-                    "source_region": candidate["source_region"],
-                }
-            )
+            retained = copy.deepcopy(candidate)
+            retained.setdefault("text", None)
+            candidates.append(retained)
         for warning in page_document.get("warnings", []):
             warning_index += 1
             warnings.append(
@@ -500,8 +543,7 @@ def build_review_record(
                 }
             )
         reconstruction = page_document["reconstruction"]
-        page_reconstructions.append(
-            {
+        page_reconstruction = {
                 "document_class": reconstruction["document_class"],
                 "page": page_number,
                 "primary_language_is_english": reconstruction[
@@ -513,7 +555,11 @@ def build_review_record(
                 ],
                 "verified_regions": copy.deepcopy(reconstruction["verified_regions"]),
             }
-        )
+        if "recognition" in reconstruction:
+            page_reconstruction["recognition"] = copy.deepcopy(
+                reconstruction["recognition"]
+            )
+        page_reconstructions.append(page_reconstruction)
     return {
         "schema_version": REVIEW_RECORD_SCHEMA_VERSION,
         "pages": page_numbers,

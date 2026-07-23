@@ -679,8 +679,6 @@ def _review_page_document(
     """
     document = copy.deepcopy(page_document)
     page_number = document["page"]
-    dpi = recognition_document["rendering"]["dpi"]
-    width_pixels, height_pixels = recognition.png_size(page_render)
     width_points, height_points = page_dimensions
     document["page_dimensions"] = {
         "width_points": width_points,
@@ -688,19 +686,10 @@ def _review_page_document(
     }
 
     raw_candidates = recognition_document["candidates"]
-    source_regions: list[dict[str, Any]] = [{
-        "id": _whole_page_region_id(page_number), "page": page_number,
-        "bbox_points": [0.0, 0.0, width_points, height_points],
-    }]
-    candidates: list[dict[str, Any]] = []
-    for index, candidate in enumerate(raw_candidates, start=1):
-        region_id = candidate["id"]
-        bbox_pixels = recognition.clamp_bbox_to_page(
-            candidate["bbox_pixels"], (width_pixels, height_pixels)
-        )
-        point_x0, point_y0, point_x1, point_y1 = recognition.pixels_to_points(
-            bbox_pixels, dpi
-        )
+    source_regions: list[dict[str, Any]] = []
+    for region in recognition_document["source_regions"]:
+        region_id = region["id"]
+        point_x0, point_y0, point_x1, point_y1 = region["bbox_points"]
         bbox_points = [
             max(0.0, min(point_x0, width_points)),
             max(0.0, min(point_y0, height_points)),
@@ -714,16 +703,15 @@ def _review_page_document(
                 "bbox_points": bbox_points,
             }
         )
-        candidates.append(
-            {
-                "id": f"page-{page_number}-c{index:04d}",
-                "source_region": region_id,
-                "type": candidate["type"],
-                "text": candidate.get("text"),
-            }
-        )
+    candidates = copy.deepcopy(raw_candidates)
     document["source_regions"] = source_regions
     document["candidates"] = candidates
+    document["reconstruction"]["recognition"] = {
+        **copy.deepcopy(recognition_document["recognition"]),
+        "proposal_generation": copy.deepcopy(
+            recognition_document["proposal_generation"]
+        ),
+    }
     node_type_for_candidate_type = {
         "document_structure": "heading",
         "figure": "figure",
@@ -1110,6 +1098,8 @@ def _recognize_page(
         "pdf_text_extractor": "pdftotext",
         "pdf_text_extractor_version": pdftotext_version,
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
+        "proposal_algorithm": recognition.PROPOSAL_ALGORITHM,
+        "proposal_algorithm_version": recognition.PROPOSAL_ALGORITHM_VERSION,
         "recognition_dpi": recognition.RECOGNITION_DPI,
         "renderer": "pdftoppm",
         "renderer_version": pdftoppm_version,
@@ -1380,6 +1370,7 @@ def _run_conversion(
     recognition_documents: dict[int, dict[str, Any]] = {}
     page_candidates: dict[int, list[dict[str, Any]]] = {}
     page_words: dict[int, list[dict[str, Any]]] = {}
+    page_source_regions: dict[int, list[dict[str, Any]]] = {}
     page_semantics_keys: dict[int, str] = {}
     page_semantics_reusable: dict[int, bool] = {}
     total_estimate = capability_estimate
@@ -1398,6 +1389,7 @@ def _run_conversion(
         candidates = recognition_document["candidates"]
         page_candidates[page_number] = candidates
         page_words[page_number] = recognition_document["pdf_text_evidence"]["words"]
+        page_source_regions[page_number] = recognition_document["source_regions"]
         page_semantics_keys[page_number] = dependency_key({
             "base_url": provider.base_url,
             "model": provider.model,
@@ -1430,14 +1422,6 @@ def _run_conversion(
     # Second pass: reconstruct each page that cannot be reused, enforcing the
     # request ceiling against the running total before every page.
     for page_number in pages:
-        # The whole-page fallback source region (...-r0000) can anchor a
-        # reconstructed formula/table/figure node, so region verification reads
-        # its crop — the full page render — before this loop reaches the
-        # review-record stage. Materialize it up front for every page.
-        _atomic_copy(
-            regions / f"page-{page_number}.png",
-            regions / f"page-{page_number}-r0000.png",
-        )
         if page_semantics_reusable[page_number]:
             reporter.reused(
                 "provider-reconstruction", page=page_number, page_count=page_count
@@ -1458,9 +1442,12 @@ def _run_conversion(
             candidates=page_candidates[page_number],
             pdf_words=page_words[page_number],
             source_region_ids=[
-                _whole_page_region_id(page_number),
-                *(str(candidate["id"]) for candidate in page_candidates[page_number]),
+                str(region["id"]) for region in page_source_regions[page_number]
             ],
+            source_regions=page_source_regions[page_number],
+            region_overlay=regions / f"page-{page_number}-overlay.png",
+            source_pdf=source_copy,
+            source_region_dpi=recognition.RECOGNITION_DPI,
             budget=budget,
             max_retries=limits.provider_max_retries,
             retry_base_seconds=limits.provider_retry_base_seconds,
@@ -1590,6 +1577,8 @@ def _run_conversion(
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
         "recognition_dpi": recognition.RECOGNITION_DPI,
         "recognition_weights_version": backend.weights_version,
+        "source_region_proposal_algorithm": recognition.PROPOSAL_ALGORITHM,
+        "source_region_proposal_algorithm_version": recognition.PROPOSAL_ALGORITHM_VERSION,
         "source_copy_verified": True,
         "source_sha256": source_sha256,
         "source_pages": pages,
@@ -1646,6 +1635,19 @@ def _render_report_regions(source: Path, record: dict[str, Any], regions: Path) 
     regions.mkdir(mode=0o700, parents=True, exist_ok=True)
     dpi = 144
     scale = dpi / 72
+    referenced = {
+        reference
+        for node in record["semantic_layer"]
+        for reference in node["source_regions"]
+    }
+    referenced.update(
+        candidate["source_region"] for candidate in record["candidates"]
+    )
+    referenced.update(
+        reference
+        for warning in record["warnings"]
+        for reference in warning["source_regions"]
+    )
     for page_number in record["pages"]:
         prefix = regions / f"page-{page_number}"
         rendered = _run([
@@ -1656,6 +1658,8 @@ def _render_report_regions(source: Path, record: dict[str, Any], regions: Path) 
             raise RuntimeError(f"report page render failed: {rendered.stderr}")
         for region in (item for item in record["source_regions"] if item["page"] == page_number):
             identifier = str(region["id"])
+            if identifier not in referenced:
+                continue
             if identifier.endswith("-r0000"):
                 _atomic_copy(prefix.with_suffix(".png"), regions / f"{identifier}.png")
                 continue

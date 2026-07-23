@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/recognition-2.0.schema.json",
+  "title": "Accessibilizer recognition evidence 2.0",
+  "description": "Versioned deterministic Source Regions and distinct non-authoritative Recognition Candidates for one page.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidates",
+    "page",
+    "pdf_text_evidence",
+    "proposal_generation",
+    "recognition",
+    "rendering",
+    "schema_version",
+    "source_regions",
+    "source_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rendering": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dpi",
+        "renderer",
+        "renderer_version"
+      ],
+      "properties": {
+        "dpi": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "renderer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "renderer_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "recognition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "backend_version",
+        "weights_version"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "weights_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "pdf_text_evidence": {
+      "$ref": "#/$defs/pdf_text_evidence"
+    },
+    "overlay": {
+      "type": "string",
+      "minLength": 1
+    },
+    "proposal_generation": {
+      "$ref": "#/$defs/proposal_generation"
+    },
+    "source_regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/source_region"
+      }
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "description": "[x0, y0, x1, y1] with a top-left origin and y increasing downward.",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "items": false,
+      "minItems": 4
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "id",
+        "raw_class",
+        "source_region",
+        "type",
+        "verification"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-c[0-9]{4,}$"
+        },
+        "source_region": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "handwriting",
+            "formula",
+            "table",
+            "figure",
+            "document_structure"
+          ]
+        },
+        "raw_class": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "layout_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ocr_text_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "eligible",
+            "reason_codes"
+          ],
+          "properties": {
+            "eligible": {
+              "type": "boolean"
+            },
+            "reason_codes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "pdf_text_evidence": {
+      "description": "Existing PDF text and geometry retained only as non-authoritative evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoritative",
+        "extractor",
+        "extractor_version",
+        "source",
+        "words"
+      ],
+      "properties": {
+        "authoritative": {
+          "const": false
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractor_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bbox_points",
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "bbox_points": {
+                "$ref": "#/$defs/bbox"
+              }
+            }
+          }
+        }
+      }
+    },
+    "source_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bbox_pixels",
+        "bbox_points",
+        "crop",
+        "id",
+        "proposal_sources"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+        },
+        "bbox_pixels": {
+          "$ref": "#/$defs/bbox"
+        },
+        "bbox_points": {
+          "$ref": "#/$defs/bbox"
+        },
+        "crop": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposal_sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "proposal_generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "algorithm_version",
+        "deduplication_pixels",
+        "max_nonfallback_area_ratio",
+        "sources"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "algorithm_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_nonfallback_area_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deduplication_pixels": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

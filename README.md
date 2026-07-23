@@ -151,15 +151,17 @@ warning's `history`, and the original recognition candidates are never discarded
 
 For each converted page, Accessibilizer renders the source at a deterministic
 recognition resolution and runs a pinned, CPU-only PaddleOCR pass. It records
-text or handwriting, Formula, table, figure, and Document Structure candidates,
-each with a stable identifier (`page-N-rNNNN`), a bounding box, a confidence
-value used only as evidence, and a source-region crop under `regions/`. The
+type-neutral deterministic Source Regions with stable `page-N-rNNNN` identifiers,
+then records distinct Recognition Candidates with `page-N-cNNNN` identifiers.
+Candidates retain their raw backend class, layout confidence, OCR text confidence,
+verification eligibility, and stable ineligibility reasons. An ID overlay lets the
+page model select existing Source Regions without emitting coordinates. The
 existing Source PDF text layer is extracted with its geometry and stored as
 `pdf_text_evidence` marked `"authoritative": false`, so it can inform later
 reconciliation without ever contaminating the Semantic Layer. Recognition is a
 checkpointed stage: it is reused when its source, tool versions, resolution,
 backend, and weights are unchanged. The candidate contract is documented by
-`schemas/recognition-1.0.schema.json`.
+`schemas/recognition-2.0.schema.json`.
 
 PaddleOCR code and weights are pinned in the canonical image, so recognition
 runs offline with no runtime model downloads. Set
@@ -180,4 +182,4 @@ The fast suite selects the deterministic `fake` recognition backend. Set
 PaddleOCR produces schema-valid candidates for all 11 sample pages offline.
 
 The authoring boundary is documented by `schemas/authoring-2.0.schema.json`, and
-the recognition-evidence contract by `schemas/recognition-1.0.schema.json`.
+the recognition-evidence contract by `schemas/recognition-2.0.schema.json`.
