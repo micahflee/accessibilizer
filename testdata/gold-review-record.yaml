@@ -488,6 +488,13 @@ source_regions:
   - 555
   - 590
   - 700
+- id: page-6-r0012
+  page: 6
+  bbox_points:
+  - 225
+  - 710
+  - 340
+  - 780
 - id: page-7-r0001
   page: 7
   bbox_points:
@@ -691,6 +698,13 @@ source_regions:
   - 710
   - 600
   - 790
+- id: page-8-r0014
+  page: 8
+  bbox_points:
+  - 75
+  - 328
+  - 375
+  - 355
 - id: page-9-r0001
   page: 9
   bbox_points:
@@ -2018,6 +2032,13 @@ semantic_layer:
   id: page-6-s0011
   source_regions:
   - page-6-r0011
+- normalized_math: P = IV
+  page: 6
+  spoken_math_alternative: Power equals I times V.
+  type: formula
+  id: page-6-s0012
+  source_regions:
+  - page-6-r0012
 - level: 2
   page: 7
   text: Units
@@ -2159,6 +2180,12 @@ semantic_layer:
   id: page-8-s0005
   source_regions:
   - page-8-r0005
+- page: 8
+  text: 'Example: Convert 60 Hz to omega.'
+  type: paragraph
+  id: page-8-s0014
+  source_regions:
+  - page-8-r0014
 - normalized_math: \left(60\ \dfrac{\text{cycles}}{s}\right)\left(2\pi\ \dfrac{\text{rad}}{\text{cycle}}\right)
     = 377\ \dfrac{\text{rad}}{s}
   page: 8
@@ -2286,7 +2313,7 @@ semantic_layer:
   - page-9-r0009
 - page: 9
   text: 'Misconception #2: electrons travel near the speed of light. Reality: electric fields propagate
-    near the speed of light, but the electrons that make up the current are very slow in electrical circuits.'
+    near the speed of light! electrons (as current) are hella slow in electrical circuits...'
   type: paragraph
   id: page-9-s0010
   source_regions:

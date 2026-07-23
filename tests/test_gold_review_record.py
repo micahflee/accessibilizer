@@ -137,7 +137,7 @@ class GoldReviewRecordTests(unittest.TestCase):
         self,
     ) -> None:
         node_ids = [node["id"] for node in self.record["semantic_layer"]]
-        self.assertEqual(len(node_ids), 115)
+        self.assertEqual(len(node_ids), 117)
         self.assertEqual(len(node_ids), len(set(node_ids)))
         for node in self.record["semantic_layer"]:
             self.assertRegex(node["id"], NODE_ID)
@@ -251,6 +251,20 @@ class GoldReviewRecordTests(unittest.TestCase):
             for node in warning["semantic_nodes"]
         )
         self.assertTrue(preserved, "the flagged region must preserve the source's 10^-9 exponent")
+
+    def test_maintainer_review_corrections_preserve_source_fidelity(self) -> None:
+        boxed_power = self.nodes_by_id["page-6-s0012"]
+        self.assertEqual(boxed_power["normalized_math"], "P = IV")
+        self.assertEqual(
+            boxed_power["spoken_math_alternative"], "Power equals I times V."
+        )
+
+        omega_example = self.nodes_by_id["page-8-s0014"]
+        self.assertEqual(omega_example["text"], "Example: Convert 60 Hz to omega.")
+
+        misconception = self.nodes_by_id["page-9-s0010"]["text"]
+        self.assertIn("electrons (as current) are hella slow", misconception)
+        self.assertNotIn("very slow", misconception)
 
     def test_standalone_report_generates_every_page_and_referenced_crop_offline(
         self,
