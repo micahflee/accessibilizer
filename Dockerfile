@@ -60,7 +60,12 @@ RUN python3 -m pip install --no-cache-dir \
 
 COPY --from=author-build /build/target/pdf-author.jar /opt/accessibilizer/pdf-author.jar
 COPY --from=verapdf-install /opt/verapdf /opt/verapdf
+ARG ACCESSIBILIZER_SOURCE_REVISION
+RUN test -n "${ACCESSIBILIZER_SOURCE_REVISION}" \
+    && printf '%s\n' "${ACCESSIBILIZER_SOURCE_REVISION}" \
+      > /opt/accessibilizer/source-revision
 COPY src /opt/accessibilizer/src
+COPY schemas /opt/accessibilizer/schemas
 ENV PATH="/opt/verapdf:${PATH}" \
     ACCESSIBILIZER_CONTAINERIZED="1" \
     PYTHONPATH="/opt/accessibilizer/src" \

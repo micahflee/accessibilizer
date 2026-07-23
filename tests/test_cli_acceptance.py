@@ -1235,7 +1235,7 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(recognition_provenance["recognition_dpi"], 300)
             self.assertEqual(
                 recognition_provenance["source_region_proposal_algorithm_version"],
-                "1.0",
+                "1.1",
             )
             self.assertEqual(
                 recognition_provenance["recognition_confidence_kinds"],

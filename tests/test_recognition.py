@@ -242,6 +242,15 @@ class DocumentValidationTest(unittest.TestCase):
             any(region["bbox_points"] == [2.4, 4.8, 19.2, 9.6] for region in regions)
         )
 
+    def test_runtime_validation_enforces_the_published_schema(self) -> None:
+        document = self.valid_document()
+        document["unexpected"] = True
+
+        with self.assertRaisesRegex(
+            ValueError, r"invalid recognition document at \(root\):"
+        ):
+            validate_recognition_document(document)
+
     def test_broad_candidate_is_retained_on_fallback_but_cannot_trigger_disagreement(
         self,
     ) -> None:

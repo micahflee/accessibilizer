@@ -1,7 +1,14 @@
 .PHONY: image test test-cli test-real-ocr typecheck browser-install browser-tests ci
 
+SOURCE_REVISION := $(shell git ls-files --cached --others --exclude-standard src | sort | xargs shasum -a 256 | shasum -a 256 | cut -d ' ' -f 1)
+
 image:
-	docker build --tag accessibilizer:0.1.0 --tag accessibilizer:test .
+	tar -cf - Dockerfile src schemas java docker | docker build \
+		--build-arg ACCESSIBILIZER_SOURCE_REVISION=$(SOURCE_REVISION) \
+		--file Dockerfile \
+		--tag accessibilizer:0.1.0 \
+		--tag accessibilizer:test \
+		-
 
 test-cli:
 	uv run python -m unittest discover -s tests -v

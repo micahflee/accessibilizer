@@ -55,18 +55,6 @@ def _usefully_covers(proposal: list[float], gold: list[float]) -> bool:
     )
 
 
-def _candidate_with_current_eligibility(candidate: dict[str, Any]) -> dict[str, Any]:
-    updated = copy.deepcopy(candidate)
-    verification = updated["verification"]
-    verification["reason_codes"] = [
-        reason
-        for reason in verification["reason_codes"]
-        if reason != "missing-layout-confidence"
-    ]
-    verification["eligible"] = not verification["reason_codes"]
-    return updated
-
-
 def build_fixture(recognition_directory: Path) -> dict[str, Any]:
     gold: dict[str, Any] = yaml.safe_load(GOLD.read_text(encoding="utf-8"))
     gold_regions = {
@@ -82,10 +70,8 @@ def build_fixture(recognition_directory: Path) -> dict[str, Any]:
                 encoding="utf-8"
             )
         )
-        candidates = [
-            _candidate_with_current_eligibility(candidate)
-            for candidate in document["candidates"]
-        ]
+        recognition.validate_recognition_document(document)
+        candidates = copy.deepcopy(document["candidates"])
         regions_by_id = {
             region["id"]: region for region in document["source_regions"]
         }
@@ -219,10 +205,9 @@ def build_fixture(recognition_directory: Path) -> dict[str, Any]:
         pages.append(
             {
                 "page": page_number,
-                "proposal_generation": {
-                    **document["proposal_generation"],
-                    "algorithm_version": recognition.PROPOSAL_ALGORITHM_VERSION,
-                },
+                "proposal_generation": copy.deepcopy(
+                    document["proposal_generation"]
+                ),
                 "recognition": document["recognition"],
                 "source_regions": source_regions,
                 "gold_region_matches": [

@@ -462,8 +462,21 @@ def build_region_request(
 def _page_region_view(candidate: dict[str, Any], page_response: dict[str, Any]) -> Any:
     candidate_type = candidate.get("type")
     region_id = _candidate_source_region(candidate)
+    semantic_node_index = candidate.get("semantic_node_index")
+    nodes = page_response.get("nodes", [])
+    if (
+        isinstance(semantic_node_index, int)
+        and not isinstance(semantic_node_index, bool)
+        and 0 <= semantic_node_index < len(nodes)
+    ):
+        node = nodes[semantic_node_index]
+        if (
+            node.get("type") == candidate_type
+            and region_id in node.get("source_regions", [])
+        ):
+            return node
     matches = [
-        node for node in page_response.get("nodes", [])
+        node for node in nodes
         if node.get("type") == candidate_type
         and region_id in node.get("source_regions", [])
     ]
@@ -1013,11 +1026,12 @@ def reconcile_page(
     # Ground each prose node only in evidence localized to its selected regions. A
     # well-recognized paragraph elsewhere on the page must not corroborate this one.
     prose_nodes = [
-        node for node in page_response["nodes"]
+        (node_index, node)
+        for node_index, node in enumerate(page_response["nodes"])
         if node["type"] in {"heading", "paragraph"}
     ]
     localized_prose_evidence: dict[int, set[str]] = {}
-    for node in prose_nodes:
+    for node_index, node in prose_nodes:
         evidence_tokens = _localized_prose_evidence(
             node,
             candidates=candidates,
@@ -1030,6 +1044,9 @@ def reconcile_page(
         agreeing_prose_verification = any(
             target.get("type") == node["type"]
             and _candidate_source_region(target) in node["source_regions"]
+            and (
+                target.get("semantic_node_index", node_index) == node_index
+            )
             and verification["agrees_with_page"]
             for target, verification in region_verifications
         )
@@ -1076,17 +1093,20 @@ def reconcile_page(
         ]
         required: list[tuple[str, set[str], list[str]]] = [
             ("prose", {node["type"]}, list(node["source_regions"]))
-            for node in prose_nodes
+            for node_index, node in prose_nodes
             if not _prose_evidence_is_strong(
                 node, localized_prose_evidence[id(node)]
             )
             and not any(
                 target.get("type") == node["type"]
                 and _candidate_source_region(target) in node["source_regions"]
+                and (
+                    target.get("semantic_node_index", node_index) == node_index
+                )
                 for target in agreeing_targets
             )
         ]
-        for node in page_response["nodes"]:
+        for node_index, node in enumerate(page_response["nodes"]):
             content_type = node["type"]
             if content_type not in REGION_VERIFY_TYPES:
                 continue
@@ -1098,6 +1118,9 @@ def reconcile_page(
             ) and not any(
                 target.get("type") == content_type
                 and _candidate_source_region(target) in regions
+                and (
+                    target.get("semantic_node_index", node_index) == node_index
+                )
                 for target in agreeing_targets
             ):
                 required.append((content_type, {content_type}, regions))
@@ -1203,26 +1226,43 @@ def _region_verification_targets(
     not a new Recognition Candidate; its type selects the matching page-level
     semantic view for the crop prompt.
     """
-    targets = [
-        {
-            **candidate,
-            "id": _candidate_source_region(candidate),
-            "verification_target_kind": "recognition-candidate",
-        }
-        for candidate in candidates
-        if candidate.get("type") in REGION_VERIFY_TYPES
-        and _candidate_is_eligible(candidate)
-    ]
-    covered_regions = {
-        (target.get("type"), _candidate_source_region(target)) for target in targets
-    }
+    targets: list[dict[str, Any]] = []
+    covered_nodes: set[int] = set()
+    for candidate in candidates:
+        if (
+            candidate.get("type") not in REGION_VERIFY_TYPES
+            or not _candidate_is_eligible(candidate)
+        ):
+            continue
+        source_region = _candidate_source_region(candidate)
+        matching_nodes = [
+            node_index
+            for node_index, node in enumerate(page_response["nodes"])
+            if node.get("type") == candidate.get("type")
+            and source_region in node.get("source_regions", [])
+        ]
+        if not matching_nodes:
+            targets.append({
+                **candidate,
+                "id": source_region,
+                "verification_target_kind": "recognition-candidate",
+            })
+            continue
+        for node_index in matching_nodes:
+            targets.append({
+                **candidate,
+                "id": source_region,
+                "semantic_node_index": node_index,
+                "verification_target_kind": "recognition-candidate",
+            })
+            covered_nodes.add(node_index)
     candidates_by_id = {
         _candidate_source_region(candidate): candidate
         for candidate in candidates
         if isinstance(_candidate_source_region(candidate), str)
     }
     region_bounds = _source_region_bounds(source_regions)
-    for node in page_response["nodes"]:
+    for node_index, node in enumerate(page_response["nodes"]):
         semantic_type = node["type"]
         if semantic_type in {"heading", "paragraph"} and _prose_evidence_is_strong(
             node,
@@ -1240,16 +1280,17 @@ def _region_verification_targets(
         }:
             continue
         region_id = node["source_regions"][0]
-        if (semantic_type, region_id) in covered_regions:
+        if node_index in covered_nodes:
             continue
         targets.append({
             **candidates_by_id.get(region_id, {}),
             "id": region_id,
             "source_region": region_id,
             "type": semantic_type,
+            "semantic_node_index": node_index,
             "verification_target_kind": "semantic-backfill",
         })
-        covered_regions.add((semantic_type, region_id))
+        covered_nodes.add(node_index)
     return targets
 
 

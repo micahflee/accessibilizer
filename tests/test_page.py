@@ -10,6 +10,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from accessibilizer import page as page_module
 from accessibilizer.page import (
     SUPPORTED_NODE_TYPES,
     build_page_request,
@@ -1343,6 +1344,62 @@ class DocumentAndBudgetTest(unittest.TestCase):
             {region["type"] for region in document["reconstruction"]["verified_regions"]},
             {"heading", "paragraph", "formula", "figure", "table"},
         )
+
+    def test_shared_source_region_is_verified_once_per_semantic_node(self) -> None:
+        formulas = [
+            {
+                "type": "formula",
+                "normalized_math": "I = Q / delta t",
+                "spoken_math_alternative": "I equals Q divided by delta t.",
+                "source_regions": ["page-1-r0003"],
+            },
+            {
+                "type": "formula",
+                "normalized_math": "V = I R",
+                "spoken_math_alternative": "V equals I times R.",
+                "source_regions": ["page-1-r0003"],
+            },
+        ]
+        response = valid_page_response(nodes=formulas)
+        candidate = {
+            "id": "page-1-c0001",
+            "source_region": "page-1-r0003",
+            "type": "formula",
+            "text": "I = Q / delta t",
+            "verification": {"eligible": True, "reason_codes": []},
+        }
+        verified_views: list[dict[str, Any]] = []
+
+        def verify(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            target = kwargs["candidate"]
+            verified_views.append(
+                page_module._page_region_view(target, kwargs["page_response"])
+            )
+            return {
+                "transcription": "independent crop check",
+                "agrees_with_page": True,
+                "suspected_prompt_injection": False,
+            }
+
+        with (
+            patch(
+                "accessibilizer.page.generate_page_semantics",
+                return_value=response,
+            ),
+            patch("accessibilizer.page.verify_region", side_effect=verify),
+        ):
+            reconstruct_page(
+                CONFIG,
+                page=1,
+                source_sha256="a" * 64,
+                page_image=Path("page.png"),
+                regions_dir=Path("regions"),
+                candidates=[candidate],
+                pdf_words=[],
+                source_region_ids=["page-1-r0003"],
+            )
+
+        self.assertEqual(verified_views, formulas)
 
     def test_disagreeing_semantic_backfill_uses_only_insufficient_verification(self) -> None:
         response = valid_page_response(nodes=[{
