@@ -87,6 +87,14 @@
       "type": "string",
       "minLength": 1
     },
+    "overlays": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "proposal_generation": {
       "$ref": "#/$defs/proposal_generation"
     },
@@ -249,6 +257,7 @@
         "bbox_points",
         "crop",
         "id",
+        "model_visible",
         "proposal_sources"
       ],
       "properties": {
@@ -265,6 +274,9 @@
         "crop": {
           "type": "string",
           "minLength": 1
+        },
+        "model_visible": {
+          "type": "boolean"
         },
         "proposal_sources": {
           "type": "array",
@@ -285,6 +297,8 @@
         "algorithm_version",
         "deduplication_pixels",
         "max_nonfallback_area_ratio",
+        "model_binding_deduplication_pixels",
+        "model_binding_overlay_grid",
         "sources"
       ],
       "properties": {
@@ -313,6 +327,20 @@
         "deduplication_pixels": {
           "type": "integer",
           "minimum": 1
+        },
+        "model_binding_deduplication_pixels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "model_binding_overlay_grid": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "integer", "minimum": 1},
+            {"type": "integer", "minimum": 1}
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
         }
       }
     }

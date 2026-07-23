@@ -307,6 +307,24 @@ class RequestConstructionTest(unittest.TestCase):
         self.assertIn("page-1-r0001", evidence)
         self.assertIn("bbox_points", evidence)
 
+    def test_page_request_accepts_partitioned_region_overlays(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image = self.image(directory)
+            request = build_page_request(
+                model="exact-model",
+                page_image=image,
+                region_overlays=[image, image],
+                candidates=[],
+                pdf_words=[],
+                source_region_ids=["page-1-r0000", "page-1-r0001"],
+            )
+
+        images = [
+            part for part in request["messages"][1]["content"]
+            if part["type"] == "image_url"
+        ]
+        self.assertEqual(len(images), 3)
+
     def test_recognition_evidence_travels_as_data_not_as_a_control_field(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             request = build_page_request(
@@ -572,6 +590,65 @@ class ReconciliationTest(unittest.TestCase):
         _, warnings = self.reconcile(
             page_response=response,
             pdf_words=[{"text": evidence}],
+        )
+
+        self.assertIn("recognition-disagreement", self.codes(warnings))
+
+    def test_prose_evidence_elsewhere_does_not_satisfy_local_verification(self) -> None:
+        response = valid_page_response(
+            nodes=[{
+                "type": "paragraph",
+                "text": "Current is charge flow.",
+                "source_regions": ["page-1-r0001"],
+            }]
+        )
+        source_regions = [
+            {"id": "page-1-r0001", "bbox_points": [0.0, 0.0, 100.0, 100.0]},
+            {"id": "page-1-r0002", "bbox_points": [200.0, 0.0, 300.0, 100.0]},
+        ]
+
+        _, warnings = self.reconcile(
+            page_response=response,
+            candidates=[{
+                "id": "page-1-c0001",
+                "source_region": "page-1-r0002",
+                "type": "text",
+                "text": "Current is charge flow.",
+                "verification": {"eligible": True, "reason_codes": []},
+            }],
+            pdf_words=[{
+                "text": "Current is charge flow.",
+                "bbox_points": [210.0, 10.0, 290.0, 30.0],
+            }],
+            source_regions=source_regions,
+            require_verification=True,
+        )
+
+        self.assertIn("insufficient-verification", self.codes(warnings))
+
+    def test_localized_prose_contradiction_still_warns(self) -> None:
+        response = valid_page_response(
+            nodes=[{
+                "type": "paragraph",
+                "text": "Current is charge flow.",
+                "source_regions": ["page-1-r0001"],
+            }]
+        )
+
+        _, warnings = self.reconcile(
+            page_response=response,
+            candidates=[{
+                "id": "page-1-c0001",
+                "source_region": "page-1-r0001",
+                "type": "text",
+                "text": "Resistance opposes motion and dissipates energy.",
+                "verification": {"eligible": True, "reason_codes": []},
+            }],
+            pdf_words=[],
+            source_regions=[{
+                "id": "page-1-r0001",
+                "bbox_points": [0.0, 0.0, 100.0, 100.0],
+            }],
         )
 
         self.assertIn("recognition-disagreement", self.codes(warnings))
@@ -1150,7 +1227,7 @@ class DocumentAndBudgetTest(unittest.TestCase):
         self.assertEqual(document["schema_version"], "1.1")
         self.assertEqual(document["title"], valid_page_response()["title"])
         self.assertEqual(document["semantic_layer"], layer)
-        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.6")
+        self.assertEqual(document["reconstruction"]["page_prompt_version"], "1.7")
         self.assertEqual(document["reconstruction"]["page_schema_version"], "1.3")
         self.assertEqual(document["reconstruction"]["provider_model"], "exact-model")
         self.assertEqual(

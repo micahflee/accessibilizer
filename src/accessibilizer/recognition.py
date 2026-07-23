@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import shutil
 import struct
-from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Iterable, Mapping, Protocol, Sequence, runtime_checkable
 import zlib
 
 from accessibilizer.checkpoint import atomic_write_json
@@ -28,6 +28,17 @@ PROPOSAL_ALGORITHM = "hybrid-source-regions"
 PROPOSAL_ALGORITHM_VERSION = "1.0"
 MAX_NONFALLBACK_AREA_RATIO = 0.8
 PROPOSAL_DEDUPLICATION_PIXELS = 112
+MODEL_BINDING_DEDUPLICATION_PIXELS = 200
+MODEL_BINDING_OVERLAY_COLUMNS = 4
+MODEL_BINDING_OVERLAY_ROWS = 4
+CONFIDENCE_KINDS = ("layout_confidence", "ocr_text_confidence")
+VERIFICATION_INELIGIBILITY_REASON_CODES = (
+    "missing-layout-confidence",
+    "missing-ocr-text-confidence",
+    "missing-recognized-content",
+    "source-region-too-large",
+    "whole-page-fallback",
+)
 
 CANDIDATE_TYPES = frozenset(
     {"text", "handwriting", "formula", "table", "figure", "document_structure"}
@@ -82,10 +93,13 @@ class FakeBackend:
     weights_version = "fake-weights-1.0"
 
     _BANDS: tuple[tuple[str, float, float, str | None, float], ...] = (
-        ("document_structure", 0.03, 0.12, "Chapter 20", 0.99),
+        (
+            "document_structure", 0.03, 0.12,
+            "Electric Current, Resistance, and Ohm's Law", 0.99,
+        ),
         ("text", 0.14, 0.30, "Electric current is the rate at which charge flows.", 0.95),
         ("handwriting", 0.32, 0.44, "annotated note", 0.55),
-        ("formula", 0.46, 0.56, "I = Q / t", 0.80),
+        ("formula", 0.46, 0.56, "I = Q / delta t", 0.80),
         ("table", 0.58, 0.74, None, 0.70),
         ("figure", 0.76, 0.96, None, 0.65),
     )
@@ -316,12 +330,19 @@ def build_recognition_document(
         bbox: f"page-{page}-r{index:04d}"
         for index, bbox in enumerate(ordered_proposals, start=1)
     }
+    model_visible_boxes = select_model_binding_boxes(
+        ordered_proposals,
+        candidate_boxes=(
+            bbox for bbox in normalized_candidate_boxes if bbox in region_id_by_bbox
+        ),
+    )
     source_regions: list[dict[str, object]] = [
         {
             "bbox_pixels": [0, 0, width, height],
             "bbox_points": pixels_to_points((0, 0, width, height), dpi),
             "crop": f"regions/{fallback_id}.png",
             "id": fallback_id,
+            "model_visible": True,
             "proposal_sources": ["whole-page-fallback"],
         }
     ]
@@ -333,6 +354,7 @@ def build_recognition_document(
                 "bbox_points": pixels_to_points(bbox, dpi),
                 "crop": f"regions/{identifier}.png",
                 "id": identifier,
+                "model_visible": bbox in model_visible_boxes,
                 "proposal_sources": sorted(proposal_sources[bbox]),
             }
         )
@@ -381,6 +403,11 @@ def build_recognition_document(
             "algorithm": PROPOSAL_ALGORITHM,
             "algorithm_version": PROPOSAL_ALGORITHM_VERSION,
             "deduplication_pixels": PROPOSAL_DEDUPLICATION_PIXELS,
+            "model_binding_deduplication_pixels": MODEL_BINDING_DEDUPLICATION_PIXELS,
+            "model_binding_overlay_grid": [
+                MODEL_BINDING_OVERLAY_COLUMNS,
+                MODEL_BINDING_OVERLAY_ROWS,
+            ],
             "max_nonfallback_area_ratio": MAX_NONFALLBACK_AREA_RATIO,
             "sources": ["native-pdf-word", "raster-ink", "recognition"],
         },
@@ -397,6 +424,33 @@ def build_recognition_document(
 
 def _bbox_area(bbox: Bbox) -> int:
     return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
+
+
+def select_model_binding_boxes(
+    proposals: Sequence[Bbox], *, candidate_boxes: Iterable[Bbox] = (),
+) -> set[Bbox]:
+    """Choose a compact, deterministic geometry subset for partitioned overlays."""
+    binding_clusters: dict[tuple[int, int, int, int], list[Bbox]] = {}
+    for bbox in proposals:
+        key = (
+            round(bbox[0] / MODEL_BINDING_DEDUPLICATION_PIXELS),
+            round(bbox[1] / MODEL_BINDING_DEDUPLICATION_PIXELS),
+            round(bbox[2] / MODEL_BINDING_DEDUPLICATION_PIXELS),
+            round(bbox[3] / MODEL_BINDING_DEDUPLICATION_PIXELS),
+        )
+        binding_clusters.setdefault(key, []).append(bbox)
+    selected = {
+        min(
+            cluster,
+            key=lambda bbox: sum(
+                abs(bbox[index] - key[index] * MODEL_BINDING_DEDUPLICATION_PIXELS)
+                for index in range(4)
+            ),
+        )
+        for key, cluster in binding_clusters.items()
+    }
+    selected.update(candidate_boxes)
+    return selected
 
 
 def _candidate_ineligibility_reasons(
@@ -489,6 +543,10 @@ def validate_recognition_document(document: object) -> None:
         _validate_bbox(region.get("bbox_pixels"), "Source Region bbox_pixels must be four numbers")
         _validate_bbox(region.get("bbox_points"), "Source Region bbox_points must be four numbers")
         _require(isinstance(region.get("crop"), str), "Source Region crop must be a string")
+        _require(
+            isinstance(region.get("model_visible"), bool),
+            "Source Region model_visible must be boolean",
+        )
         _require(isinstance(region.get("proposal_sources"), list), "proposal_sources must be an array")
 
     proposal_generation = document.get("proposal_generation")
@@ -496,6 +554,10 @@ def validate_recognition_document(document: object) -> None:
     assert isinstance(proposal_generation, dict)
     for field in ("algorithm", "algorithm_version"):
         _require(isinstance(proposal_generation.get(field), str) and bool(str(proposal_generation[field]).strip()), f"proposal_generation.{field} must be a non-empty string")
+    _require(
+        isinstance(proposal_generation.get("model_binding_deduplication_pixels"), int),
+        "proposal_generation.model_binding_deduplication_pixels must be an integer",
+    )
 
     candidates = document.get("candidates")
     _require(isinstance(candidates, list), "candidates must be an array")
@@ -940,6 +1002,78 @@ def _create_region_overlay(
     _write_rgb_png(destination, width, height, pixels)
 
 
+def _create_region_overlay_partitions(
+    *, destination_prefix: Path, width: int, height: int, pixels: bytearray,
+    regions: Sequence[dict[str, Any]],
+) -> list[Path]:
+    """Render bounded-density labeled page partitions for reliable ID binding."""
+    grouped: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for region in regions:
+        if not region.get("model_visible") or str(region["id"]).endswith("-r0000"):
+            continue
+        bbox = region["bbox_pixels"]
+        assert isinstance(bbox, list)
+        center_x = (int(bbox[0]) + int(bbox[2])) // 2
+        center_y = (int(bbox[1]) + int(bbox[3])) // 2
+        column = min(
+            center_x * MODEL_BINDING_OVERLAY_COLUMNS // width,
+            MODEL_BINDING_OVERLAY_COLUMNS - 1,
+        )
+        row = min(
+            center_y * MODEL_BINDING_OVERLAY_ROWS // height,
+            MODEL_BINDING_OVERLAY_ROWS - 1,
+        )
+        grouped.setdefault((row, column), []).append(region)
+
+    overlays: list[Path] = []
+    for row in range(MODEL_BINDING_OVERLAY_ROWS):
+        for column in range(MODEL_BINDING_OVERLAY_COLUMNS):
+            partition_regions = grouped.get((row, column), [])
+            if not partition_regions:
+                continue
+            x0 = column * width // MODEL_BINDING_OVERLAY_COLUMNS
+            x1 = (column + 1) * width // MODEL_BINDING_OVERLAY_COLUMNS
+            y0 = row * height // MODEL_BINDING_OVERLAY_ROWS
+            y1 = (row + 1) * height // MODEL_BINDING_OVERLAY_ROWS
+            partition_width = x1 - x0
+            partition_height = y1 - y0
+            partition_pixels = bytearray()
+            for y in range(y0, y1):
+                start = (y * width + x0) * 3
+                end = start + partition_width * 3
+                partition_pixels.extend(pixels[start:end])
+            for region in partition_regions:
+                bbox_value = region["bbox_pixels"]
+                assert isinstance(bbox_value, list)
+                bbox = clamp_bbox_to_page(
+                    (
+                        int(bbox_value[0]) - x0,
+                        int(bbox_value[1]) - y0,
+                        int(bbox_value[2]) - x0,
+                        int(bbox_value[3]) - y0,
+                    ),
+                    (partition_width, partition_height),
+                )
+                _draw_region_label(
+                    partition_pixels,
+                    partition_width,
+                    partition_height,
+                    bbox,
+                    str(region["id"]),
+                )
+            destination = destination_prefix.with_name(
+                f"{destination_prefix.name}-{row + 1:02d}-{column + 1:02d}.png"
+            )
+            _write_rgb_png(
+                destination,
+                partition_width,
+                partition_height,
+                partition_pixels,
+            )
+            overlays.append(destination)
+    return overlays
+
+
 def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(value, high))
 
@@ -1009,16 +1143,26 @@ def recognize_page(
         extractor="pdftotext",
         extractor_version=extractor_version,
     )
-    overlay = regions_dir / f"page-{page}-overlay.png"
     source_regions_value = document["source_regions"]
     assert isinstance(source_regions_value, list)
-    _create_region_overlay(
-        destination=overlay, width=overlay_width, height=overlay_height,
-        pixels=overlay_pixels, regions=source_regions_value,
+    overlays = _create_region_overlay_partitions(
+        destination_prefix=regions_dir / f"page-{page}-overlay",
+        width=overlay_width,
+        height=overlay_height,
+        pixels=overlay_pixels,
+        regions=source_regions_value,
     )
-    document["overlay"] = f"regions/{overlay.name}"
+    if not overlays:
+        overlay = regions_dir / f"page-{page}-overlay.png"
+        _create_region_overlay(
+            destination=overlay, width=overlay_width, height=overlay_height,
+            pixels=overlay_pixels, regions=source_regions_value,
+        )
+        overlays = [overlay]
+    document["overlay"] = f"regions/{overlays[0].name}"
+    document["overlays"] = [f"regions/{overlay.name}" for overlay in overlays]
     validate_recognition_document(document)
-    artifacts: list[Path] = [page_render, overlay]
+    artifacts: list[Path] = [page_render, *overlays]
     source_regions = document["source_regions"]
     assert isinstance(source_regions, list)
     candidate_regions = {

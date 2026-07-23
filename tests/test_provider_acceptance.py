@@ -205,11 +205,18 @@ class FakeProvider:
                     for node in body["nodes"]:
                         if node["type"] in node_overrides:
                             node.update(node_overrides[node["type"]])
+                        compatible_candidate_types = {
+                            "heading": {"document_structure", "text"},
+                            "paragraph": {"handwriting", "text"},
+                            "formula": {"formula"},
+                            "figure": {"figure"},
+                            "table": {"table"},
+                        }[node["type"]]
                         matching_region = next(
                             (
                                 candidate["source_region"]
                                 for candidate in evidence_document["recognition_candidates"]
-                                if candidate.get("type") == node["type"]
+                                if candidate.get("type") in compatible_candidate_types
                             ),
                             region_ids[1] if len(region_ids) > 1 else region_ids[0],
                         )

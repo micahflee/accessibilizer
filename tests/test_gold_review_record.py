@@ -19,6 +19,7 @@ from typing import Any
 import unittest
 
 from accessibilizer.checkpoint import file_sha256
+from accessibilizer.page import reconcile_page
 from accessibilizer.review import (
     REVIEW_RECORD_SCHEMA_VERSION,
     load_yaml,
@@ -212,6 +213,114 @@ class GoldReviewRecordTests(unittest.TestCase):
         ]
         self.assertEqual(
             concerns,
+            [
+                (1, "ambiguous-reading-order"),
+                (3, "ambiguous-reading-order"),
+                (3, "table-merged-cells"),
+                (6, "ambiguous-reading-order"),
+                (6, "suspected-source-error"),
+                (7, "ambiguous-reading-order"),
+            ],
+        )
+
+    def test_complete_localized_evidence_replays_exact_gold_warning_multiset(self) -> None:
+        """Exercise reconciliation against all 115 gold nodes without a provider call."""
+        actual: list[tuple[int, str]] = []
+        regions_by_page = {
+            page: [region for region in self.record["source_regions"] if region["page"] == page]
+            for page in self.record["pages"]
+        }
+        reconstruction_by_page = {
+            value["page"]: value for value in self.record["reconstruction"]["pages"]
+        }
+        for page_number in self.record["pages"]:
+            nodes: list[dict[str, Any]] = []
+            candidates: list[dict[str, Any]] = []
+            for index, gold_node in enumerate(
+                (
+                    node for node in self.record["semantic_layer"]
+                    if node["page"] == page_number
+                ),
+                start=1,
+            ):
+                node = {
+                    key: value
+                    for key, value in gold_node.items()
+                    if key not in {"id", "page"}
+                }
+                if node["type"] == "table":
+                    node["boundaries_are_uncertain"] = False
+                    node["headers_are_uncertain"] = False
+                nodes.append(node)
+                candidate_type = (
+                    node["type"]
+                    if node["type"] in {"formula", "table", "figure"}
+                    else "text"
+                )
+                candidate: dict[str, Any] = {
+                    "id": f"page-{page_number}-c{index:04d}",
+                    "source_region": node["source_regions"][0],
+                    "type": candidate_type,
+                    "verification": {"eligible": True, "reason_codes": []},
+                }
+                if node["type"] in {"heading", "paragraph"}:
+                    candidate["text"] = node["text"]
+                elif node["type"] == "formula":
+                    candidate["text"] = node["normalized_math"]
+                candidates.append(candidate)
+
+            reconstruction = reconstruction_by_page[page_number]
+            page_warnings = [
+                warning for warning in self.record["warnings"]
+                if warning["page"] == page_number
+            ]
+            response = {
+                "title": self.record["title"],
+                "language": self.record["language"],
+                "primary_language_is_english": reconstruction[
+                    "primary_language_is_english"
+                ],
+                "document_class": reconstruction["document_class"],
+                "reading_order_is_unambiguous": reconstruction[
+                    "reading_order_is_unambiguous"
+                ],
+                "nodes": nodes,
+                "suspected_source_errors": [
+                    warning["message"]
+                    for warning in page_warnings
+                    if warning["code"] == "suspected-source-error"
+                ],
+                "suspected_prompt_injection": False,
+            }
+            candidates_by_region_type = {
+                (candidate["source_region"], candidate["type"]): candidate
+                for candidate in candidates
+            }
+            verifications = [
+                (
+                    candidates_by_region_type[
+                        (verified["source_region"], verified["type"])
+                    ],
+                    {
+                        "transcription": "",
+                        "agrees_with_page": True,
+                        "suspected_prompt_injection": False,
+                    },
+                )
+                for verified in reconstruction["verified_regions"]
+            ]
+            _, warnings = reconcile_page(
+                page_response=response,
+                region_verifications=verifications,
+                candidates=candidates,
+                pdf_words=[],
+                source_regions=regions_by_page[page_number],
+                require_verification=True,
+            )
+            actual.extend((page_number, warning["code"]) for warning in warnings)
+
+        self.assertEqual(
+            actual,
             [
                 (1, "ambiguous-reading-order"),
                 (3, "ambiguous-reading-order"),

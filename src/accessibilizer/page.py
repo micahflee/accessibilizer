@@ -40,7 +40,7 @@ from accessibilizer.provider import (
 _T = TypeVar("_T")
 
 
-PAGE_PROMPT_VERSION = "1.6"
+PAGE_PROMPT_VERSION = "1.7"
 PAGE_SCHEMA_VERSION = "1.3"
 REGION_PROMPT_VERSION = "1.3"
 REGION_SCHEMA_VERSION = "1.0"
@@ -128,8 +128,8 @@ PAGE_INSTRUCTIONS = (
     "Reading Order; set reading_order_is_unambiguous to false if more than one order "
     "is plausible. For every Semantic Layer item, select one or more IDs from "
     "the supplied Source Regions as source_regions. The first image is the unmodified "
-    "page; the second image is the same page with each deterministic Source Region "
-    "outlined and labeled by the final four digits of its ID. Use the bounds in the "
+    "page; subsequent images are deterministic page partitions with Source Regions "
+    "outlined and labeled by the final four digits of their IDs. Use the bounds in the "
     "evidence JSON to disambiguate labels. Never return coordinates or an "
     "ID not in that list. Select the whole-page fallback only when no tighter "
     "deterministic region supports the item."
@@ -379,6 +379,7 @@ def build_page_request(
     pdf_words: Sequence[dict[str, Any]],
     source_region_ids: Sequence[str],
     region_overlay: Path | None = None,
+    region_overlays: Sequence[Path] = (),
     source_regions: Sequence[dict[str, Any]] | None = None,
     max_completion_tokens: int = 8192,
 ) -> dict[str, Any]:
@@ -401,21 +402,22 @@ def build_page_request(
                         ),
                     },
                     {"type": "image_url", "image_url": {"url": _data_url(page_image)}},
-                    *(
-                        [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": _data_url(region_overlay)},
-                            }
-                        ]
-                        if region_overlay is not None
-                        else []
-                    ),
+                    *[
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _data_url(overlay)},
+                        }
+                        for overlay in (
+                            list(region_overlays)
+                            if region_overlays
+                            else ([region_overlay] if region_overlay is not None else [])
+                        )
+                    ],
                 ],
             },
         ],
         "response_format": json_schema_response_format(
-            "accessibilizer_page_semantics", page_response_schema(source_region_ids)
+            "accessibilizer_page_semantics", page_response_schema()
         ),
         "max_completion_tokens": max_completion_tokens,
     }
@@ -479,9 +481,8 @@ def _page_region_view(candidate: dict[str, Any], page_response: dict[str, Any]) 
 def _candidate_source_region(candidate: dict[str, Any]) -> object:
     """Return the Source Region supporting a recognition candidate.
 
-    Recognition currently uses Source Region IDs as candidate IDs. Also accept an
-    explicit source_region field so reconciliation keeps those domain identities
-    distinct while the older recognition contract is migrated.
+    Recognition 2.0 keeps Candidate and Source Region identities distinct. Falling
+    back to the Candidate ID preserves compatibility only with pre-2.0 checkpoints.
     """
     return candidate.get("source_region", candidate.get("id"))
 
@@ -827,6 +828,7 @@ def reconcile_page(
     region_verifications: Sequence[tuple[dict[str, Any], dict[str, Any]]],
     candidates: Sequence[dict[str, Any]],
     pdf_words: Sequence[dict[str, Any]],
+    source_regions: Sequence[dict[str, Any]] = (),
     require_verification: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Reconcile the reconstruction with evidence into a layer plus warnings.
@@ -927,29 +929,66 @@ def reconcile_page(
     for table in (node for node in page_response["nodes"] if node["type"] == "table"):
         warnings.extend(_reconcile_table(table))
 
-    # Ground the reconstructed prose in recognized content: measure how much of
-    # the reconstructed wording is actually present in the independent evidence,
-    # so a paraphrased summary still grounds while an invented one disagrees.
-    reconstructed: set[str] = set()
-    for node in page_response["nodes"]:
-        if node["type"] in {"heading", "paragraph"}:
-            reconstructed |= _tokens(node["text"])
-    evidence_text = " ".join(
-        [str(word.get("text", "")) for word in pdf_words]
-        + [
+    region_bounds = {
+        str(region.get("id")): region.get("bbox_points")
+        for region in source_regions
+        if isinstance(region.get("id"), str)
+        and isinstance(region.get("bbox_points"), list)
+        and len(region["bbox_points"]) == 4
+    }
+
+    def word_is_local(word: dict[str, Any], region_ids: Sequence[str]) -> bool:
+        word_bbox = word.get("bbox_points")
+        if not isinstance(word_bbox, list) or len(word_bbox) != 4:
+            return not region_bounds
+        wx0, wy0, wx1, wy1 = (float(value) for value in word_bbox)
+        word_area = max(0.0, wx1 - wx0) * max(0.0, wy1 - wy0)
+        if word_area == 0:
+            return False
+        for region_id in region_ids:
+            bounds = region_bounds.get(region_id)
+            if bounds is None:
+                continue
+            rx0, ry0, rx1, ry1 = (float(value) for value in bounds)
+            intersection = max(0.0, min(wx1, rx1) - max(wx0, rx0)) * max(
+                0.0, min(wy1, ry1) - max(wy0, ry0)
+            )
+            if intersection / word_area >= 0.5:
+                return True
+        return False
+
+    def prose_evidence(node: dict[str, Any]) -> set[str]:
+        region_ids = node["source_regions"]
+        evidence = [
+            str(word.get("text", ""))
+            for word in pdf_words
+            if word_is_local(word, region_ids)
+        ]
+        evidence.extend(
             str(candidate.get("text", ""))
             for candidate in candidates
             if candidate.get("type") in {"text", "handwriting", "document_structure"}
             and _candidate_is_eligible(candidate)
-        ]
-    )
-    evidence_tokens = _tokens(evidence_text)
-    if evidence_tokens:
-        reconstruction_support = (
-            len(evidence_tokens & reconstructed) / len(reconstructed)
-            if reconstructed else 0.0
+            and _candidate_source_region(candidate) in region_ids
         )
-        evidence_coverage = len(evidence_tokens & reconstructed) / len(evidence_tokens)
+        return _tokens(" ".join(evidence))
+
+    # Ground each prose node only in evidence localized to its selected regions. A
+    # well-recognized paragraph elsewhere on the page must not corroborate this one.
+    prose_nodes = [
+        node for node in page_response["nodes"]
+        if node["type"] in {"heading", "paragraph"}
+    ]
+    localized_prose_evidence: dict[int, set[str]] = {}
+    for node in prose_nodes:
+        evidence_tokens = prose_evidence(node)
+        localized_prose_evidence[id(node)] = evidence_tokens
+        if not evidence_tokens:
+            continue
+        reconstructed = _tokens(node["text"])
+        overlap = evidence_tokens & reconstructed
+        reconstruction_support = len(overlap) / len(reconstructed) if reconstructed else 0.0
+        evidence_coverage = len(overlap) / len(evidence_tokens)
         if (
             reconstruction_support < GROUNDING_MIN_OVERLAP
             or evidence_coverage < GROUNDING_MIN_EVIDENCE_COVERAGE
@@ -957,8 +996,31 @@ def reconcile_page(
             warnings.append(
                 _warning(
                     "recognition-disagreement",
-                    "The reconstructed prose shares little text with the recognized "
-                    "content on this page.",
+                    "The reconstructed prose shares little text with independent "
+                    "evidence localized to its selected Source Regions.",
+                    semantic_types=[node["type"]],
+                    source_regions=list(node["source_regions"]),
+                )
+            )
+
+    # Preserve the content-loss guard for a reconstruction with no prose at all.
+    if not prose_nodes:
+        evidence_tokens = _tokens(
+            " ".join(
+                [str(word.get("text", "")) for word in pdf_words]
+                + [
+                    str(candidate.get("text", ""))
+                    for candidate in candidates
+                    if candidate.get("type") in {"text", "handwriting", "document_structure"}
+                    and _candidate_is_eligible(candidate)
+                ]
+            )
+        )
+        if evidence_tokens:
+            warnings.append(
+                _warning(
+                    "recognition-disagreement",
+                    "The reconstruction omits recognized prose on this page.",
                 )
             )
 
@@ -972,10 +1034,8 @@ def reconcile_page(
             for region in node["source_regions"]
         ]
         if prose_regions:
-            prose_covered = bool(pdf_words) or any(
-                candidate.get("type") in {"text", "handwriting"}
-                and _candidate_source_region(candidate) in prose_regions
-                for candidate in eligible
+            prose_covered = all(
+                bool(localized_prose_evidence[id(node)]) for node in prose_nodes
             )
             if not prose_covered:
                 required.append(("prose", {"heading", "paragraph"}, prose_regions))
@@ -1131,6 +1191,7 @@ def generate_page_semantics(
     pdf_words: Sequence[dict[str, Any]],
     source_region_ids: Sequence[str],
     region_overlay: Path | None = None,
+    region_overlays: Sequence[Path] = (),
     source_regions: Sequence[dict[str, Any]] | None = None,
     budget: RequestBudget | None = None,
     max_retries: int = 3,
@@ -1145,6 +1206,7 @@ def generate_page_semantics(
         pdf_words=pdf_words,
         source_region_ids=source_region_ids,
         region_overlay=region_overlay,
+        region_overlays=region_overlays,
         source_regions=source_regions,
     )
     result = request_chat_completion(
@@ -1255,6 +1317,7 @@ def reconstruct_page(
     pdf_words: Sequence[dict[str, Any]],
     source_region_ids: Sequence[str],
     region_overlay: Path | None = None,
+    region_overlays: Sequence[Path] = (),
     source_regions: Sequence[dict[str, Any]] | None = None,
     source_pdf: Path | None = None,
     source_region_dpi: int = 300,
@@ -1276,6 +1339,7 @@ def reconstruct_page(
             pdf_words=pdf_words,
             source_region_ids=source_region_ids,
             region_overlay=region_overlay,
+            region_overlays=region_overlays,
             source_regions=source_regions,
             budget=budget,
             max_retries=max_retries,
@@ -1338,6 +1402,7 @@ def reconstruct_page(
         region_verifications=region_verifications,
         candidates=candidates,
         pdf_words=pdf_words,
+        source_regions=source_regions or (),
         require_verification=True,
     )
     return build_page_semantics_document(

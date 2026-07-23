@@ -242,6 +242,19 @@ def _page_reconstruction_schema() -> dict[str, Any]:
                             "max_nonfallback_area_ratio": {
                                 "type": "number", "exclusiveMinimum": 0, "maximum": 1,
                             },
+                            "model_binding_deduplication_pixels": {
+                                "type": "integer", "minimum": 1,
+                            },
+                            "model_binding_overlay_grid": {
+                                "type": "array",
+                                "prefixItems": [
+                                    {"type": "integer", "minimum": 1},
+                                    {"type": "integer", "minimum": 1},
+                                ],
+                                "items": False,
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
                             "sources": {
                                 "type": "array", "minItems": 1, "uniqueItems": True,
                                 "items": {"type": "string", "minLength": 1},

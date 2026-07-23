@@ -154,8 +154,10 @@ recognition resolution and runs a pinned, CPU-only PaddleOCR pass. It records
 type-neutral deterministic Source Regions with stable `page-N-rNNNN` identifiers,
 then records distinct Recognition Candidates with `page-N-cNNNN` identifiers.
 Candidates retain their raw backend class, layout confidence, OCR text confidence,
-verification eligibility, and stable ineligibility reasons. An ID overlay lets the
-page model select existing Source Regions without emitting coordinates. The
+verification eligibility, and stable ineligibility reasons. Deterministically
+partitioned, bounded-density ID overlays let the page model select existing Source
+Regions without emitting coordinates, while the complete proposal set remains in
+the recognition evidence for audit and evaluation. The
 existing Source PDF text layer is extracted with its geometry and stored as
 `pdf_text_evidence` marked `"authoritative": false`, so it can inform later
 reconciliation without ever contaminating the Semantic Layer. Recognition is a

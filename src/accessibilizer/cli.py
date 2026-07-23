@@ -669,7 +669,6 @@ def _authoring_contract(record: dict[str, Any]) -> dict[str, Any]:
 def _review_page_document(
     page_document: dict[str, Any],
     recognition_document: dict[str, Any],
-    page_render: Path,
     page_dimensions: tuple[float, float],
 ) -> dict[str, Any]:
     """Project deterministic recognition evidence into Review Record 3.0 inputs.
@@ -1100,6 +1099,15 @@ def _recognize_page(
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
         "proposal_algorithm": recognition.PROPOSAL_ALGORITHM,
         "proposal_algorithm_version": recognition.PROPOSAL_ALGORITHM_VERSION,
+        "proposal_deduplication_pixels": recognition.PROPOSAL_DEDUPLICATION_PIXELS,
+        "proposal_max_nonfallback_area_ratio": recognition.MAX_NONFALLBACK_AREA_RATIO,
+        "proposal_model_binding_deduplication_pixels": (
+            recognition.MODEL_BINDING_DEDUPLICATION_PIXELS
+        ),
+        "proposal_model_binding_overlay_grid": [
+            recognition.MODEL_BINDING_OVERLAY_COLUMNS,
+            recognition.MODEL_BINDING_OVERLAY_ROWS,
+        ],
         "recognition_dpi": recognition.RECOGNITION_DPI,
         "renderer": "pdftoppm",
         "renderer_version": pdftoppm_version,
@@ -1442,10 +1450,22 @@ def _run_conversion(
             candidates=page_candidates[page_number],
             pdf_words=page_words[page_number],
             source_region_ids=[
-                str(region["id"]) for region in page_source_regions[page_number]
+                str(region["id"])
+                for region in page_source_regions[page_number]
+                if region.get("model_visible", True)
             ],
-            source_regions=page_source_regions[page_number],
-            region_overlay=regions / f"page-{page_number}-overlay.png",
+            source_regions=[
+                region
+                for region in page_source_regions[page_number]
+                if region.get("model_visible", True)
+            ],
+            region_overlays=[
+                workspace / overlay
+                for overlay in recognition_documents[page_number].get(
+                    "overlays",
+                    [recognition_documents[page_number]["overlay"]],
+                )
+            ],
             source_pdf=source_copy,
             source_region_dpi=recognition.RECOGNITION_DPI,
             budget=budget,
@@ -1476,7 +1496,6 @@ def _run_conversion(
                 _review_page_document(
                     document,
                     recognition_documents[page_number],
-                    regions / f"page-{page_number}-recognition.png",
                     _displayed_page_dimensions(source_copy, page_number),
                 )
             )
@@ -1577,8 +1596,25 @@ def _run_conversion(
         "recognition_contract_version": recognition.RECOGNITION_CONTRACT_VERSION,
         "recognition_dpi": recognition.RECOGNITION_DPI,
         "recognition_weights_version": backend.weights_version,
+        "recognition_confidence_kinds": list(recognition.CONFIDENCE_KINDS),
+        "recognition_verification_ineligibility_reason_codes": list(
+            recognition.VERIFICATION_INELIGIBILITY_REASON_CODES
+        ),
         "source_region_proposal_algorithm": recognition.PROPOSAL_ALGORITHM,
         "source_region_proposal_algorithm_version": recognition.PROPOSAL_ALGORITHM_VERSION,
+        "source_region_proposal_deduplication_pixels": (
+            recognition.PROPOSAL_DEDUPLICATION_PIXELS
+        ),
+        "source_region_proposal_max_nonfallback_area_ratio": (
+            recognition.MAX_NONFALLBACK_AREA_RATIO
+        ),
+        "source_region_model_binding_deduplication_pixels": (
+            recognition.MODEL_BINDING_DEDUPLICATION_PIXELS
+        ),
+        "source_region_model_binding_overlay_grid": [
+            recognition.MODEL_BINDING_OVERLAY_COLUMNS,
+            recognition.MODEL_BINDING_OVERLAY_ROWS,
+        ],
         "source_copy_verified": True,
         "source_sha256": source_sha256,
         "source_pages": pages,

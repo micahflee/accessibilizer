@@ -690,7 +690,7 @@ class ConversionTest(unittest.TestCase):
 
             # A Formula that diverges from the fake specialized candidate raises a
             # reviewable warning (exit 2); authoring and the PDF/UA gates still run.
-            self.assertIn(result.returncode, (0, 2), result.stderr)
+            self.assertIn(result.returncode, (0, 2), result.stderr + result.stdout)
             self.assertTrue((bundle / "output.pdf").is_file())
 
             # The internal checks read the authored structure tree back out of
@@ -725,7 +725,7 @@ class ConversionTest(unittest.TestCase):
         ):
             bundle = Path(temporary_directory) / "figure.accessibilizer"
             result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
-            self.assertIn(result.returncode, (0, 2), result.stderr)
+            self.assertIn(result.returncode, (0, 2), result.stderr + result.stdout)
             self.assertTrue((bundle / "output.pdf").is_file())
 
             internal = json.loads((bundle / "validation" / "internal.json").read_text())
@@ -1237,6 +1237,26 @@ class ConversionTest(unittest.TestCase):
                 recognition_provenance["source_region_proposal_algorithm_version"],
                 "1.0",
             )
+            self.assertEqual(
+                recognition_provenance["recognition_confidence_kinds"],
+                ["layout_confidence", "ocr_text_confidence"],
+            )
+            self.assertIn(
+                "whole-page-fallback",
+                recognition_provenance[
+                    "recognition_verification_ineligibility_reason_codes"
+                ],
+            )
+            self.assertEqual(
+                recognition_provenance["source_region_proposal_deduplication_pixels"],
+                recognition["proposal_generation"]["deduplication_pixels"],
+            )
+            self.assertEqual(
+                recognition_provenance[
+                    "source_region_proposal_max_nonfallback_area_ratio"
+                ],
+                recognition["proposal_generation"]["max_nonfallback_area_ratio"],
+            )
 
             # The Semantic Layer is reconstructed by the provider, not supplied.
             review_record = yaml.safe_load((bundle / "review-record.yaml").read_text())
@@ -1280,7 +1300,7 @@ class ConversionTest(unittest.TestCase):
                 all(candidate["id"].startswith("page-1-c") for candidate in review_record["candidates"])
             )
             self.assertTrue(all(c["source_region"] for c in review_record["candidates"]))
-            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.6")
+            self.assertEqual(review_record["reconstruction"]["page_prompt_version"], "1.7")
             self.assertEqual(
                 review_record["reconstruction"]["provider_model"],
                 "acceptance-model-2026-07-19",
@@ -1317,7 +1337,7 @@ class ConversionTest(unittest.TestCase):
                 provenance["source_sha256"], hashlib.sha256(SOURCE.read_bytes()).hexdigest()
             )
             self.assertEqual(provenance["source_pages"], [1])
-            self.assertEqual(provenance["page_prompt_version"], "1.6")
+            self.assertEqual(provenance["page_prompt_version"], "1.7")
             self.assertEqual(provenance["page_schema_version"], "1.3")
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)

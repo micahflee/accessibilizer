@@ -195,7 +195,7 @@ class SourceEvidenceTest(unittest.TestCase):
             "page-1-r0001", "document_structure"
         )
         reviewed = _review_page_document(
-            document, recognition_document, Path("page.png"), (72.0, 72.0)
+            document, recognition_document, (72.0, 72.0)
         )
 
         warning = next(w for w in reviewed["warnings"] if w["code"] == "imprecise-source-grounding")
@@ -215,7 +215,7 @@ class SourceEvidenceTest(unittest.TestCase):
             verified["id"] = verified.pop("source_region")
         recognition_document = self.recognition_document("page-1-r0003", "formula")
         reviewed = _review_page_document(
-            document, recognition_document, Path("page.png"), (72.0, 72.0)
+            document, recognition_document, (72.0, 72.0)
         )
 
         warning = reviewed["warnings"][0]

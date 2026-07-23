@@ -23,6 +23,7 @@ from accessibilizer.recognition import (
     pixels_to_points,
     recognize_page,
     raster_region_proposals,
+    select_model_binding_boxes,
     select_backend,
     validate_recognition_document,
 )
@@ -111,14 +112,29 @@ class GoldProposalCoverageTest(unittest.TestCase):
                     dpi=recognition.RECOGNITION_DPI,
                     temporary_base=temporary / f"page-{page}",
                 )
+                raster_proposals = raster_region_proposals(width, height, pixels)
                 proposals = [
                     pixels_to_points(proposal, recognition.RECOGNITION_DPI)
-                    for proposal in raster_region_proposals(width, height, pixels)
+                    for proposal in raster_proposals
                 ]
+                model_binding_proposals = [
+                    pixels_to_points(proposal, recognition.RECOGNITION_DPI)
+                    for proposal in select_model_binding_boxes(
+                        raster_proposals
+                    )
+                ]
+                self.assertLessEqual(len(model_binding_proposals), 1500)
                 for expected in gold_by_page[page]:
                     self.assertTrue(
                         any(self.usefully_covers(proposal, expected) for proposal in proposals),
                         f"page {page} gold Source Region {expected} has no useful proposal",
+                    )
+                    self.assertTrue(
+                        any(
+                            self.usefully_covers(proposal, expected)
+                            for proposal in model_binding_proposals
+                        ),
+                        f"page {page} gold Source Region {expected} is not model-visible",
                     )
 
     @staticmethod
@@ -381,6 +397,15 @@ class RecognizePageOnHostTest(unittest.TestCase):
             self.assertTrue(overlay.is_file())
             self.assertGreater(overlay.stat().st_size, 0)
             self.assertIn(overlay, result.artifacts)
+            overlays = [workspace / value for value in document["overlays"]]
+            self.assertGreater(len(overlays), 1)
+            self.assertTrue(all(path.is_file() for path in overlays))
+            self.assertTrue(all(path in result.artifacts for path in overlays))
+            visible = [
+                region for region in document["source_regions"]
+                if region["model_visible"]
+            ]
+            self.assertLess(len(visible), len(document["source_regions"]))
             self.assertIn(result.document_path, result.artifacts)
             self.assertFalse(document["pdf_text_evidence"]["authoritative"])
 
