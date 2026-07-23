@@ -18,16 +18,22 @@ for argument in "$@"; do
     if [ "$argument" = "--json" ]; then json_flag=--json; fi
 done
 
+command=${1:-}
 operational_failure() {
-    if [ -n "$json_flag" ]; then
+    if [ -n "$json_flag" ] && [ "$command" = "convert" ]; then
+        printf '{"error":"%s","reported_token_usage":{"this_run":{"total_tokens":0,"complete":true},"conversion_total":{"total_tokens":0,"complete":true}},"status":"operational_failure"}\n' "$1"
+    elif [ -n "$json_flag" ]; then
         printf '{"error":"%s","status":"operational_failure"}\n' "$1"
     else
         echo "accessibilizer: $1" >&2
+        if [ "$command" = "convert" ]; then
+            echo "Reported tokens this run: 0" >&2
+            echo "Reported tokens conversion total: 0" >&2
+        fi
     fi
     exit 1
 }
 
-command=${1:-}
 if [ "$command" = "report" ]; then
     shift
     bundle_path=

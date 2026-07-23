@@ -96,6 +96,7 @@ class FakeProvider:
         compatible: bool = True,
         transient_failures: int = 0,
         usage: dict[str, int] | None = None,
+        usage_sequence: list[dict[str, int] | None] | None = None,
         page_overrides: dict[str, Any] | None = None,
         region_agrees: bool = True,
         page_response_delay: float = 0.0,
@@ -103,6 +104,7 @@ class FakeProvider:
         self.compatible = compatible
         self.transient_failures = transient_failures
         self.usage = usage
+        self.usage_sequence = usage_sequence
         self.page_overrides = page_overrides or {}
         self.region_agrees = region_agrees
         # Seconds a page-reconstruction request lingers before responding, so a
@@ -121,6 +123,13 @@ class FakeProvider:
                     return
                 provider.requests.append(request)
                 provider.authorizations.append(self.headers.get("Authorization"))
+                request_index = len(provider.requests) - 1
+                response_usage = (
+                    provider.usage_sequence[request_index]
+                    if provider.usage_sequence is not None
+                    and request_index < len(provider.usage_sequence)
+                    else provider.usage
+                )
                 # Source content is untrusted: a compliant request never exposes tools.
                 if "tools" in request or "functions" in request:
                     self.send_error(400)
@@ -151,9 +160,18 @@ class FakeProvider:
                     return
                 if provider.transient_failures:
                     provider.transient_failures -= 1
+                    transient_response: dict[str, Any] = {
+                        "error": {"message": "retry"}
+                    }
+                    if response_usage is not None:
+                        transient_response["usage"] = response_usage
+                    encoded = json.dumps(transient_response).encode()
                     self.send_response(429)
                     self.send_header("Retry-After", "0")
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(encoded)))
                     self.end_headers()
+                    self.wfile.write(encoded)
                     return
                 if not provider.compatible:
                     self.send_response(400)
@@ -204,8 +222,8 @@ class FakeProvider:
                 response: dict[str, Any] = {
                     "choices": [{"message": {"content": json.dumps(body)}}]
                 }
-                if provider.usage is not None:
-                    response["usage"] = provider.usage
+                if response_usage is not None:
+                    response["usage"] = response_usage
                 encoded = json.dumps(response).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -245,7 +263,9 @@ class ProviderConfigurationTest(unittest.TestCase):
         *,
         extra_arguments: tuple[str, ...] = (),
         environment: dict[str, str] | None = None,
+        json_output: bool = True,
     ) -> subprocess.CompletedProcess[str]:
+        output_arguments = ("--json",) if json_output else ()
         return subprocess.run(
             [
                 str(ROOT / "accessibilizer"),
@@ -256,7 +276,7 @@ class ProviderConfigurationTest(unittest.TestCase):
                 "--bundle",
                 str(bundle),
                 *extra_arguments,
-                "--json",
+                *output_arguments,
             ],
             cwd=project,
             text=True,
@@ -438,7 +458,15 @@ class ProviderConfigurationTest(unittest.TestCase):
             )
 
             self.assertEqual(paused.returncode, 1, paused.stderr)
-            self.assertIn("request ceiling", json.loads(paused.stdout)["error"])
+            paused_result = json.loads(paused.stdout)
+            self.assertIn("request ceiling", paused_result["error"])
+            self.assertEqual(
+                paused_result["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 15},
+                    "conversion_total": {"complete": True, "total_tokens": 15},
+                },
+            )
             self.assertFalse(bundle.exists())
             self.assertTrue((temporary / ".resumed.accessibilizer.in-progress").is_dir())
             self.assertEqual(len(provider.requests), 1)
@@ -455,6 +483,13 @@ class ProviderConfigurationTest(unittest.TestCase):
             )
 
             self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+            self.assertEqual(
+                json.loads(resumed.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 60},
+                    "conversion_total": {"complete": True, "total_tokens": 75},
+                },
+            )
             # The completed capability checkpoint is reused; only the page stage's
             # four calls are made on resume.
             self.assertEqual(len(provider.requests), 5)
@@ -469,8 +504,213 @@ class ProviderConfigurationTest(unittest.TestCase):
                         "completion_tokens": 20,
                         "total_tokens": 75,
                     },
+                    "reported_total_tokens": 75,
+                    "requests_with_reported_total": 5,
                     "request_ceiling": 10,
                 },
+            )
+
+    def test_convert_json_reports_complete_token_totals(self) -> None:
+        usage = {
+            "prompt_tokens": 11,
+            "completion_tokens": 4,
+            # The provider total is intentionally different from the component
+            # sum to prove that the provider's total is preferred.
+            "total_tokens": 17,
+        }
+        with (
+            FakeProvider(usage=usage) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            temporary = Path(directory)
+            bundle = temporary / "complete-usage.accessibilizer"
+
+            result = self.run_conversion(
+                temporary,
+                bundle,
+                extra_arguments=(
+                    "--provider-base-url",
+                    provider.base_url,
+                    "--provider-model",
+                    "exact-model",
+                    "--provider-data-location",
+                    "local",
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertEqual(len(result.stdout.strip().splitlines()), 1)
+            self.assertEqual(
+                json.loads(result.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 85},
+                    "conversion_total": {"complete": True, "total_tokens": 85},
+                },
+            )
+
+    def test_convert_json_reports_derived_unavailable_and_partial_totals(self) -> None:
+        scenarios = (
+            (
+                "derived",
+                FakeProvider(usage={"prompt_tokens": 11, "completion_tokens": 4}),
+                {
+                    "this_run": {"complete": True, "total_tokens": 75},
+                    "conversion_total": {"complete": True, "total_tokens": 75},
+                },
+            ),
+            (
+                "unavailable",
+                FakeProvider(),
+                {
+                    "this_run": {"complete": False, "total_tokens": None},
+                    "conversion_total": {"complete": False, "total_tokens": None},
+                },
+            ),
+            (
+                "invalid-total",
+                FakeProvider(
+                    usage={
+                        "prompt_tokens": 11,
+                        "completion_tokens": 4,
+                        "total_tokens": -1,
+                    }
+                ),
+                {
+                    "this_run": {"complete": False, "total_tokens": None},
+                    "conversion_total": {"complete": False, "total_tokens": None},
+                },
+            ),
+            (
+                "partial",
+                FakeProvider(
+                    usage_sequence=[
+                        {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15},
+                        None,
+                        None,
+                        None,
+                        None,
+                    ]
+                ),
+                {
+                    "this_run": {"complete": False, "total_tokens": 15},
+                    "conversion_total": {"complete": False, "total_tokens": 15},
+                },
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            for name, provider, expected in scenarios:
+                with self.subTest(name=name), provider:
+                    bundle = temporary / f"{name}.accessibilizer"
+                    result = self.run_conversion(
+                        temporary,
+                        bundle,
+                        extra_arguments=(
+                            "--provider-base-url",
+                            provider.base_url,
+                            "--provider-model",
+                            "exact-model",
+                            "--provider-data-location",
+                            "local",
+                        ),
+                    )
+
+                    self.assertEqual(
+                        result.returncode, 0, result.stderr + result.stdout
+                    )
+                    self.assertEqual(
+                        json.loads(result.stdout)["reported_token_usage"], expected
+                    )
+
+    def test_zero_request_failure_reports_complete_zero_totals(self) -> None:
+        with (
+            FakeProvider() as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            temporary = Path(directory)
+            bundle = temporary / "zero-usage.accessibilizer"
+            result = self.run_conversion(
+                temporary,
+                bundle,
+                extra_arguments=(
+                    "--provider-base-url",
+                    provider.base_url,
+                    "--provider-model",
+                    "exact-model",
+                    "--provider-data-location",
+                    "local",
+                    "--max-requests",
+                    "0",
+                ),
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 0},
+                    "conversion_total": {"complete": True, "total_tokens": 0},
+                },
+            )
+            self.assertEqual(provider.requests, [])
+
+    def test_human_output_reports_success_to_stdout_and_failure_to_stderr(self) -> None:
+        usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
+        with (
+            FakeProvider(usage_sequence=[usage, None, None, None, None]) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            temporary = Path(directory)
+            provider_arguments = (
+                "--provider-base-url",
+                provider.base_url,
+                "--provider-model",
+                "exact-model",
+                "--provider-data-location",
+                "local",
+            )
+            successful = self.run_conversion(
+                temporary,
+                temporary / "human-success.accessibilizer",
+                extra_arguments=provider_arguments,
+                json_output=False,
+            )
+            zero_request_failure = self.run_conversion(
+                temporary,
+                temporary / "human-failure.accessibilizer",
+                extra_arguments=(*provider_arguments, "--max-requests", "0"),
+                json_output=False,
+            )
+            provider.compatible = False
+            unavailable_failure = self.run_conversion(
+                temporary,
+                temporary / "human-unavailable.accessibilizer",
+                extra_arguments=provider_arguments,
+                json_output=False,
+            )
+
+            self.assertEqual(successful.returncode, 0, successful.stderr)
+            self.assertIn("Reported tokens this run: at least 15", successful.stdout)
+            self.assertIn(
+                "Reported tokens conversion total: at least 15", successful.stdout
+            )
+            self.assertNotIn("Reported tokens", successful.stderr)
+            self.assertEqual(zero_request_failure.returncode, 1)
+            self.assertEqual(zero_request_failure.stdout, "")
+            self.assertIn("request ceiling", zero_request_failure.stderr)
+            self.assertIn(
+                "Reported tokens this run: 0", zero_request_failure.stderr
+            )
+            self.assertLess(
+                zero_request_failure.stderr.index("request ceiling"),
+                zero_request_failure.stderr.index("Reported tokens this run"),
+            )
+            self.assertEqual(unavailable_failure.returncode, 1)
+            self.assertEqual(unavailable_failure.stdout, "")
+            self.assertIn(
+                "Reported tokens this run: unavailable "
+                "(provider did not report sufficient usage)",
+                unavailable_failure.stderr,
             )
 
 

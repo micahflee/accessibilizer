@@ -224,6 +224,13 @@ class ConversionTest(unittest.TestCase):
                 json.loads(result.stdout),
                 {
                     "error": "source must be a file",
+                    "reported_token_usage": {
+                        "this_run": {"complete": True, "total_tokens": 0},
+                        "conversion_total": {
+                            "complete": True,
+                            "total_tokens": 0,
+                        },
+                    },
                     "status": "operational_failure",
                 },
             )
@@ -315,6 +322,13 @@ class ConversionTest(unittest.TestCase):
                 {
                     "bundle": str(bundle),
                     "output": str(bundle / "output.pdf"),
+                    "reported_token_usage": {
+                        "this_run": {"complete": False, "total_tokens": None},
+                        "conversion_total": {
+                            "complete": False,
+                            "total_tokens": None,
+                        },
+                    },
                     "status": "review_required",
                 },
             )
@@ -871,6 +885,13 @@ class ConversionTest(unittest.TestCase):
                 {
                     "bundle": str(bundle),
                     "output": str(bundle / "output.pdf"),
+                    "reported_token_usage": {
+                        "this_run": {"complete": False, "total_tokens": None},
+                        "conversion_total": {
+                            "complete": False,
+                            "total_tokens": None,
+                        },
+                    },
                     "status": "accessible",
                 },
             )
@@ -1154,8 +1175,9 @@ class ConversionTest(unittest.TestCase):
             self.assertNotIn("Electric current is the rate", raw)
 
     def test_ctrl_c_interruption_exits_130_preserves_state_and_resumes(self) -> None:
+        usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
         with (
-            FakeProvider(page_response_delay=20) as provider,
+            FakeProvider(usage=usage, page_response_delay=20) as provider,
             tempfile.TemporaryDirectory() as temporary_directory,
         ):
             temporary = Path(temporary_directory)
@@ -1211,6 +1233,13 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(interruption["status"], "interrupted")
             self.assertEqual(interruption["stage"], "provider-reconstruction")
             self.assertIn("--resume", interruption["resume_command"])
+            self.assertEqual(
+                interruption["reported_token_usage"],
+                {
+                    "this_run": {"complete": False, "total_tokens": 15},
+                    "conversion_total": {"complete": False, "total_tokens": 15},
+                },
+            )
             self.assertNotIn("Estimated provider requests", stdout)
             self.assertIn("Resume with", stderr)
 
@@ -1230,6 +1259,13 @@ class ConversionTest(unittest.TestCase):
             provider.page_response_delay = 0.0
             resumed = self.run_conversion(SOURCE, bundle, resume=True, base_url=provider.base_url)
             self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+            self.assertEqual(
+                json.loads(resumed.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 60},
+                    "conversion_total": {"complete": False, "total_tokens": 75},
+                },
+            )
 
             final_events = read_event_lines(bundle / "conversion-events.jsonl")
             self.assertTrue(any(e["state"] == "interrupted" for e in final_events))
@@ -1255,14 +1291,22 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)["status"], "accessible")
 
     def test_provider_retries_are_reported_and_logged(self) -> None:
+        usage = {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15}
         with (
-            FakeProvider(transient_failures=2) as provider,
+            FakeProvider(transient_failures=2, usage=usage) as provider,
             tempfile.TemporaryDirectory() as temporary_directory,
         ):
             bundle = Path(temporary_directory) / "retried.accessibilizer"
             result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout)["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 105},
+                    "conversion_total": {"complete": True, "total_tokens": 105},
+                },
+            )
             events = read_event_lines(bundle / "conversion-events.jsonl")
             retrying = [e for e in events if e["state"] == "retrying"]
             self.assertGreaterEqual(len(retrying), 2)
@@ -1287,7 +1331,15 @@ class ConversionTest(unittest.TestCase):
             result = self.run_conversion(SOURCE, bundle, base_url=provider.base_url)
 
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertEqual(json.loads(result.stdout)["status"], "operational_failure")
+            failed_result = json.loads(result.stdout)
+            self.assertEqual(failed_result["status"], "operational_failure")
+            self.assertEqual(
+                failed_result["reported_token_usage"],
+                {
+                    "this_run": {"complete": False, "total_tokens": None},
+                    "conversion_total": {"complete": False, "total_tokens": None},
+                },
+            )
             self.assertFalse(bundle.exists())
             workspace = temporary / ".failed.accessibilizer.in-progress"
             events = read_event_lines(workspace / "conversion-events.jsonl")

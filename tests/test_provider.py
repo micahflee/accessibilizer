@@ -100,6 +100,8 @@ class ProviderRuntimeTest(unittest.TestCase):
                         "prompt_tokens": 11,
                         "total_tokens": 15,
                     },
+                    "reported_total_tokens": 15,
+                    "requests_with_reported_total": 1,
                     "request_ceiling": 3,
                 },
             )
