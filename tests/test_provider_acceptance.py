@@ -675,6 +675,14 @@ class ProviderConfigurationTest(unittest.TestCase):
                 extra_arguments=provider_arguments,
                 json_output=False,
             )
+            provider.page_overrides["reading_order_is_unambiguous"] = False
+            review_required = self.run_conversion(
+                temporary,
+                temporary / "human-review-required.accessibilizer",
+                extra_arguments=provider_arguments,
+                json_output=False,
+            )
+            provider.page_overrides.clear()
             zero_request_failure = self.run_conversion(
                 temporary,
                 temporary / "human-failure.accessibilizer",
@@ -695,6 +703,14 @@ class ProviderConfigurationTest(unittest.TestCase):
                 "Reported tokens conversion total: at least 15", successful.stdout
             )
             self.assertNotIn("Reported tokens", successful.stderr)
+            self.assertEqual(review_required.returncode, 2)
+            self.assertNotIn("Reported tokens", review_required.stdout)
+            self.assertIn("Review-Required PDF", review_required.stdout)
+            self.assertIn(
+                "Reported tokens this run: unavailable "
+                "(provider did not report sufficient usage)",
+                review_required.stderr,
+            )
             self.assertEqual(zero_request_failure.returncode, 1)
             self.assertEqual(zero_request_failure.stdout, "")
             self.assertIn("request ceiling", zero_request_failure.stderr)

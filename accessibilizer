@@ -34,6 +34,17 @@ operational_failure() {
     exit 1
 }
 
+container_runtime_failure() {
+    if [ -n "$json_flag" ]; then
+        printf '%s\n' '{"error":"container runtime failed","reported_token_usage":{"this_run":{"total_tokens":null,"complete":false},"conversion_total":{"total_tokens":null,"complete":false}},"status":"operational_failure"}'
+    else
+        echo "accessibilizer: container runtime failed" >&2
+        echo "Reported tokens this run: unavailable (provider did not report sufficient usage)" >&2
+        echo "Reported tokens conversion total: unavailable (provider did not report sufficient usage)" >&2
+    fi
+    exit 1
+}
+
 if [ "$command" = "report" ]; then
     shift
     bundle_path=
@@ -310,6 +321,7 @@ fi
 cid_directory=$(mktemp -d "$bundle_parent/.${bundle_name}.container.XXXXXX") || \
     operational_failure "could not prepare the container runtime"
 cidfile="$cid_directory/id"
+container_stdout=
 stop_conversion_container() {
     # Give the container time to record the interruption, print the resume
     # command, and exit 130 gracefully before it is force-stopped. docker run's
@@ -370,10 +382,20 @@ if [ -n "$verbose_flag" ]; then set -- "$@" --verbose; fi
 if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
 if [ -n "$resume_flag" ]; then set -- "$@" --resume; fi
 
-if docker run "$@"; then
-    result=0
+if [ -n "$json_flag" ]; then
+    container_stdout=$(mktemp "$bundle_parent/.${bundle_name}.result.XXXXXX") || \
+        operational_failure "could not prepare the container runtime"
+    if docker run "$@" >"$container_stdout"; then
+        result=0
+    else
+        result=$?
+    fi
 else
-    result=$?
+    if docker run "$@"; then
+        result=0
+    else
+        result=$?
+    fi
 fi
 trap - HUP INT TERM
 rm -f "$cidfile"
@@ -381,8 +403,16 @@ rmdir "$cid_directory" 2>/dev/null || true
 # 130 is an intentional interruption whose machine-readable result the container
 # already produced; do not mask it as a container-runtime failure.
 if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] \
-    && [ "$result" -ne 130 ] && [ -n "$json_flag" ]; then
-    printf '{"error":"container runtime failed","status":"operational_failure"}\n'
+    && [ "$result" -ne 130 ]; then
+    if [ -n "$container_stdout" ]; then
+        rm -f "$container_stdout"
+        container_stdout=
+    fi
+    container_runtime_failure
+fi
+if [ -n "$container_stdout" ]; then
+    cat "$container_stdout"
+    rm -f "$container_stdout"
 fi
 if [ "$result" -eq 0 ] || [ "$result" -eq 2 ]; then
     chmod 400 "$bundle_path/source.pdf"

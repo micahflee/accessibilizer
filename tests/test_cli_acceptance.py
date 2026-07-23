@@ -3,8 +3,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pty
+import select
+import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -234,6 +238,93 @@ class ConversionTest(unittest.TestCase):
                     "status": "operational_failure",
                 },
             )
+
+    def test_public_convert_cli_reports_argument_validation_as_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            command = self.conversion_command(
+                SOURCE, temporary / "invalid-arguments.accessibilizer"
+            )
+            command[-1:-1] = ["--max-requests", "not-an-integer"]
+            result = subprocess.run(
+                command,
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=self.conversion_environment(),
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("invalid int value", result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "error": "invalid command arguments",
+                    "reported_token_usage": {
+                        "this_run": {"complete": True, "total_tokens": 0},
+                        "conversion_total": {
+                            "complete": True,
+                            "total_tokens": 0,
+                        },
+                    },
+                    "status": "operational_failure",
+                },
+            )
+
+    def test_public_convert_cli_replaces_unexpected_runtime_output_with_one_json_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            binaries = temporary / "bin"
+            binaries.mkdir()
+            docker = binaries / "docker"
+            docker.write_text(
+                "#!/bin/sh\n"
+                'case "$*" in\n'
+                "  *provider-key-env*) exit 0 ;;\n"
+                "esac\n"
+                "printf '%s\\n' '{\"status\":\"accessible\"}'\n"
+                "exit 125\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            environment = self.conversion_environment()
+            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+
+            result = subprocess.run(
+                [
+                    str(ROOT / "accessibilizer"),
+                    "convert",
+                    str(SOURCE),
+                    "--bundle",
+                    str(temporary / "runtime-failure.accessibilizer"),
+                    "--json",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "error": "container runtime failed",
+                    "reported_token_usage": {
+                        "this_run": {"complete": False, "total_tokens": None},
+                        "conversion_total": {
+                            "complete": False,
+                            "total_tokens": None,
+                        },
+                    },
+                    "status": "operational_failure",
+                },
+            )
+            self.assertEqual(len(result.stdout.strip().splitlines()), 1)
 
     def test_public_report_cli_supports_bundle_and_standalone_modes_offline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1272,6 +1363,125 @@ class ConversionTest(unittest.TestCase):
             reused_stages = {e["stage"] for e in final_events if e["state"] == "reused"}
             self.assertIn("provider-capability", reused_stages)
             self.assertIn("page-recognition", reused_stages)
+
+    def test_early_resume_interruption_reports_persisted_cumulative_usage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            bundle = temporary / "early-interruption.accessibilizer"
+            workspace = temporary / ".early-interruption.accessibilizer.in-progress"
+            workspace.mkdir()
+            (workspace / "request-usage.json").write_text(
+                json.dumps(
+                    {
+                        "actual_requests": 5,
+                        "estimated_requests": 5,
+                        "reported_token_usage": {"total_tokens": 75},
+                        "reported_total_tokens": 75,
+                        "requests_with_reported_total": 5,
+                        "request_ceiling": 10,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            master_fd, slave_fd = pty.openpty()
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "accessibilizer",
+                    "convert",
+                    str(SOURCE),
+                    "--page",
+                    "1",
+                    "--bundle",
+                    str(bundle),
+                    "--provider-base-url",
+                    "https://provider.example/v1",
+                    "--provider-model",
+                    "acceptance-model-2026-07-19",
+                    "--provider-data-location",
+                    "remote",
+                    "--resume",
+                    "--json",
+                ],
+                cwd=ROOT,
+                stdin=slave_fd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env={
+                    **self.conversion_environment(),
+                    "PYTHONPATH": str(ROOT / "src"),
+                    "PYTHONUNBUFFERED": "1",
+                },
+            )
+            os.close(slave_fd)
+            try:
+                stdout_pipe = process.stdout
+                stderr_pipe = process.stderr
+                self.assertIsNotNone(stdout_pipe)
+                self.assertIsNotNone(stderr_pipe)
+                assert stdout_pipe is not None
+                assert stderr_pipe is not None
+                pre_stdout = ""
+                pre_stderr = ""
+                deadline = time.monotonic() + 30
+                while (
+                    "Transmit rendered Source PDF content"
+                    not in pre_stdout + pre_stderr
+                    and process.poll() is None
+                ):
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    ready, _, _ = select.select(
+                        [stdout_pipe.fileno(), stderr_pipe.fileno()],
+                        [],
+                        [],
+                        remaining,
+                    )
+                    if not ready:
+                        break
+                    for descriptor in ready:
+                        chunk = os.read(descriptor, 4096)
+                        if descriptor == stdout_pipe.fileno():
+                            pre_stdout += chunk.decode()
+                        else:
+                            pre_stderr += chunk.decode()
+                if (
+                    "Transmit rendered Source PDF content"
+                    not in pre_stdout + pre_stderr
+                ):
+                    _, stderr = process.communicate(timeout=5)
+                    self.fail(
+                        "remote-consent prompt did not appear: " + stderr.decode()
+                    )
+
+                process.send_signal(signal.SIGTERM)
+                stdout, stderr = process.communicate(timeout=30)
+                stdout_text = pre_stdout + stdout.decode()
+                stderr_text = pre_stderr + stderr.decode()
+            finally:
+                os.close(master_fd)
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()
+
+            self.assertEqual(process.returncode, 130, stderr_text)
+            interruption = json.loads(stdout_text)
+            self.assertEqual(interruption["status"], "interrupted")
+            self.assertEqual(
+                interruption["reported_token_usage"],
+                {
+                    "this_run": {"complete": True, "total_tokens": 0},
+                    "conversion_total": {"complete": True, "total_tokens": 75},
+                },
+            )
+            self.assertNotIn("Transmit rendered Source PDF content", stdout_text)
+            self.assertIn("Transmit rendered Source PDF content", stderr_text)
+            self.assertIn("Interrupted during conversion", stderr_text)
+            self.assertFalse(bundle.exists())
 
     def test_verbose_flag_is_forwarded_and_adds_technical_detail_on_stderr(self) -> None:
         with (

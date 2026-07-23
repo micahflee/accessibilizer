@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 import copy
 import ctypes
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 import os
@@ -15,7 +17,7 @@ import sys
 import tempfile
 import time
 from types import FrameType
-from typing import Any, TextIO, TypedDict
+from typing import Any, Mapping, TextIO, TypedDict
 
 from accessibilizer import __version__, page, recognition, review
 from accessibilizer.checkpoint import (
@@ -337,9 +339,30 @@ def _prepare_workspace(bundle: Path, *, replace: bool, resume: bool) -> Path:
     return workspace
 
 
-def _request_budget(
-    workspace: Path, limits: ConversionLimits, *, estimated_requests: int
-) -> RequestBudget:
+@dataclass(frozen=True)
+class _RequestUsageState:
+    actual_requests: int = 0
+    reported_token_usage: Mapping[str, int] = field(default_factory=dict)
+    reported_total_tokens: int | None = None
+    requests_with_reported_total: int = 0
+
+    def summary_after_zero_request_run(self) -> ReportedTokenUsage:
+        if self.actual_requests == 0:
+            conversion_total: int | None = 0
+        else:
+            conversion_total = self.reported_total_tokens
+        return {
+            "this_run": {"total_tokens": 0, "complete": True},
+            "conversion_total": {
+                "total_tokens": conversion_total,
+                "complete": (
+                    self.requests_with_reported_total == self.actual_requests
+                ),
+            },
+        }
+
+
+def _load_request_usage(workspace: Path) -> _RequestUsageState:
     usage_path = workspace / "request-usage.json"
     actual_requests = 0
     reported_usage: dict[str, int] = {}
@@ -376,6 +399,19 @@ def _request_budget(
                 requests_with_reported_total = 1
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise RuntimeError("incomplete conversion has invalid request usage") from error
+    return _RequestUsageState(
+        actual_requests=actual_requests,
+        reported_token_usage=reported_usage,
+        reported_total_tokens=reported_total_tokens,
+        requests_with_reported_total=requests_with_reported_total,
+    )
+
+
+def _request_budget(
+    workspace: Path, limits: ConversionLimits, *, estimated_requests: int
+) -> RequestBudget:
+    usage_path = workspace / "request-usage.json"
+    stored = _load_request_usage(workspace)
 
     def persist(budget: RequestBudget) -> None:
         atomic_write_json(usage_path, budget.as_dict())
@@ -383,10 +419,10 @@ def _request_budget(
     budget = RequestBudget(
         estimated_requests=estimated_requests,
         ceiling=limits.max_requests,
-        actual_requests=actual_requests,
-        reported_token_usage=reported_usage,
-        reported_total_tokens=reported_total_tokens,
-        requests_with_reported_total=requests_with_reported_total,
+        actual_requests=stored.actual_requests,
+        reported_token_usage=stored.reported_token_usage,
+        reported_total_tokens=stored.reported_total_tokens,
+        requests_with_reported_total=stored.requests_with_reported_total,
         on_change=persist,
     )
     persist(budget)
@@ -1107,15 +1143,22 @@ def _recognize_page(
 class _ConversionAttempt:
     def __init__(self) -> None:
         self.budget: RequestBudget | None = None
+        self.stored_usage: _RequestUsageState | None = None
 
     def reported_token_usage(self) -> ReportedTokenUsage:
         if self.budget is not None:
             return self.budget.reported_token_summary()
-        zero: ReportedTokenTotal = {"total_tokens": 0, "complete": True}
-        return {
-            "this_run": zero,
-            "conversion_total": {"total_tokens": 0, "complete": True},
-        }
+        if self.stored_usage is not None:
+            return self.stored_usage.summary_after_zero_request_run()
+        return _zero_reported_token_usage()
+
+
+def _zero_reported_token_usage() -> ReportedTokenUsage:
+    zero: ReportedTokenTotal = {"total_tokens": 0, "complete": True}
+    return {
+        "this_run": zero,
+        "conversion_total": {"total_tokens": 0, "complete": True},
+    }
 
 
 def _reported_tokens_text(total: ReportedTokenTotal) -> str:
@@ -1143,48 +1186,54 @@ def _emit_reported_token_summary(
 
 def _convert(args: argparse.Namespace) -> int:
     attempt = _ConversionAttempt()
+    reporter = ProgressReporter(verbose=getattr(args, "verbose", False))
+    # Install controlled-interruption handling before configuration and workspace
+    # preparation so every convert step can produce the exit-130 usage result.
+    previous_int = signal.signal(signal.SIGINT, _raise_interrupt)
+    previous_term = signal.signal(signal.SIGTERM, _raise_interrupt)
     try:
-        provider = resolve_provider(args)
-        limits = resolve_conversion_limits(args)
-        authorize_remote(provider, allow_remote=args.allow_remote)
-        args.bundle.parent.mkdir(parents=True, exist_ok=True)
-        workspace = _prepare_workspace(args.bundle, replace=args.replace, resume=args.resume)
-        reporter = ProgressReporter(
-            log_path=workspace / CONVERSION_EVENTS_FILENAME,
-            verbose=getattr(args, "verbose", False),
-        )
-        # Handle Ctrl-C (SIGINT) and the launcher's SIGTERM as an intentional
-        # interruption rather than a traceback: the in-progress bundle and its
-        # checkpoints/events are already on disk, so recording the interruption and
-        # printing the resume command is all that remains.
-        previous_int = signal.signal(signal.SIGINT, _raise_interrupt)
-        previous_term = signal.signal(signal.SIGTERM, _raise_interrupt)
         try:
+            if args.resume:
+                attempt.stored_usage = _load_request_usage(
+                    _workspace_for(args.bundle)
+                )
+            provider = resolve_provider(args)
+            limits = resolve_conversion_limits(args)
+            if args.json:
+                with redirect_stdout(sys.stderr):
+                    authorize_remote(provider, allow_remote=args.allow_remote)
+            else:
+                authorize_remote(provider, allow_remote=args.allow_remote)
+            args.bundle.parent.mkdir(parents=True, exist_ok=True)
+            workspace = _prepare_workspace(
+                args.bundle, replace=args.replace, resume=args.resume
+            )
+            reporter.retarget(workspace / CONVERSION_EVENTS_FILENAME)
             return _run_conversion(
                 args, provider, limits, workspace, reporter, attempt
             )
         except ConversionInterrupted:
             return _handle_interruption(args, reporter, attempt)
-        finally:
-            signal.signal(signal.SIGINT, previous_int)
-            signal.signal(signal.SIGTERM, previous_term)
-    except Exception as error:
-        usage = attempt.reported_token_usage()
-        if args.json:
-            print(
-                json.dumps(
-                    {
-                        "error": str(error),
-                        "reported_token_usage": usage,
-                        "status": "operational_failure",
-                    },
-                    sort_keys=True,
+        except Exception as error:
+            usage = attempt.reported_token_usage()
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": str(error),
+                            "reported_token_usage": usage,
+                            "status": "operational_failure",
+                        },
+                        sort_keys=True,
+                    )
                 )
-            )
-        else:
-            print(f"accessibilizer: {error}", file=sys.stderr)
-            _emit_reported_token_summary(usage, stream=sys.stderr)
-        return 1
+            else:
+                print(f"accessibilizer: {error}", file=sys.stderr)
+                _emit_reported_token_summary(usage, stream=sys.stderr)
+            return 1
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
 
 
 def _handle_interruption(
@@ -1546,7 +1595,7 @@ def _run_conversion(
         print(json.dumps(result, sort_keys=True))
     elif review_required:
         print(f"Review-Required PDF: {result['output']}")
-        _emit_reported_token_summary(reported_token_usage, stream=sys.stdout)
+        _emit_reported_token_summary(reported_token_usage, stream=sys.stderr)
     else:
         print(f"Accessible PDF: {result['output']}")
         _emit_reported_token_summary(reported_token_usage, stream=sys.stdout)
@@ -1829,7 +1878,27 @@ def _finalize(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    args = _parser().parse_args()
+    try:
+        args = _parser().parse_args()
+    except SystemExit as error:
+        code = error.code if isinstance(error.code, int) else 1
+        if code != 0 and len(sys.argv) > 1 and sys.argv[1] == "convert":
+            usage = _zero_reported_token_usage()
+            if "--json" in sys.argv[2:]:
+                print(
+                    json.dumps(
+                        {
+                            "error": "invalid command arguments",
+                            "reported_token_usage": usage,
+                            "status": "operational_failure",
+                        },
+                        sort_keys=True,
+                    )
+                )
+            else:
+                _emit_reported_token_summary(usage, stream=sys.stderr)
+            return 1
+        return code
     try:
         if args.command == "convert":
             return _convert(args)
