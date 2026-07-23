@@ -12,7 +12,10 @@ from paddleocr import PPStructure
 def main() -> None:
     # Constructing the pipeline triggers the one-time weight downloads into the
     # build-time HOME. No inference is required to populate the cache.
-    PPStructure(show_log=False)
+    # PaddlePaddle 2.6.x's self-attention IR fusion pass can execute an
+    # unsupported CPU instruction on otherwise supported x86-64 hosts. Model
+    # initialization and inference do not require that optional optimization.
+    PPStructure(show_log=False, ir_optim=False)
 
 
 if __name__ == "__main__":
