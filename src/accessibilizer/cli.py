@@ -1416,7 +1416,10 @@ def _run_conversion(
         )
         page_semantics_reusable[page_number] = reusable
         if not reusable:
-            total_estimate += page.expected_request_count(candidates)
+            total_estimate += page.expected_request_count(
+                candidates,
+                source_regions=page_source_regions[page_number],
+            )
 
     budget.update_estimate(total_estimate)
     # Progress belongs on stderr so a --json run still keeps a single result on

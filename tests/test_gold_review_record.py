@@ -21,12 +21,18 @@ from typing import Any
 import unittest
 
 from accessibilizer.checkpoint import file_sha256
-from accessibilizer.page import reconcile_page, validate_page_response
+from accessibilizer.page import (
+    _region_verification_targets,
+    expected_request_count,
+    reconcile_page,
+    validate_page_response,
+)
 from accessibilizer.review import (
     REVIEW_RECORD_SCHEMA_VERSION,
     load_yaml,
     validate_review_record,
 )
+from accessibilizer.runtime import DEFAULTS
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
@@ -520,6 +526,28 @@ class OfflineSampleReplayTests(unittest.TestCase):
                 (7, "ambiguous-reading-order"),
             ],
         )
+
+    def test_pre_response_request_estimate_fits_the_default_ceiling(self) -> None:
+        estimated_requests = 1
+        actual_targets = 1
+        for replay_page in self.replay["pages"]:
+            candidates = replay_page["candidates"]
+            source_regions = replay_page["source_regions"]
+            estimated_requests += expected_request_count(
+                candidates,
+                source_regions=source_regions,
+            )
+            actual_targets += 1 + len(
+                _region_verification_targets(
+                    candidates,
+                    replay_page["page_response"],
+                    pdf_words=replay_page["pdf_words"],
+                    source_regions=source_regions,
+                )
+            )
+
+        self.assertGreaterEqual(estimated_requests, actual_targets)
+        self.assertLessEqual(estimated_requests, DEFAULTS["max_requests"])
 
     def test_page_one_oversized_formula_candidate_is_retained_and_ineligible(
         self,

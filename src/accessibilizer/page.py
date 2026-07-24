@@ -1198,8 +1198,18 @@ def build_page_semantics_document(
     }
 
 
-def expected_request_count(candidates: Sequence[dict[str, Any]]) -> int:
-    """Pre-response estimate for one page, including semantic-type backfills."""
+def expected_request_count(
+    candidates: Sequence[dict[str, Any]],
+    *,
+    source_regions: Sequence[dict[str, Any]] | None = None,
+) -> int:
+    """Conservatively estimate one page before its Semantic Layer is known.
+
+    Every eligible specialized Recognition Candidate may need its own check.
+    Hybrid Source Regions also approximate how many reconstructed nodes may need
+    node-local backfills; counting both avoids assuming that one check per missing
+    semantic type covers an arbitrarily dense page.
+    """
     specialized = [
         candidate
         for candidate in candidates
@@ -1207,7 +1217,13 @@ def expected_request_count(candidates: Sequence[dict[str, Any]]) -> int:
         and _candidate_is_eligible(candidate)
     ]
     detected_types = {candidate.get("type") for candidate in specialized}
-    return 1 + len(specialized) + len(REGION_VERIFY_TYPES - detected_types)
+    semantic_backfills = len(REGION_VERIFY_TYPES - detected_types)
+    if source_regions is not None:
+        semantic_backfills = max(
+            semantic_backfills,
+            sum(region.get("model_visible", True) for region in source_regions),
+        )
+    return 1 + len(specialized) + semantic_backfills
 
 
 def _region_verification_targets(
@@ -1470,7 +1486,10 @@ def reconstruct_page(
         source_regions=source_regions or (),
     )
     if budget is not None:
-        estimated_for_page = expected_request_count(candidates)
+        estimated_for_page = expected_request_count(
+            candidates,
+            source_regions=source_regions,
+        )
         exact_for_page = 1 + len(verification_targets)
         budget.update_estimate(
             budget.estimated_requests + exact_for_page - estimated_for_page

@@ -23,7 +23,7 @@ class ConversionLimits:
 
 
 DEFAULTS: dict[str, int | float] = {
-    "max_requests": 100,
+    "max_requests": 1000,
     "provider_max_retries": 3,
     "provider_retry_base_seconds": 0.5,
     "provider_retry_max_seconds": 8.0,

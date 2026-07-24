@@ -253,7 +253,7 @@ class ConversionTest(unittest.TestCase):
                         "reported_token_usage": {"total_tokens": 37},
                         "reported_total_tokens": 37,
                         "requests_with_reported_total": 2,
-                        "request_ceiling": 100,
+                        "request_ceiling": 1000,
                     }
                 ),
                 encoding="utf-8",
@@ -375,7 +375,7 @@ class ConversionTest(unittest.TestCase):
                         "reported_token_usage": {"total_tokens": 37},
                         "reported_total_tokens": 37,
                         "requests_with_reported_total": 2,
-                        "request_ceiling": 100,
+                        "request_ceiling": 1000,
                     }
                 ),
                 encoding="utf-8",
@@ -1342,7 +1342,7 @@ class ConversionTest(unittest.TestCase):
             # capability check plus one page call and one call per crop region.
             self.assertEqual(provenance["provider_usage"]["actual_requests"], 5)
             self.assertEqual(provenance["provider_usage"]["estimated_requests"], 5)
-            self.assertEqual(provenance["provider_usage"]["request_ceiling"], 100)
+            self.assertEqual(provenance["provider_usage"]["request_ceiling"], 1000)
             self.assertIn('<html lang="en-US"', (bundle / "review-report.html").read_text())
 
             internal = json.loads((bundle / "validation/internal.json").read_text())
