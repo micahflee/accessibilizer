@@ -96,6 +96,8 @@ jobs:
           context: .
           load: true
           tags: accessibilizer:test
+          build-args: |
+            ACCESSIBILIZER_SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Run every Python test with the pinned real-PaddleOCR acceptance test
