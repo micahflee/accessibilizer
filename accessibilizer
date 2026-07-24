@@ -14,20 +14,89 @@ for argument in "$@"; do
 done
 
 json_flag=
+resume_requested=
 for argument in "$@"; do
     if [ "$argument" = "--json" ]; then json_flag=--json; fi
+    if [ "$argument" = "--resume" ]; then resume_requested=--resume; fi
 done
 
+command=${1:-}
+reported_this_run_total=0
+reported_this_run_complete=true
+reported_conversion_total=0
+reported_conversion_complete=true
+if [ -n "$resume_requested" ]; then
+    # Until the persisted accounting has been loaded, a resumed conversion's
+    # cumulative total is unknown rather than defensibly zero.
+    reported_conversion_total=null
+    reported_conversion_complete=false
+fi
+
+emit_reported_total() {
+    label=$1
+    total=$2
+    complete=$3
+    if [ "$total" = "null" ]; then
+        echo "Reported tokens $label: unavailable (provider did not report sufficient usage)" >&2
+    elif [ "$complete" = "false" ]; then
+        echo "Reported tokens $label: at least $total" >&2
+    else
+        echo "Reported tokens $label: $total" >&2
+    fi
+}
+
+emit_reported_token_usage() {
+    emit_reported_total "this run" "$reported_this_run_total" "$reported_this_run_complete"
+    emit_reported_total "conversion total" "$reported_conversion_total" "$reported_conversion_complete"
+}
+
 operational_failure() {
-    if [ -n "$json_flag" ]; then
+    if [ -n "$json_flag" ] && [ "$command" = "convert" ]; then
+        printf '{"error":"%s","reported_token_usage":{"this_run":{"total_tokens":%s,"complete":%s},"conversion_total":{"total_tokens":%s,"complete":%s}},"status":"operational_failure"}\n' \
+            "$1" "$reported_this_run_total" "$reported_this_run_complete" \
+            "$reported_conversion_total" "$reported_conversion_complete"
+    elif [ -n "$json_flag" ]; then
         printf '{"error":"%s","status":"operational_failure"}\n' "$1"
     else
         echo "accessibilizer: $1" >&2
+        if [ "$command" = "convert" ]; then
+            emit_reported_token_usage
+        fi
     fi
     exit 1
 }
 
-command=${1:-}
+container_runtime_failure() {
+    reported_this_run_total=null
+    reported_this_run_complete=false
+    if [ -z "$resume_requested" ]; then
+        reported_conversion_total=null
+    fi
+    reported_conversion_complete=false
+    if [ -n "$json_flag" ]; then
+        printf '{"error":"container runtime failed","reported_token_usage":{"this_run":{"total_tokens":%s,"complete":false},"conversion_total":{"total_tokens":%s,"complete":false}},"status":"operational_failure"}\n' \
+            "$reported_this_run_total" "$reported_conversion_total"
+    else
+        echo "accessibilizer: container runtime failed" >&2
+        emit_reported_token_usage
+    fi
+    exit 1
+}
+
+early_conversion_interruption() {
+    trap - HUP INT TERM
+    if [ -n "$json_flag" ]; then
+        printf '{"reported_token_usage":{"this_run":{"total_tokens":%s,"complete":%s},"conversion_total":{"total_tokens":%s,"complete":%s}},"resume_command":null,"status":"interrupted"}\n' \
+            "$reported_this_run_total" "$reported_this_run_complete" \
+            "$reported_conversion_total" "$reported_conversion_complete"
+    else
+        echo "accessibilizer: interrupted" >&2
+        echo "Resume command unavailable before conversion starts." >&2
+        emit_reported_token_usage
+    fi
+    exit 130
+}
+
 if [ "$command" = "report" ]; then
     shift
     bundle_path=
@@ -208,6 +277,7 @@ if [ "$command" != "convert" ]; then
     operational_failure "usage: accessibilizer {convert,report,review,validate,finalize} ... (see --help)"
 fi
 shift
+trap 'early_conversion_interruption' HUP INT TERM
 
 source_path=${1:-}
 if [ -z "$source_path" ]; then
@@ -253,9 +323,6 @@ done
 if [ -z "$bundle_path" ]; then
     operational_failure "--bundle is required"
 fi
-if [ ! -f "$source_path" ]; then
-    operational_failure "source must be a file"
-fi
 
 absolute_file() {
     directory=$(dirname "$1")
@@ -263,7 +330,6 @@ absolute_file() {
     printf '%s/%s\n' "$(cd "$directory" && pwd -P)" "$filename"
 }
 
-source_path=$(absolute_file "$source_path")
 bundle_parent=$(dirname "$bundle_path")
 bundle_name=$(basename "$bundle_path")
 mkdir -p "$bundle_parent" || operational_failure "could not create the bundle parent directory"
@@ -275,6 +341,29 @@ bundle_parent=$(cd "$bundle_parent" && pwd -P)
 bundle_path="$bundle_parent/$bundle_name"
 
 image=${ACCESSIBILIZER_IMAGE:-accessibilizer:0.1.0}
+if [ -n "$resume_flag" ]; then
+    set -- --rm \
+        --volume "$bundle_parent:/work/output" \
+        "$image" python3 -m accessibilizer reported-token-usage \
+        --bundle "/work/output/$bundle_name"
+    if persisted_usage=$(docker run "$@"); then
+        set -- $persisted_usage
+        if [ "$#" -ne 4 ]; then
+            operational_failure "incomplete conversion has invalid request usage"
+        fi
+        reported_this_run_total=$1
+        reported_this_run_complete=$2
+        reported_conversion_total=$3
+        reported_conversion_complete=$4
+    else
+        operational_failure "incomplete conversion has invalid request usage"
+    fi
+fi
+if [ ! -f "$source_path" ]; then
+    operational_failure "source must be a file"
+fi
+source_path=$(absolute_file "$source_path")
+
 user_config_path=
 if [ -n "${XDG_CONFIG_HOME:-}" ]; then
     user_config_path=$XDG_CONFIG_HOME/accessibilizer/config.toml
@@ -304,6 +393,7 @@ fi
 cid_directory=$(mktemp -d "$bundle_parent/.${bundle_name}.container.XXXXXX") || \
     operational_failure "could not prepare the container runtime"
 cidfile="$cid_directory/id"
+container_stdout=
 stop_conversion_container() {
     # Give the container time to record the interruption, print the resume
     # command, and exit 130 gracefully before it is force-stopped. docker run's
@@ -364,10 +454,20 @@ if [ -n "$verbose_flag" ]; then set -- "$@" --verbose; fi
 if [ -n "$replace_flag" ]; then set -- "$@" --replace; fi
 if [ -n "$resume_flag" ]; then set -- "$@" --resume; fi
 
-if docker run "$@"; then
-    result=0
+if [ -n "$json_flag" ]; then
+    container_stdout=$(mktemp "$bundle_parent/.${bundle_name}.result.XXXXXX") || \
+        operational_failure "could not prepare the container runtime"
+    if docker run "$@" >"$container_stdout"; then
+        result=0
+    else
+        result=$?
+    fi
 else
-    result=$?
+    if docker run "$@"; then
+        result=0
+    else
+        result=$?
+    fi
 fi
 trap - HUP INT TERM
 rm -f "$cidfile"
@@ -375,8 +475,16 @@ rmdir "$cid_directory" 2>/dev/null || true
 # 130 is an intentional interruption whose machine-readable result the container
 # already produced; do not mask it as a container-runtime failure.
 if [ "$result" -ne 0 ] && [ "$result" -ne 1 ] && [ "$result" -ne 2 ] \
-    && [ "$result" -ne 130 ] && [ -n "$json_flag" ]; then
-    printf '{"error":"container runtime failed","status":"operational_failure"}\n'
+    && [ "$result" -ne 130 ]; then
+    if [ -n "$container_stdout" ]; then
+        rm -f "$container_stdout"
+        container_stdout=
+    fi
+    container_runtime_failure
+fi
+if [ -n "$container_stdout" ]; then
+    cat "$container_stdout"
+    rm -f "$container_stdout"
 fi
 if [ "$result" -eq 0 ] || [ "$result" -eq 2 ]; then
     chmod 400 "$bundle_path/source.pdf"

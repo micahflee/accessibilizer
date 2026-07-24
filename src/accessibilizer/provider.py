@@ -12,7 +12,7 @@ if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover - selected by the canonical Python 3.10 runtime
     import tomli as tomllib
-from typing import Any, Callable, Literal, Mapping, cast
+from typing import Any, Callable, Literal, Mapping, TypedDict, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -26,6 +26,16 @@ CAPABILITY_IMAGE = (
     "AAAAAAAARymQ/vFUcvTOZQAAAABJRU5ErkJggg=="
 )
 DataLocation = Literal["local", "remote"]
+
+
+class ReportedTokenTotal(TypedDict):
+    total_tokens: int | None
+    complete: bool
+
+
+class ReportedTokenUsage(TypedDict):
+    this_run: ReportedTokenTotal
+    conversion_total: ReportedTokenTotal
 
 
 @dataclass(frozen=True)
@@ -48,10 +58,27 @@ class RequestBudget:
         ceiling: int,
         actual_requests: int = 0,
         reported_token_usage: Mapping[str, int] | None = None,
+        reported_total_tokens: int | None = None,
+        requests_with_reported_total: int = 0,
         on_change: Callable[[RequestBudget], None] | None = None,
     ) -> None:
-        if estimated_requests < 0 or ceiling < 0 or actual_requests < 0:
+        if (
+            estimated_requests < 0
+            or ceiling < 0
+            or actual_requests < 0
+            or requests_with_reported_total < 0
+        ):
             raise ValueError("request counts and request ceiling must not be negative")
+        if requests_with_reported_total > actual_requests:
+            raise ValueError(
+                "requests with reported totals must not exceed actual requests"
+            )
+        if reported_total_tokens is not None and reported_total_tokens < 0:
+            raise ValueError("reported total tokens must not be negative")
+        if (reported_total_tokens is None) != (requests_with_reported_total == 0):
+            raise ValueError(
+                "reported total tokens and requests with reported totals are inconsistent"
+            )
         if actual_requests > ceiling:
             raise RequestCeilingExceeded(
                 f"conversion already used {actual_requests} requests, above the configured "
@@ -67,6 +94,11 @@ class RequestBudget:
                 if isinstance(value, bool) or value < 0:
                     raise ValueError("reported token usage must not be negative")
                 self.reported_token_usage[name] = int(value)
+        self.reported_total_tokens = reported_total_tokens
+        self.requests_with_reported_total = requests_with_reported_total
+        self._run_start_actual_requests = actual_requests
+        self._run_start_reported_total_tokens = reported_total_tokens
+        self._run_start_requests_with_reported_total = requests_with_reported_total
         self._on_change = on_change
 
     def update_estimate(self, estimated_requests: int) -> None:
@@ -97,8 +129,64 @@ class RequestBudget:
                     self.reported_token_usage.get(name, 0) + value
                 )
                 changed = True
+        defensible_total: int | None = None
+        if "total_tokens" in usage:
+            total_tokens = usage["total_tokens"]
+            if (
+                isinstance(total_tokens, int)
+                and not isinstance(total_tokens, bool)
+                and total_tokens >= 0
+            ):
+                defensible_total = total_tokens
+        else:
+            prompt_tokens = usage.get("prompt_tokens")
+            completion_tokens = usage.get("completion_tokens")
+            if (
+                isinstance(prompt_tokens, int)
+                and not isinstance(prompt_tokens, bool)
+                and prompt_tokens >= 0
+                and isinstance(completion_tokens, int)
+                and not isinstance(completion_tokens, bool)
+                and completion_tokens >= 0
+            ):
+                defensible_total = prompt_tokens + completion_tokens
+        if defensible_total is not None:
+            self.reported_total_tokens = (
+                (self.reported_total_tokens or 0) + defensible_total
+            )
+            self.requests_with_reported_total += 1
+            changed = True
         if changed:
             self._changed()
+
+    def reported_token_summary(self) -> ReportedTokenUsage:
+        run_requests = self.actual_requests - self._run_start_actual_requests
+        run_reported_requests = (
+            self.requests_with_reported_total
+            - self._run_start_requests_with_reported_total
+        )
+        if run_requests == 0:
+            run_total: int | None = 0
+        elif run_reported_requests == 0:
+            run_total = None
+        else:
+            run_total = (self.reported_total_tokens or 0) - (
+                self._run_start_reported_total_tokens or 0
+            )
+        if self.actual_requests == 0:
+            conversion_total: int | None = 0
+        else:
+            conversion_total = self.reported_total_tokens
+        return {
+            "this_run": {
+                "total_tokens": run_total,
+                "complete": run_reported_requests == run_requests,
+            },
+            "conversion_total": {
+                "total_tokens": conversion_total,
+                "complete": self.requests_with_reported_total == self.actual_requests,
+            },
+        }
 
     def usage_since(self, before: Mapping[str, int]) -> dict[str, int]:
         """Positive per-token-kind usage accrued since a prior snapshot.
@@ -117,6 +205,8 @@ class RequestBudget:
             "actual_requests": self.actual_requests,
             "estimated_requests": self.estimated_requests,
             "reported_token_usage": dict(self.reported_token_usage),
+            "reported_total_tokens": self.reported_total_tokens,
+            "requests_with_reported_total": self.requests_with_reported_total,
             "request_ceiling": self.ceiling,
         }
 
@@ -296,6 +386,12 @@ def request_chat_completion(
         except HTTPError as error:
             transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
             code = error.code
+            try:
+                error_response: Any = json.loads(error.read())
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                error_response = None
+            if budget is not None:
+                budget.record_reported_usage(error_response)
             error.close()
             if not transient or attempt == max_retries:
                 raise RuntimeError(failure_message) from error
