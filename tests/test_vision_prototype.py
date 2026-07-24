@@ -66,15 +66,16 @@ class FakeVisionProvider:
                 try:
                     response_format = request["response_format"]
                     contents = request["messages"][1]["content"]
-                    context_text = next(
+                    text_items = [
                         item["text"]
                         for item in contents
                         if item.get("type") == "text"
-                        and item.get("text", "").startswith(
-                            "UNTRUSTED NON-AUTHORITATIVE NATIVE PDF CONTEXT\n"
-                        )
+                    ]
+                    context = next(
+                        json.loads(text[text.index("{") :])
+                        for text in text_items
+                        if "{" in text
                     )
-                    context = json.loads(context_text.split("\n", 1)[1])
                     image_url = next(
                         item["image_url"]["url"]
                         for item in contents
@@ -86,11 +87,11 @@ class FakeVisionProvider:
                     valid = (
                         response_format["type"] == "json_schema"
                         and response_format["json_schema"]["strict"] is True
-                        and response_format["json_schema"]["name"]
-                        == "accessibilizer_vision_prototype_page"
                         and "tools" not in request
                         and "functions" not in request
                         and image.startswith(b"\x89PNG\r\n\x1a\n")
+                        and "untrusted" in " ".join(text_items).lower()
+                        and "non-authoritative" in " ".join(text_items).lower()
                         and isinstance(context["native_pdf_words"], list)
                         and bool(context["native_pdf_words"])
                         is provider.expect_native_context
