@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accessibilizer.org/schemas/page-semantics-1.2.schema.json",
+  "title": "Accessibilizer reconstructed page semantics 1.2 (prototype - vision-only)",
+  "description": "The checkpointed page Semantic Layer with normalized Source Region IDs and model-provided approximate boxes. This schema is for prototype use only and will not become production.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["language", "page", "reconstruction", "schema_version", "semantic_layer", "source_regions", "source_sha256", "title", "warnings"],
+  "properties": {
+    "schema_version": {"const": "1.2"},
+    "page": {"type": "integer", "minimum": 1},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "title": {"type": "string", "minLength": 1},
+    "language": {"type": "string", "minLength": 1},
+    "semantic_layer": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {"$ref": "#/$defs/heading"},
+          {"$ref": "#/$defs/paragraph"},
+          {"$ref": "#/$defs/formula"},
+          {"$ref": "#/$defs/figure"},
+          {"$ref": "#/$defs/table"}
+        ]
+      }
+    },
+    "source_regions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/source_region"}
+    },
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
+    "reconstruction": {"$ref": "#/$defs/reconstruction"}
+  },
+  "$defs": {
+    "model_box": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x0", "y0", "x1", "y1"],
+      "properties": {
+        "x0": {"type": "number", "minimum": 0},
+        "y0": {"type": "number", "minimum": 0},
+        "x1": {"type": "number", "exclusiveMinimum": 0},
+        "y1": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "source_region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "page", "bbox_points"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^page-[0-9]+-r[0-9]{4,}$"},
+        "page": {"type": "integer", "minimum": 1},
+        "bbox_points": {
+          "type": "array",
+          "prefixItems": [
+            {"type": "number", "minimum": 0},
+            {"type": "number", "minimum": 0},
+            {"type": "number", "minimum": 0},
+            {"type": "number", "minimum": 0}
+          ],
+          "items": false,
+          "minItems": 4
+        }
+      }
+    },
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "source_regions", "text", "type"],
+      "properties": {
+        "level": {"type": "integer", "minimum": 1, "maximum": 6},
+        "source_regions": {"$ref": "#/$defs/source_region_ids"},
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "heading"}
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_regions", "text", "type"],
+      "properties": {
+        "source_regions": {"$ref": "#/$defs/source_region_ids"},
+        "text": {"type": "string", "minLength": 1},
+        "type": {"const": "paragraph"}
+      }
+    },
+    "formula": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized_math", "source_regions", "spoken_math_alternative", "type"],
+      "properties": {
+        "normalized_math": {"type": "string", "minLength": 1},
+        "source_regions": {"$ref": "#/$defs/source_region_ids"},
+        "spoken_math_alternative": {"type": "string", "minLength": 1},
+        "type": {"const": "formula"}
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complexity", "figure_alternative", "source_regions", "type"],
+      "properties": {
+        "complexity": {"enum": ["simple", "complex"]},
+        "detailed_figure_description": {"type": "string", "minLength": 1},
+        "figure_alternative": {"type": "string", "minLength": 1},
+        "source_regions": {"$ref": "#/$defs/source_region_ids"},
+        "type": {"const": "figure"}
+      },
+      "if": {"properties": {"complexity": {"const": "complex"}}},
+      "then": {"required": ["detailed_figure_description"]},
+      "else": {"not": {"required": ["detailed_figure_description"]}}
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows", "source_regions", "type"],
+      "properties": {
+        "caption": {"type": "string", "minLength": 1},
+        "rows": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cells"],
+            "properties": {"cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/table_cell"}}}
+          }
+        },
+        "source_regions": {"$ref": "#/$defs/source_region_ids"},
+        "type": {"const": "table"}
+      }
+    },
+    "table_cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["col_span", "kind", "row_span", "scope", "text"],
+      "properties": {
+        "kind": {"enum": ["header", "data"]},
+        "text": {"type": "string"},
+        "scope": {"enum": ["col", "row", "both", "none"]},
+        "row_span": {"type": "integer", "minimum": 1},
+        "col_span": {"type": "integer", "minimum": 1}
+      },
+      "if": {"properties": {"kind": {"const": "data"}}},
+      "then": {"properties": {"scope": {"const": "none"}}},
+      "else": {"properties": {"scope": {"enum": ["col", "row", "both"]}}}
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "status"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "detail": {"type": "string"},
+        "message": {"type": "string", "minLength": 1},
+        "reading_order": {"type": "array", "items": {"enum": ["heading", "paragraph", "formula", "figure", "table"]}},
+        "region": {"type": ["null", "string"], "pattern": "^page-[0-9]+-r[0-9]{4,}$"},
+        "semantic_types": {"type": "array", "uniqueItems": true, "items": {"enum": ["heading", "paragraph", "formula", "figure", "table"]}},
+        "source_regions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/source_region_id"}},
+        "status": {"const": "unresolved"}
+      }
+    },
+    "source_region_id": {
+      "type": "string",
+      "pattern": "^page-[0-9]+-r[0-9]{4,}$"
+    },
+    "source_region_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/source_region_id"}
+    },
+    "reconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_class", "page_prompt_version", "page_schema_version", "primary_language_is_english", "provider_endpoint", "provider_model", "reading_order", "reading_order_is_unambiguous", "region_prompt_version", "region_schema_version"],
+      "properties": {
+        "document_class": {"enum": ["stem_instructional", "other"]},
+        "page_prompt_version": {"type": "string", "minLength": 1},
+        "page_schema_version": {"type": "string", "minLength": 1},
+        "primary_language_is_english": {"type": "boolean"},
+        "provider_endpoint": {"type": "string", "minLength": 1},
+        "provider_model": {"type": "string", "minLength": 1},
+        "reading_order": {"type": "array", "items": {"enum": ["heading", "paragraph", "formula", "figure", "table"]}},
+        "reading_order_is_unambiguous": {"type": "boolean"},
+        "region_prompt_version": {"type": "string", "minLength": 1},
+        "region_schema_version": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
