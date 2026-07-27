@@ -12,6 +12,8 @@ import unittest
 from typing import Any
 
 from accessibilizer.provider import ProviderConfig
+from accessibilizer.prototype_evaluation import evaluate_prototype_document
+from accessibilizer.review import load_yaml
 from accessibilizer.vision_prototype import (
     reconstruct_prototype_document,
     reconstruct_prototype_page,
@@ -22,6 +24,7 @@ from accessibilizer.vision_prototype import (
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
 POPPLER = all(shutil.which(tool) is not None for tool in ("pdfinfo", "pdftoppm", "pdftotext"))
+GOLD = ROOT / "testdata" / "gold-review-record.yaml"
 
 
 def page_response(**overrides: Any) -> dict[str, Any]:
@@ -50,6 +53,45 @@ def page_response(**overrides: Any) -> dict[str, Any]:
     }
     response.update(overrides)
     return response
+
+
+def gold_page_responses() -> list[dict[str, Any]]:
+    gold = load_yaml(GOLD.read_text(encoding="utf-8"))
+    warnings_by_page: dict[int, list[dict[str, Any]]] = {}
+    for warning in gold["warnings"]:
+        warnings_by_page.setdefault(warning["page"], []).append(
+            {
+                "code": warning["code"],
+                "message": warning["message"],
+                "node_indices": [],
+                "boxes": [[0.05, 0.05, 0.95, 0.45]],
+            }
+        )
+
+    responses: list[dict[str, Any]] = []
+    for page in range(1, 12):
+        nodes = []
+        for node in gold["semantic_layer"]:
+            if node["page"] != page:
+                continue
+            response_node = {
+                **{
+                    key: value
+                    for key, value in node.items()
+                    if key not in {"id", "page", "source_regions"}
+                },
+                "boxes": [[0.1, 0.1, 0.9, 0.2]],
+            }
+            if node["type"] == "figure":
+                response_node.setdefault("detailed_figure_description", None)
+            if node["type"] == "table":
+                response_node.setdefault("boundaries_are_uncertain", False)
+                response_node.setdefault("headers_are_uncertain", False)
+            nodes.append(response_node)
+        responses.append(
+            {"nodes": nodes, "warnings": warnings_by_page.get(page, [])}
+        )
+    return responses
 
 
 class FakeVisionProvider:
@@ -339,6 +381,152 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "inside the run directory"):
                 replay_prototype_document(artifacts_root / "run-alpha")
+
+    def test_replayed_gold_document_evaluation_is_deterministic_and_categorized(
+        self,
+    ) -> None:
+        passing_responses = gold_page_responses()
+        mismatched_responses = gold_page_responses()
+        mismatched_responses[0]["nodes"][0]["text"] = "Wrong chapter title"
+        mismatched_responses[1]["nodes"][1]["spoken_math_alternative"] = (
+            "I is Q over the change in time."
+        )
+        mismatched_responses[0]["nodes"][1]["figure_alternative"] = (
+            "A differently worded circuit summary."
+        )
+        table = next(
+            node
+            for response in mismatched_responses
+            for node in response["nodes"]
+            if node["type"] == "table"
+        )
+        table["caption"] = "Wrong table caption"
+        for response in mismatched_responses[2:]:
+            adjacent_types = [node["type"] for node in response["nodes"]]
+            differing_index = next(
+                (
+                    index
+                    for index in range(len(adjacent_types) - 1)
+                    if adjacent_types[index] != adjacent_types[index + 1]
+                ),
+                None,
+            )
+            if differing_index is not None:
+                start = differing_index
+                response["nodes"][start : start + 2] = reversed(
+                    response["nodes"][start : start + 2]
+                )
+                break
+        mismatched_responses[0]["warnings"] = [
+            {
+                "code": "illegible-content",
+                "message": "A representative false positive.",
+                "node_indices": [],
+                "boxes": [[0.05, 0.05, 0.95, 0.45]],
+            }
+        ]
+
+        with (
+            FakeVisionProvider(
+                [*passing_responses, *mismatched_responses],
+                expect_native_context=True,
+            ) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            artifacts_root = Path(directory)
+            reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=artifacts_root,
+                run_id="passing-run",
+                max_retries=0,
+            )
+            reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=artifacts_root,
+                run_id="mismatched-run",
+                max_retries=0,
+            )
+
+            passing = evaluate_prototype_document(
+                artifacts_root / "passing-run", GOLD
+            )
+            mismatched = evaluate_prototype_document(
+                artifacts_root / "mismatched-run", GOLD
+            )
+
+            self.assertTrue(passing["passed"], passing)
+            self.assertEqual(passing["semantic_fidelity"]["failures"], [])
+            self.assertEqual(passing["warning_fidelity"]["missing"], [])
+            self.assertEqual(passing["warning_fidelity"]["additional"], [])
+            self.assertEqual(passing["adjudications"], [])
+
+            self.assertFalse(mismatched["passed"])
+            failure_fields = {
+                failure["field"]
+                for failure in mismatched["semantic_fidelity"]["failures"]
+            }
+            self.assertTrue(
+                {
+                    "logical_reading_order",
+                    "type",
+                    "text",
+                    "caption",
+                }.issubset(failure_fields),
+                failure_fields,
+            )
+            self.assertEqual(
+                mismatched["warning_fidelity"]["missing"],
+                [{"page": 1, "code": "ambiguous-reading-order"}],
+            )
+            self.assertEqual(
+                mismatched["warning_fidelity"]["additional"],
+                [{"page": 1, "code": "illegible-content"}],
+            )
+            self.assertEqual(mismatched["warning_fidelity"]["recall"], 5 / 6)
+            self.assertEqual(mismatched["warning_fidelity"]["precision"], 5 / 6)
+            self.assertEqual(len(mismatched["adjudications"]), 2)
+            adjudication = next(
+                item
+                for item in mismatched["adjudications"]
+                if item["field"] == "spoken_math_alternative"
+            )
+            self.assertEqual(
+                {
+                    "run_id": adjudication["run_id"],
+                    "page": adjudication["page"],
+                    "node": adjudication["node"],
+                    "field": adjudication["field"],
+                    "gold_wording": adjudication["gold_wording"],
+                    "produced_wording": adjudication["produced_wording"],
+                    "decision": adjudication["decision"],
+                },
+                {
+                    "run_id": "mismatched-run",
+                    "page": 2,
+                    "node": "page-2-s0002",
+                    "field": "spoken_math_alternative",
+                    "gold_wording": (
+                        "I equals Q over delta t; here I is 2.5 coulombs per second, "
+                        "which equals Q over t."
+                    ),
+                    "produced_wording": "I is Q over the change in time.",
+                    "decision": None,
+                },
+            )
+
+            decided = evaluate_prototype_document(
+                artifacts_root / "mismatched-run",
+                GOLD,
+                adjudication_decisions={adjudication["id"]: "accepted"},
+            )
+            decided_adjudication = next(
+                item
+                for item in decided["adjudications"]
+                if item["id"] == adjudication["id"]
+            )
+            self.assertEqual(decided_adjudication["decision"], "accepted")
 
 
 if __name__ == "__main__":
