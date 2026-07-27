@@ -330,6 +330,16 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                     )
                     self.assertEqual(normalized["page"], page)
 
+            tampered_manifest = json.loads(
+                (artifacts_root / "run-alpha" / "manifest.json").read_text()
+            )
+            tampered_manifest["page_artifacts"][0]["input"] = "../outside.json"
+            (artifacts_root / "run-alpha" / "manifest.json").write_text(
+                json.dumps(tampered_manifest)
+            )
+            with self.assertRaisesRegex(ValueError, "inside the run directory"):
+                replay_prototype_document(artifacts_root / "run-alpha")
+
 
 if __name__ == "__main__":
     unittest.main()

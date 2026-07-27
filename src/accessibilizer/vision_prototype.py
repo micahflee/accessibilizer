@@ -723,6 +723,14 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
+def _replay_artifact_path(run_dir: Path, relative_path: str) -> Path:
+    root = run_dir.resolve()
+    artifact = (run_dir / relative_path).resolve()
+    if not artifact.is_relative_to(root):
+        raise ValueError("prototype artifacts must stay inside the run directory")
+    return artifact
+
+
 def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
     """Replay normalized document results from one credential-free artifact run."""
     manifest = _read_json_object(run_dir / "manifest.json")
@@ -746,8 +754,8 @@ def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
         assert isinstance(input_path, str)
         assert isinstance(response_path, str)
         assert isinstance(normalized_path, str)
-        page_input = _read_json_object(run_dir / input_path)
-        response = _read_json_object(run_dir / response_path)
+        page_input = _read_json_object(_replay_artifact_path(run_dir, input_path))
+        response = _read_json_object(_replay_artifact_path(run_dir, response_path))
         schema_errors = list(Draft202012Validator(schema).iter_errors(response))
         if schema_errors:
             raise ValueError(
@@ -768,7 +776,9 @@ def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
             page=expected_page,
             dimensions=(float(width), float(height)),
         )
-        recorded = _read_json_object(run_dir / normalized_path)
+        recorded = _read_json_object(
+            _replay_artifact_path(run_dir, normalized_path)
+        )
         if replayed != recorded:
             raise ValueError(
                 f"recorded normalized prototype page {expected_page} cannot be replayed"
