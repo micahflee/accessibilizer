@@ -9,10 +9,15 @@ approximate normalized geometry; deterministic code owns every canonical identit
 from __future__ import annotations
 
 import base64
+from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
+import time
 from typing import Any, Sequence
+import uuid
 
 from jsonschema import Draft202012Validator
 
@@ -562,3 +567,224 @@ def reconstruct_prototype_page(
         page=page,
         dimensions=dimensions,
     )
+
+
+def _pdf_page_count(source_pdf: Path) -> int:
+    info = run(["pdfinfo", str(source_pdf)])
+    if info.returncode:
+        raise RuntimeError(
+            f"could not read Source PDF page count: {info.stderr.strip()}"
+        )
+    for line in info.stdout.splitlines():
+        label, separator, value = line.partition(":")
+        if separator and label.strip() == "Pages":
+            try:
+                page_count = int(value.strip())
+            except ValueError as error:
+                raise ValueError("Source PDF has an invalid page count") from error
+            if page_count < 1:
+                raise ValueError("Source PDF must contain at least one page")
+            return page_count
+    raise ValueError("Source PDF page count is unavailable")
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def reconstruct_prototype_document(
+    config: ProviderConfig,
+    *,
+    source_pdf: Path,
+    artifacts_root: Path,
+    run_id: str | None = None,
+    include_native_pdf_context: bool = True,
+    max_retries: int = 3,
+    retry_base_seconds: float = 0.5,
+    retry_max_seconds: float = 8.0,
+) -> dict[str, Any]:
+    """Reconstruct every Source PDF page as one isolated, auditable run."""
+    identity = run_id or f"run-{uuid.uuid4()}"
+    if not identity or identity in {".", ".."} or Path(identity).name != identity:
+        raise ValueError("prototype run identity must be one path component")
+    run_dir = artifacts_root / identity
+    try:
+        run_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(
+            f"prototype run identity already exists: {identity}"
+        ) from error
+
+    prompt_dir = run_dir / "prompt"
+    pages_dir = run_dir / "pages"
+    prompt_dir.mkdir()
+    pages_dir.mkdir()
+    (prompt_dir / "system.txt").write_text(SYSTEM_INSTRUCTIONS, encoding="utf-8")
+    (prompt_dir / "page.txt").write_text(PAGE_INSTRUCTIONS, encoding="utf-8")
+    _write_json(prompt_dir / "schema.json", prototype_page_response_schema())
+
+    page_count = _pdf_page_count(source_pdf)
+    budget = RequestBudget(estimated_requests=page_count, ceiling=page_count * 2)
+    normalized_pages: list[dict[str, Any]] = []
+    page_artifacts: list[dict[str, object]] = []
+
+    for page in range(1, page_count + 1):
+        page_dir = pages_dir / f"page-{page}"
+        page_dir.mkdir()
+        rendered_image, dimensions, native_pdf_words = _prepare_page(
+            source_pdf=source_pdf,
+            page=page,
+            artifacts_dir=page_dir,
+            include_native_pdf_context=include_native_pdf_context,
+        )
+        page_image = page_dir / "page.png"
+        shutil.move(rendered_image, page_image)
+        image_sha256 = hashlib.sha256(page_image.read_bytes()).hexdigest()
+        page_input = {
+            "page": page,
+            "page_dimensions": {
+                "width_points": dimensions[0],
+                "height_points": dimensions[1],
+            },
+            "image": {"path": "page.png", "sha256": image_sha256},
+            "native_pdf_words": native_pdf_words,
+        }
+        _write_json(page_dir / "input.json", page_input)
+
+        payload = _build_request(
+            model=config.model,
+            page_image=page_image,
+            native_pdf_words=native_pdf_words,
+        )
+        usage_before = dict(budget.reported_token_usage)
+        requests_before = budget.actual_requests
+        started = time.monotonic()
+        result = request_chat_completion(
+            config,
+            payload,
+            failure_message="vision-only prototype page reconstruction failed",
+            budget=budget,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
+            retry_max_seconds=retry_max_seconds,
+        )
+        elapsed_seconds = time.monotonic() - started
+        response = _validate_response(
+            parse_schema_content(
+                result,
+                "vision-only prototype returned an invalid schema response",
+            )
+        )
+        normalized = _normalize_page(response, page=page, dimensions=dimensions)
+        _write_json(page_dir / "response.json", response)
+        _write_json(page_dir / "normalized.json", normalized)
+        normalized_pages.append(normalized)
+        page_artifacts.append(
+            {
+                "page": page,
+                "input": f"pages/page-{page}/input.json",
+                "response": f"pages/page-{page}/response.json",
+                "normalized": f"pages/page-{page}/normalized.json",
+                "logical_requests": 1,
+                "provider_requests": budget.actual_requests - requests_before,
+                "reported_token_usage": budget.usage_since(usage_before),
+                "elapsed_seconds": round(elapsed_seconds, 6),
+            }
+        )
+
+    manifest: dict[str, Any] = {
+        "run_id": identity,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source_pdf": {
+            "name": source_pdf.name,
+            "sha256": hashlib.sha256(source_pdf.read_bytes()).hexdigest(),
+        },
+        "page_count": page_count,
+        "model": config.model,
+        "prompt_version": PROTOTYPE_PROMPT_VERSION,
+        "schema_version": PROTOTYPE_SCHEMA_VERSION,
+        "render_dpi": PROTOTYPE_RENDER_DPI,
+        "logical_requests": page_count,
+        "request_usage": budget.as_dict(),
+        "page_artifacts": page_artifacts,
+        "pages": normalized_pages,
+    }
+    _write_json(run_dir / "manifest.json", manifest)
+    return manifest
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    value: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"prototype artifact must contain a JSON object: {path}")
+    return value
+
+
+def _replay_artifact_path(run_dir: Path, relative_path: str) -> Path:
+    root = run_dir.resolve()
+    artifact = (run_dir / relative_path).resolve()
+    if not artifact.is_relative_to(root):
+        raise ValueError("prototype artifacts must stay inside the run directory")
+    return artifact
+
+
+def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
+    """Replay normalized document results from one credential-free artifact run."""
+    manifest = _read_json_object(run_dir / "manifest.json")
+    schema = _read_json_object(run_dir / "prompt" / "schema.json")
+    page_artifacts = manifest.get("page_artifacts")
+    if not isinstance(page_artifacts, list):
+        raise ValueError("prototype manifest page_artifacts must be an array")
+
+    replayed_pages: list[dict[str, Any]] = []
+    for expected_page, artifact in enumerate(page_artifacts, start=1):
+        if not isinstance(artifact, dict) or artifact.get("page") != expected_page:
+            raise ValueError("prototype manifest pages must be complete and ordered")
+        input_path = artifact.get("input")
+        response_path = artifact.get("response")
+        normalized_path = artifact.get("normalized")
+        if not all(
+            isinstance(path, str)
+            for path in (input_path, response_path, normalized_path)
+        ):
+            raise ValueError("prototype manifest artifact paths must be strings")
+        assert isinstance(input_path, str)
+        assert isinstance(response_path, str)
+        assert isinstance(normalized_path, str)
+        page_input = _read_json_object(_replay_artifact_path(run_dir, input_path))
+        response = _read_json_object(_replay_artifact_path(run_dir, response_path))
+        schema_errors = list(Draft202012Validator(schema).iter_errors(response))
+        if schema_errors:
+            raise ValueError(
+                f"recorded prototype response is not schema-valid: "
+                f"{schema_errors[0].message}"
+            )
+        dimensions = page_input.get("page_dimensions")
+        if not isinstance(dimensions, dict):
+            raise ValueError("prototype page dimensions must be an object")
+        width = dimensions.get("width_points")
+        height = dimensions.get("height_points")
+        if not isinstance(width, (int, float)) or not isinstance(
+            height, (int, float)
+        ):
+            raise ValueError("prototype page dimensions must be numeric")
+        replayed = _normalize_page(
+            _validate_response(response),
+            page=expected_page,
+            dimensions=(float(width), float(height)),
+        )
+        recorded = _read_json_object(
+            _replay_artifact_path(run_dir, normalized_path)
+        )
+        if replayed != recorded:
+            raise ValueError(
+                f"recorded normalized prototype page {expected_page} cannot be replayed"
+            )
+        replayed_pages.append(replayed)
+
+    if manifest.get("page_count") != len(replayed_pages):
+        raise ValueError("prototype manifest page count does not match its artifacts")
+    return {**manifest, "pages": replayed_pages}

@@ -12,7 +12,11 @@ import unittest
 from typing import Any
 
 from accessibilizer.provider import ProviderConfig
-from accessibilizer.vision_prototype import reconstruct_prototype_page
+from accessibilizer.vision_prototype import (
+    reconstruct_prototype_document,
+    reconstruct_prototype_page,
+    replay_prototype_document,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,8 +53,13 @@ def page_response(**overrides: Any) -> dict[str, Any]:
 
 
 class FakeVisionProvider:
-    def __init__(self, response: dict[str, Any], *, expect_native_context: bool) -> None:
-        self.response = response
+    def __init__(
+        self,
+        response: dict[str, Any] | list[dict[str, Any]],
+        *,
+        expect_native_context: bool,
+    ) -> None:
+        self.responses = response if isinstance(response, list) else [response]
         self.expect_native_context = expect_native_context
         self.requests: list[dict[str, Any]] = []
         provider = self
@@ -101,10 +110,23 @@ class FakeVisionProvider:
                 if not valid:
                     self.send_error(400)
                     return
+                response_index = len(provider.requests) - 1
                 body = {
                     "choices": [
-                        {"message": {"content": json.dumps(provider.response, allow_nan=True)}}
-                    ]
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    provider.responses[response_index % len(provider.responses)],
+                                    allow_nan=True,
+                                )
+                            }
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 100 + response_index,
+                        "completion_tokens": 20,
+                        "total_tokens": 120 + response_index,
+                    },
                 }
                 encoded = json.dumps(body, allow_nan=True).encode()
                 self.send_response(200)
@@ -243,6 +265,80 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                     self.reconstruct(
                         provider, directory, include_native_pdf_context=False
                     )
+
+    def test_gold_document_runs_are_independent_replayable_and_auditable(self) -> None:
+        responses = []
+        for page in range(1, 12):
+            response = page_response()
+            response["nodes"][0]["text"] = f"Gold page {page}"
+            response["warnings"] = []
+            responses.append(response)
+
+        with (
+            FakeVisionProvider(responses, expect_native_context=True) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            artifacts_root = Path(directory)
+            first = reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=artifacts_root,
+                run_id="run-alpha",
+                max_retries=0,
+            )
+            second = reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=artifacts_root,
+                run_id="run-beta",
+                max_retries=0,
+            )
+
+            self.assertEqual(len(provider.requests), 22)
+            self.assertEqual(first["run_id"], "run-alpha")
+            self.assertEqual(second["run_id"], "run-beta")
+            self.assertEqual([page["page"] for page in first["pages"]], list(range(1, 12)))
+            self.assertEqual(
+                [page["semantic_layer"][0]["text"] for page in first["pages"]],
+                [f"Gold page {page}" for page in range(1, 12)],
+            )
+            self.assertEqual(first["request_usage"]["actual_requests"], 11)
+            self.assertEqual(first["request_usage"]["request_ceiling"], 22)
+            self.assertEqual(first["model"], "exact-model")
+
+            for run_id in ("run-alpha", "run-beta"):
+                run_dir = artifacts_root / run_id
+                manifest = json.loads((run_dir / "manifest.json").read_text())
+                self.assertEqual(manifest["run_id"], run_id)
+                self.assertEqual(manifest["page_count"], 11)
+                self.assertEqual(manifest["model"], "exact-model")
+                self.assertEqual(manifest["request_usage"]["actual_requests"], 11)
+                self.assertNotIn("authorization", json.dumps(manifest).lower())
+                replayed = replay_prototype_document(run_dir)
+                self.assertEqual(replayed["run_id"], run_id)
+                self.assertEqual(replayed["pages"], manifest["pages"])
+                self.assertTrue((run_dir / "prompt" / "system.txt").is_file())
+                self.assertTrue((run_dir / "prompt" / "page.txt").is_file())
+                self.assertTrue((run_dir / "prompt" / "schema.json").is_file())
+                for page in range(1, 12):
+                    page_dir = run_dir / "pages" / f"page-{page}"
+                    self.assertTrue((page_dir / "page.png").is_file())
+                    self.assertTrue((page_dir / "input.json").is_file())
+                    self.assertTrue((page_dir / "response.json").is_file())
+                    normalized = json.loads(
+                        (page_dir / "normalized.json").read_text()
+                    )
+                    self.assertEqual(normalized["page"], page)
+
+            tampered_manifest = json.loads(
+                (artifacts_root / "run-alpha" / "manifest.json").read_text()
+            )
+            tampered_manifest["page_artifacts"][0]["input"] = "../outside.json"
+            (artifacts_root / "run-alpha" / "manifest.json").write_text(
+                json.dumps(tampered_manifest)
+            )
+            with self.assertRaisesRegex(ValueError, "inside the run directory"):
+                replay_prototype_document(artifacts_root / "run-alpha")
 
 
 if __name__ == "__main__":

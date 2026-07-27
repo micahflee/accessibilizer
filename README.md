@@ -181,3 +181,40 @@ PaddleOCR produces schema-valid candidates for all 11 sample pages offline.
 
 The authoring boundary is documented by `schemas/authoring-2.0.schema.json`, and
 the recognition-evidence contract by `schemas/recognition-1.0.schema.json`.
+
+## Vision-only full-document prototype
+
+Issue #73's isolated experiment is intentionally separate from the production
+`convert` command. Its highest-level Python entry point processes every page of
+the gold Source PDF with one logical full-page request per page:
+
+```python
+from pathlib import Path
+
+from accessibilizer.provider import ProviderConfig
+from accessibilizer.vision_prototype import reconstruct_prototype_document
+
+reconstruct_prototype_document(
+    ProviderConfig(
+        base_url="https://api.openai.com/v1",
+        model="gpt-5.6-sol",
+        api_key_env="OPENAI_API_KEY",
+        data_location="remote",
+    ),
+    source_pdf=Path(
+        "testdata/Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
+    ),
+    artifacts_root=Path("prototype-runs"),
+)
+```
+
+Each invocation creates a fresh `run-<UUID>/` directory and refuses to reuse an
+existing identity. `manifest.json` records the exact model and versioned prompt,
+schema, Source PDF identity, normalized pages, token usage, latency, and request
+counts. The `prompt/` directory stores the exact instructions and strict schema;
+each `pages/page-N/` directory independently stores its rendered input, native
+PDF text and geometry, schema-valid response, and normalized result. These
+artifacts exclude API credentials, authorization headers, hidden reasoning, and
+provider HTTP traces. Pass a completed run directory to
+`replay_prototype_document()` to validate its recorded responses against the
+stored schema and reproduce every normalized page without provider access.
