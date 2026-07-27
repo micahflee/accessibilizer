@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from typing import Any
@@ -115,6 +116,46 @@ class FullDocumentVisionOnlyRunTest(unittest.TestCase):
                 (first.run_directory / "pages" / "page-3" / "normalized.json").read_text()
             )
             self.assertEqual(page_three["warnings"][0]["code"], "prompt-injection")
+
+    @unittest.skipUnless(
+        shutil.which("pdfinfo") and shutil.which("pdftoppm") and shutil.which("pdftotext"),
+        "Poppler is required to replay the prepared gold Source PDF inputs",
+    )
+    def test_gold_source_pdf_preparation_is_replayed_at_the_public_entry_point(self) -> None:
+        source = Path("testdata/Chapter 20_ Electric Current Resistance and Ohms Law.pdf")
+        calls = 0
+
+        def replay(payload: dict[str, Any]) -> dict[str, Any]:
+            nonlocal calls
+            calls += 1
+            response = {
+                "title": f"Gold page {calls}",
+                "language": "en-US",
+                "primary_language_is_english": True,
+                "document_class": "stem_instructional",
+                "reading_order_is_unambiguous": True,
+                "nodes": [{
+                    "type": "paragraph",
+                    "text": f"Replayed page {calls}",
+                    "boxes": [[0.1, 0.1, 0.9, 0.2]],
+                }],
+                "suspected_source_errors": [],
+                "suspected_prompt_injection": False,
+            }
+            return {"choices": [{"message": {"content": json.dumps(response)}}]}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = run_source_pdf_vision_only(
+                ProviderConfig("http://localhost:11434/v1", "replay-model", None, "local"),
+                source_pdf=source,
+                runs_directory=Path(temporary) / "runs",
+                requester=replay,
+                render_dpi=72,
+            )
+            manifest = json.loads(result.manifest_path.read_text())
+
+        self.assertEqual(calls, 11)
+        self.assertEqual(manifest["page_count"], 11)
 
 
 if __name__ == "__main__":

@@ -78,7 +78,7 @@ def _prepare_page_inputs(
         image_base = directory / f"page-{page}"
         rendered = run_process([
             "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile",
-            "-r", str(dpi), "-png", str(source_pdf), str(image_base),
+            "-cropbox", "-r", str(dpi), "-png", str(source_pdf), str(image_base),
         ])
         if rendered.returncode:
             raise RuntimeError(
