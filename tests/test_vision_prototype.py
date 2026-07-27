@@ -11,10 +11,11 @@ import threading
 import unittest
 from typing import Any
 
-from accessibilizer.provider import ProviderConfig
+from accessibilizer.provider import ProviderConfig, RequestCeilingExceeded
 from accessibilizer.prototype_evaluation import evaluate_prototype_document
 from accessibilizer.review import load_yaml
 from accessibilizer.vision_prototype import (
+    PrototypePricing,
     reconstruct_prototype_document,
     reconstruct_prototype_page,
     replay_prototype_document,
@@ -25,6 +26,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
 POPPLER = all(shutil.which(tool) is not None for tool in ("pdfinfo", "pdftoppm", "pdftotext"))
 GOLD = ROOT / "testdata" / "gold-review-record.yaml"
+PRICING = PrototypePricing(
+    as_of="2026-07-27",
+    input_per_million_tokens=1.0,
+    output_per_million_tokens=10.0,
+)
 
 
 def page_response(**overrides: Any) -> dict[str, Any]:
@@ -153,12 +159,18 @@ class FakeVisionProvider:
                     self.send_error(400)
                     return
                 response_index = len(provider.requests) - 1
+                selected_response = provider.responses[
+                    response_index % len(provider.responses)
+                ]
+                if selected_response.get("_http_status") is not None:
+                    self.send_error(int(selected_response["_http_status"]))
+                    return
                 body = {
                     "choices": [
                         {
                             "message": {
                                 "content": json.dumps(
-                                    provider.responses[response_index % len(provider.responses)],
+                                    selected_response,
                                     allow_nan=True,
                                 )
                             }
@@ -326,6 +338,7 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 source_pdf=SOURCE,
                 artifacts_root=artifacts_root,
                 run_id="run-alpha",
+                pricing=PRICING,
                 max_retries=0,
             )
             second = reconstruct_prototype_document(
@@ -333,6 +346,7 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 source_pdf=SOURCE,
                 artifacts_root=artifacts_root,
                 run_id="run-beta",
+                pricing=PRICING,
                 max_retries=0,
             )
 
@@ -347,6 +361,37 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
             self.assertEqual(first["request_usage"]["actual_requests"], 11)
             self.assertEqual(first["request_usage"]["request_ceiling"], 22)
             self.assertEqual(first["model"], "exact-model")
+            self.assertEqual(len(first["provider_calls"]), 11)
+            self.assertTrue(
+                all(
+                    call["purpose"] == "page-reconstruction"
+                    and call["page"] == index
+                    and call["elapsed_seconds"] >= 0
+                    and call["reported_token_usage"]["total_tokens"] > 0
+                    for index, call in enumerate(first["provider_calls"], start=1)
+                )
+            )
+            self.assertEqual(
+                first["request_usage"]["reported_token_usage"],
+                {
+                    "prompt_tokens": 1155,
+                    "completion_tokens": 220,
+                    "total_tokens": 1375,
+                },
+            )
+            self.assertGreaterEqual(first["request_usage"]["elapsed_seconds"], 0)
+            self.assertTrue(first["run_report"]["checks"]["met_11_call_target"])
+            self.assertTrue(
+                first["run_report"]["checks"]["complete_usage_reporting"]
+            )
+            self.assertTrue(
+                first["run_report"]["checks"]["met_2_dollar_cost_ceiling"]
+            )
+            self.assertEqual(first["run_report"]["pricing"]["as_of"], "2026-07-27")
+            self.assertEqual(first["run_report"]["dollar_cost"], 0.003355)
+            self.assertTrue(
+                all(not artifact["repaired"] for artifact in first["page_artifacts"])
+            )
 
             for run_id in ("run-alpha", "run-beta"):
                 run_dir = artifacts_root / run_id
@@ -440,6 +485,7 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 source_pdf=SOURCE,
                 artifacts_root=artifacts_root,
                 run_id="passing-run",
+                pricing=PRICING,
                 max_retries=0,
             )
             reconstruct_prototype_document(
@@ -447,6 +493,7 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 source_pdf=SOURCE,
                 artifacts_root=artifacts_root,
                 run_id="mismatched-run",
+                pricing=PRICING,
                 max_retries=0,
             )
 
@@ -527,6 +574,81 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 if item["id"] == adjudication["id"]
             )
             self.assertEqual(decided_adjudication["decision"], "accepted")
+
+    def test_document_repairs_each_objectively_unusable_page_at_most_once(self) -> None:
+        responses: list[dict[str, Any]] = []
+        for _page in range(1, 12):
+            responses.extend([{"nodes": []}, page_response(warnings=[])])
+
+        with (
+            FakeVisionProvider(responses, expect_native_context=True) as provider,
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            result = reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=Path(directory),
+                run_id="repair-run",
+                pricing=PRICING,
+                max_retries=0,
+            )
+
+        self.assertEqual(len(provider.requests), 22)
+        self.assertTrue(all(item["repaired"] for item in result["page_artifacts"]))
+        self.assertEqual(
+            [call["purpose"] for call in result["provider_calls"]],
+            ["page-reconstruction", "objective-repair"] * 11,
+        )
+        self.assertFalse(result["run_report"]["checks"]["met_11_call_target"])
+        self.assertTrue(result["run_report"]["checks"]["met_22_call_ceiling"])
+
+    def test_document_stops_before_an_excess_provider_request(self) -> None:
+        invalid: dict[str, Any] = {"nodes": []}
+        responses = [
+            {"_http_status": 500},
+            invalid,
+            page_response(warnings=[]),
+            *[item for _page in range(2, 11) for item in (invalid, page_response(warnings=[]))],
+            invalid,
+        ]
+
+        with (
+            FakeVisionProvider(responses, expect_native_context=True) as provider,
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaisesRegex(RequestCeilingExceeded, "before exceeding"),
+        ):
+            reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=Path(directory),
+                run_id="ceiling-run",
+                pricing=PRICING,
+                max_retries=1,
+                retry_base_seconds=0,
+            )
+
+        self.assertEqual(len(provider.requests), 22)
+
+    def test_failed_objective_repair_is_not_retried(self) -> None:
+        with (
+            FakeVisionProvider(
+                [{"nodes": []}, {"_http_status": 500}, page_response()],
+                expect_native_context=True,
+            ) as provider,
+            tempfile.TemporaryDirectory() as directory,
+            self.assertRaisesRegex(RuntimeError, "page reconstruction failed"),
+        ):
+            reconstruct_prototype_document(
+                provider.config,
+                source_pdf=SOURCE,
+                artifacts_root=Path(directory),
+                run_id="failed-repair-run",
+                pricing=PRICING,
+                max_retries=3,
+                retry_base_seconds=0,
+            )
+
+        self.assertEqual(len(provider.requests), 2)
 
 
 if __name__ == "__main__":
