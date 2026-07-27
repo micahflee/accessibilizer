@@ -227,3 +227,23 @@ artifacts exclude API credentials, authorization headers, hidden reasoning, and
 provider HTTP traces. Pass a completed run directory to
 `replay_prototype_document()` to validate its recorded responses against the
 stored schema and reproduce every normalized page without provider access.
+
+Issue #75's deterministic evaluator compares that replay with the approved gold
+Review Record. Source-derived semantics and Logical Reading Order must match
+exactly, while wording differences in Spoken Math Alternatives and Informative
+Figure descriptions are queued for a Reviewer decision:
+
+```python
+from accessibilizer.prototype_evaluation import evaluate_prototype_fidelity
+from accessibilizer.review import load_yaml
+from accessibilizer.vision_prototype import replay_prototype_document
+
+replayed = replay_prototype_document(Path("prototype-runs/run-UUID"))
+gold = load_yaml(Path("testdata/gold-review-record.yaml").read_text())
+result = evaluate_prototype_fidelity(replayed, gold)
+```
+
+The result reports semantic fidelity failures separately from Conversion
+Warning recall and precision failures. Warning identity, wording, and geometry
+do not affect the comparison; the page/code pairs must match the approved gold
+Review Record exactly.
