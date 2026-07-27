@@ -215,4 +215,6 @@ counts. The `prompt/` directory stores the exact instructions and strict schema;
 each `pages/page-N/` directory independently stores its rendered input, native
 PDF text and geometry, schema-valid response, and normalized result. These
 artifacts exclude API credentials, authorization headers, hidden reasoning, and
-provider HTTP traces.
+provider HTTP traces. Pass a completed run directory to
+`replay_prototype_document()` to validate its recorded responses against the
+stored schema and reproduce every normalized page without provider access.

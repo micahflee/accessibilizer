@@ -12,8 +12,11 @@ import unittest
 from typing import Any
 
 from accessibilizer.provider import ProviderConfig
-from accessibilizer.vision_prototype import reconstruct_prototype_page
-from accessibilizer.vision_prototype import reconstruct_prototype_document
+from accessibilizer.vision_prototype import (
+    reconstruct_prototype_document,
+    reconstruct_prototype_page,
+    replay_prototype_document,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -311,6 +314,9 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
                 self.assertEqual(manifest["model"], "exact-model")
                 self.assertEqual(manifest["request_usage"]["actual_requests"], 11)
                 self.assertNotIn("authorization", json.dumps(manifest).lower())
+                replayed = replay_prototype_document(run_dir)
+                self.assertEqual(replayed["run_id"], run_id)
+                self.assertEqual(replayed["pages"], manifest["pages"])
                 self.assertTrue((run_dir / "prompt" / "system.txt").is_file())
                 self.assertTrue((run_dir / "prompt" / "page.txt").is_file())
                 self.assertTrue((run_dir / "prompt" / "schema.json").is_file())

@@ -714,3 +714,67 @@ def reconstruct_prototype_document(
     }
     _write_json(run_dir / "manifest.json", manifest)
     return manifest
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    value: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"prototype artifact must contain a JSON object: {path}")
+    return value
+
+
+def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
+    """Replay normalized document results from one credential-free artifact run."""
+    manifest = _read_json_object(run_dir / "manifest.json")
+    schema = _read_json_object(run_dir / "prompt" / "schema.json")
+    page_artifacts = manifest.get("page_artifacts")
+    if not isinstance(page_artifacts, list):
+        raise ValueError("prototype manifest page_artifacts must be an array")
+
+    replayed_pages: list[dict[str, Any]] = []
+    for expected_page, artifact in enumerate(page_artifacts, start=1):
+        if not isinstance(artifact, dict) or artifact.get("page") != expected_page:
+            raise ValueError("prototype manifest pages must be complete and ordered")
+        input_path = artifact.get("input")
+        response_path = artifact.get("response")
+        normalized_path = artifact.get("normalized")
+        if not all(
+            isinstance(path, str)
+            for path in (input_path, response_path, normalized_path)
+        ):
+            raise ValueError("prototype manifest artifact paths must be strings")
+        assert isinstance(input_path, str)
+        assert isinstance(response_path, str)
+        assert isinstance(normalized_path, str)
+        page_input = _read_json_object(run_dir / input_path)
+        response = _read_json_object(run_dir / response_path)
+        schema_errors = list(Draft202012Validator(schema).iter_errors(response))
+        if schema_errors:
+            raise ValueError(
+                f"recorded prototype response is not schema-valid: "
+                f"{schema_errors[0].message}"
+            )
+        dimensions = page_input.get("page_dimensions")
+        if not isinstance(dimensions, dict):
+            raise ValueError("prototype page dimensions must be an object")
+        width = dimensions.get("width_points")
+        height = dimensions.get("height_points")
+        if not isinstance(width, (int, float)) or not isinstance(
+            height, (int, float)
+        ):
+            raise ValueError("prototype page dimensions must be numeric")
+        replayed = _normalize_page(
+            _validate_response(response),
+            page=expected_page,
+            dimensions=(float(width), float(height)),
+        )
+        recorded = _read_json_object(run_dir / normalized_path)
+        if replayed != recorded:
+            raise ValueError(
+                f"recorded normalized prototype page {expected_page} cannot be replayed"
+            )
+        replayed_pages.append(replayed)
+
+    if manifest.get("page_count") != len(replayed_pages):
+        raise ValueError("prototype manifest page count does not match its artifacts")
+    return {**manifest, "pages": replayed_pages}
