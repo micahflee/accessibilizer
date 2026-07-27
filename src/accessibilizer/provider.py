@@ -347,6 +347,7 @@ def request_chat_completion(
     retry_max_seconds: float = 8.0,
     sleep: Callable[[float], None] = time.sleep,
     on_retry: Callable[[int, float, str], None] | None = None,
+    on_attempt_complete: Callable[[int, float, Mapping[str, int]], None] | None = None,
 ) -> dict[str, Any]:
     """POST one chat completion with bounded retries and request accounting.
 
@@ -356,6 +357,9 @@ def request_chat_completion(
     ``on_retry`` is invoked before each backoff sleep with the upcoming attempt
     number, the delay, and a short, response-body-free reason, so a caller can
     surface retry progress without the raw error ever being logged.
+
+    ``on_attempt_complete`` receives metadata-only timing and reported usage for
+    every actual HTTP attempt, including failed attempts and retries.
     """
     if max_retries < 0:
         raise ValueError("provider max retries must not be negative")
@@ -377,11 +381,14 @@ def request_chat_completion(
     for attempt in range(max_retries + 1):
         if budget is not None:
             budget.reserve()
+        attempt_started = time.monotonic()
+        attempt_usage: dict[str, int] = {}
         try:
             with urlopen(request, timeout=60) as response:
                 result = json.loads(response.read())
             if budget is not None:
                 budget.record_reported_usage(result)
+            attempt_usage = _reported_usage(result)
             break
         except HTTPError as error:
             transient = error.code in {408, 409, 425, 429} or 500 <= error.code <= 599
@@ -392,6 +399,7 @@ def request_chat_completion(
                 error_response = None
             if budget is not None:
                 budget.record_reported_usage(error_response)
+            attempt_usage = _reported_usage(error_response)
             error.close()
             if not transient or attempt == max_retries:
                 raise RuntimeError(failure_message) from error
@@ -402,6 +410,13 @@ def request_chat_completion(
             reason = "connection error"
         except json.JSONDecodeError as error:
             raise RuntimeError(f"{failure_message}; provider returned invalid JSON") from error
+        finally:
+            if on_attempt_complete is not None:
+                on_attempt_complete(
+                    attempt + 1,
+                    time.monotonic() - attempt_started,
+                    attempt_usage,
+                )
         delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
         if on_retry is not None:
             on_retry(attempt + 1, delay, reason)
@@ -410,6 +425,19 @@ def request_chat_completion(
     if not isinstance(result, dict):
         raise RuntimeError(f"{failure_message}; provider returned an invalid response")
     return result
+
+
+def _reported_usage(response: object) -> dict[str, int]:
+    """Extract valid provider-reported token counts from one response."""
+    if not isinstance(response, dict) or not isinstance(response.get("usage"), dict):
+        return {}
+    return {
+        name: value
+        for name in ("prompt_tokens", "completion_tokens", "total_tokens")
+        if isinstance((value := response["usage"].get(name)), int)
+        and not isinstance(value, bool)
+        and value >= 0
+    }
 
 
 def parse_schema_content(response: dict[str, Any], failure_message: str) -> Any:

@@ -192,7 +192,7 @@ the gold Source PDF with one logical full-page request per page:
 from pathlib import Path
 
 from accessibilizer.provider import ProviderConfig
-from accessibilizer.vision_prototype import reconstruct_prototype_document
+from accessibilizer.vision_prototype import PrototypePricing, reconstruct_prototype_document
 
 reconstruct_prototype_document(
     ProviderConfig(
@@ -205,13 +205,22 @@ reconstruct_prototype_document(
         "testdata/Chapter 20_ Electric Current Resistance and Ohms Law.pdf"
     ),
     artifacts_root=Path("prototype-runs"),
+    pricing=PrototypePricing(
+        as_of="2026-07-27",  # Example only: supply the dated baseline rates used.
+        input_per_million_tokens=1.0,
+        output_per_million_tokens=10.0,
+    ),
 )
 ```
 
 Each invocation creates a fresh `run-<UUID>/` directory and refuses to reuse an
 existing identity. `manifest.json` records the exact model and versioned prompt,
 schema, Source PDF identity, normalized pages, token usage, latency, and request
-counts. The `prompt/` directory stores the exact instructions and strict schema;
+counts. It also records every provider attempt's purpose, page, elapsed time, and
+reported usage, plus pass/fail checks for the 11-call target, 22-call ceiling,
+complete usage reporting, and $2 cost ceiling. Cost uses the explicit dated OpenAI
+pricing supplied to the prototype; the provider-neutral production CLI does not
+infer cost. The `prompt/` directory stores the exact instructions and strict schema;
 each `pages/page-N/` directory independently stores its rendered input, native
 PDF text and geometry, schema-valid response, and normalized result. These
 artifacts exclude API credentials, authorization headers, hidden reasoning, and

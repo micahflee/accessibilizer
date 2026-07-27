@@ -9,6 +9,7 @@ approximate normalized geometry; deterministic code owns every canonical identit
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -16,7 +17,7 @@ import math
 from pathlib import Path
 import shutil
 import time
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 import uuid
 
 from jsonschema import Draft202012Validator
@@ -35,6 +36,38 @@ from accessibilizer.recognition import parse_pdf_text_bbox
 PROTOTYPE_PROMPT_VERSION = "1.0"
 PROTOTYPE_SCHEMA_VERSION = "1.0"
 PROTOTYPE_RENDER_DPI = 144
+
+
+@dataclass(frozen=True)
+class PrototypePricing:
+    """Dated OpenAI pricing supplied to an experiment, in dollars per 1M tokens."""
+
+    as_of: str
+    input_per_million_tokens: float
+    output_per_million_tokens: float
+
+    def __post_init__(self) -> None:
+        try:
+            datetime.fromisoformat(self.as_of)
+        except ValueError as error:
+            raise ValueError("prototype pricing date must be ISO 8601") from error
+        if not all(
+            math.isfinite(rate) and rate >= 0
+            for rate in (
+                self.input_per_million_tokens,
+                self.output_per_million_tokens,
+            )
+        ):
+            raise ValueError("prototype pricing rates must be finite and nonnegative")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "as_of": self.as_of,
+            "currency": "USD",
+            "unit_tokens": 1_000_000,
+            "input_per_million_tokens": self.input_per_million_tokens,
+            "output_per_million_tokens": self.output_per_million_tokens,
+        }
 
 SYSTEM_INSTRUCTIONS = (
     "You reconstruct one Source PDF page for Accessibilizer's isolated vision-only "
@@ -264,6 +297,7 @@ def _build_request(
     model: str,
     page_image: Path,
     native_pdf_words: Sequence[dict[str, object]],
+    repair_reason: str | None = None,
 ) -> dict[str, Any]:
     context = json.dumps(
         {"native_pdf_words": list(native_pdf_words)},
@@ -277,7 +311,17 @@ def _build_request(
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": PAGE_INSTRUCTIONS},
+                    {
+                        "type": "text",
+                        "text": PAGE_INSTRUCTIONS
+                        + (
+                            "\nYour prior response was objectively unusable because "
+                            f"{repair_reason}. Return one corrected complete response; do "
+                            "not reconsider otherwise valid semantic judgments."
+                            if repair_reason is not None
+                            else ""
+                        ),
+                    },
                     {
                         "type": "text",
                         "text": (
@@ -417,6 +461,8 @@ def _validate_response(response: object) -> dict[str, Any]:
     for node in nodes:
         assert isinstance(node, dict)
         _normalized_boxes(node["boxes"])
+        if node["type"] == "table":
+            _validate_table_spans(node)
     warnings = response["warnings"]
     assert isinstance(warnings, list)
     for warning in warnings:
@@ -431,6 +477,36 @@ def _validate_response(response: object) -> dict[str, Any]:
                 "prototype schema warning references an unknown node index"
             )
     return response
+
+
+def _validate_table_spans(table: Mapping[str, Any]) -> None:
+    """Reject table spans that cannot form one finite rectangular grid."""
+    occupied: set[tuple[int, int]] = set()
+    width = 0
+    rows = table["rows"]
+    for row_index, row in enumerate(rows):
+        column = 0
+        for cell in row["cells"]:
+            while (row_index, column) in occupied:
+                column += 1
+            row_span = cell["row_span"]
+            col_span = cell["col_span"]
+            if row_index + row_span > len(rows):
+                raise ValueError("prototype table row span exceeds its rows")
+            for covered_row in range(row_index, row_index + row_span):
+                for covered_column in range(column, column + col_span):
+                    position = (covered_row, covered_column)
+                    if position in occupied:
+                        raise ValueError("prototype table spans overlap")
+                    occupied.add(position)
+            column += col_span
+        width = max(width, column)
+    if any(
+        (row_index, column) not in occupied
+        for row_index in range(len(rows))
+        for column in range(width)
+    ):
+        raise ValueError("prototype table spans do not form a consistent grid")
 
 
 def _points_box(
@@ -595,11 +671,129 @@ def _write_json(path: Path, value: object) -> None:
     )
 
 
+def _request_page_with_objective_repair(
+    config: ProviderConfig,
+    *,
+    page: int,
+    page_image: Path,
+    native_pdf_words: Sequence[dict[str, object]],
+    budget: RequestBudget,
+    provider_calls: list[dict[str, Any]],
+    max_retries: int,
+    retry_base_seconds: float,
+    retry_max_seconds: float,
+) -> tuple[dict[str, Any], str | None]:
+    """Request one page, allowing one non-retried repair for unusable output."""
+    unusable_reason: str | None = None
+    for purpose in ("page-reconstruction", "objective-repair"):
+        payload = _build_request(
+            model=config.model,
+            page_image=page_image,
+            native_pdf_words=native_pdf_words,
+            repair_reason=unusable_reason,
+        )
+
+        def record_attempt(
+            attempt: int,
+            elapsed: float,
+            usage: Mapping[str, int],
+            *,
+            call_purpose: str = purpose,
+        ) -> None:
+            provider_calls.append(
+                {
+                    "purpose": call_purpose,
+                    "page": page,
+                    "attempt": attempt,
+                    "elapsed_seconds": round(elapsed, 6),
+                    "reported_token_usage": dict(usage),
+                }
+            )
+
+        try:
+            result = request_chat_completion(
+                config,
+                payload,
+                failure_message="vision-only prototype page reconstruction failed",
+                budget=budget,
+                max_retries=max_retries if purpose == "page-reconstruction" else 0,
+                retry_base_seconds=retry_base_seconds,
+                retry_max_seconds=retry_max_seconds,
+                on_attempt_complete=record_attempt,
+            )
+            return (
+                _validate_response(
+                    parse_schema_content(
+                        result,
+                        "vision-only prototype returned an invalid schema response",
+                    )
+                ),
+                unusable_reason,
+            )
+        except (RuntimeError, ValueError) as error:
+            if isinstance(error, RuntimeError) and "invalid JSON" not in str(error):
+                raise
+            if purpose == "objective-repair":
+                raise ValueError(
+                    f"page {page} remained objectively unusable after one repair"
+                ) from error
+            unusable_reason = str(error)
+    raise AssertionError("objective repair loop did not return or raise")
+
+
+def _prototype_run_report(
+    budget: RequestBudget,
+    provider_calls: Sequence[Mapping[str, Any]],
+    pricing: PrototypePricing,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build aggregate provider usage and resource acceptance checks."""
+    aggregate_usage = budget.as_dict()
+    prompt_tokens = budget.reported_token_usage.get("prompt_tokens")
+    completion_tokens = budget.reported_token_usage.get("completion_tokens")
+    complete_usage = all(
+        set(call["reported_token_usage"]) >= {
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+        }
+        for call in provider_calls
+    )
+    dollar_cost = (
+        round(
+            (
+                prompt_tokens * pricing.input_per_million_tokens
+                + completion_tokens * pricing.output_per_million_tokens
+            )
+            / 1_000_000,
+            6,
+        )
+        if complete_usage
+        and prompt_tokens is not None
+        and completion_tokens is not None
+        else None
+    )
+    aggregate_usage["elapsed_seconds"] = round(
+        sum(float(call["elapsed_seconds"]) for call in provider_calls), 6
+    )
+    report: dict[str, object] = {
+        "pricing": pricing.as_dict(),
+        "dollar_cost": dollar_cost,
+        "checks": {
+            "met_11_call_target": budget.actual_requests == 11,
+            "met_22_call_ceiling": budget.actual_requests <= 22,
+            "complete_usage_reporting": complete_usage,
+            "met_2_dollar_cost_ceiling": dollar_cost is not None and dollar_cost <= 2,
+        },
+    }
+    return aggregate_usage, report
+
+
 def reconstruct_prototype_document(
     config: ProviderConfig,
     *,
     source_pdf: Path,
     artifacts_root: Path,
+    pricing: PrototypePricing,
     run_id: str | None = None,
     include_native_pdf_context: bool = True,
     max_retries: int = 3,
@@ -627,9 +821,10 @@ def reconstruct_prototype_document(
     _write_json(prompt_dir / "schema.json", prototype_page_response_schema())
 
     page_count = _pdf_page_count(source_pdf)
-    budget = RequestBudget(estimated_requests=page_count, ceiling=page_count * 2)
+    budget = RequestBudget(estimated_requests=page_count, ceiling=22)
     normalized_pages: list[dict[str, Any]] = []
     page_artifacts: list[dict[str, object]] = []
+    provider_calls: list[dict[str, Any]] = []
 
     for page in range(1, page_count + 1):
         page_dir = pages_dir / f"page-{page}"
@@ -654,30 +849,21 @@ def reconstruct_prototype_document(
         }
         _write_json(page_dir / "input.json", page_input)
 
-        payload = _build_request(
-            model=config.model,
-            page_image=page_image,
-            native_pdf_words=native_pdf_words,
-        )
         usage_before = dict(budget.reported_token_usage)
         requests_before = budget.actual_requests
         started = time.monotonic()
-        result = request_chat_completion(
+        response, repair_reason = _request_page_with_objective_repair(
             config,
-            payload,
-            failure_message="vision-only prototype page reconstruction failed",
+            page=page,
+            page_image=page_image,
+            native_pdf_words=native_pdf_words,
             budget=budget,
+            provider_calls=provider_calls,
             max_retries=max_retries,
             retry_base_seconds=retry_base_seconds,
             retry_max_seconds=retry_max_seconds,
         )
         elapsed_seconds = time.monotonic() - started
-        response = _validate_response(
-            parse_schema_content(
-                result,
-                "vision-only prototype returned an invalid schema response",
-            )
-        )
         normalized = _normalize_page(response, page=page, dimensions=dimensions)
         _write_json(page_dir / "response.json", response)
         _write_json(page_dir / "normalized.json", normalized)
@@ -689,12 +875,17 @@ def reconstruct_prototype_document(
                 "response": f"pages/page-{page}/response.json",
                 "normalized": f"pages/page-{page}/normalized.json",
                 "logical_requests": 1,
+                "repaired": repair_reason is not None,
+                "repair_reason": repair_reason,
                 "provider_requests": budget.actual_requests - requests_before,
                 "reported_token_usage": budget.usage_since(usage_before),
                 "elapsed_seconds": round(elapsed_seconds, 6),
             }
         )
 
+    aggregate_usage, run_report = _prototype_run_report(
+        budget, provider_calls, pricing
+    )
     manifest: dict[str, Any] = {
         "run_id": identity,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -708,7 +899,9 @@ def reconstruct_prototype_document(
         "schema_version": PROTOTYPE_SCHEMA_VERSION,
         "render_dpi": PROTOTYPE_RENDER_DPI,
         "logical_requests": page_count,
-        "request_usage": budget.as_dict(),
+        "request_usage": aggregate_usage,
+        "provider_calls": provider_calls,
+        "run_report": run_report,
         "page_artifacts": page_artifacts,
         "pages": normalized_pages,
     }
