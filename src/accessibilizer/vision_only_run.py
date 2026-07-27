@@ -7,11 +7,14 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
+import tempfile
 from typing import Any, Callable, Sequence, cast
 import uuid
 
 from accessibilizer.checkpoint import atomic_write_json
 from accessibilizer.provider import ProviderConfig, RequestBudget
+from accessibilizer.process import run as run_process
+from accessibilizer.recognition import parse_pdf_text_bbox
 from accessibilizer.vision_only import (
     PAGE_SEMANTICS_12_SCHEMA_VERSION,
     build_page_request,
@@ -37,6 +40,88 @@ class VisionOnlyRun:
 
 
 Requester = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _pdf_page_count(source_pdf: Path) -> int:
+    result = run_process(["pdfinfo", str(source_pdf)])
+    if result.returncode:
+        raise RuntimeError(f"could not inspect Source PDF: {result.stderr.strip()}")
+    for line in result.stdout.splitlines():
+        if line.startswith("Pages:"):
+            return int(line.split(":", 1)[1])
+    raise RuntimeError("could not determine Source PDF page count")
+
+
+def _page_dimensions(source_pdf: Path, page: int) -> tuple[float, float]:
+    result = run_process([
+        "pdfinfo", "-f", str(page), "-l", str(page), "-box", str(source_pdf),
+    ])
+    if result.returncode:
+        raise RuntimeError(f"could not inspect Source PDF page {page}")
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if (
+            len(fields) == 7
+            and fields[:3] == ["Page", str(page), "size:"]
+            and fields[4] == "x"
+            and fields[6] == "pts"
+        ):
+            return float(fields[3]), float(fields[5])
+    raise RuntimeError(f"could not determine Source PDF page {page} dimensions")
+
+
+def _prepare_page_inputs(
+    source_pdf: Path, directory: Path, *, dpi: int
+) -> list[PageInput]:
+    pages: list[PageInput] = []
+    for page in range(1, _pdf_page_count(source_pdf) + 1):
+        image_base = directory / f"page-{page}"
+        rendered = run_process([
+            "pdftoppm", "-f", str(page), "-l", str(page), "-singlefile",
+            "-r", str(dpi), "-png", str(source_pdf), str(image_base),
+        ])
+        if rendered.returncode:
+            raise RuntimeError(
+                f"could not render Source PDF page {page}: {rendered.stderr.strip()}"
+            )
+        extracted = run_process([
+            "pdftotext", "-f", str(page), "-l", str(page), "-bbox",
+            str(source_pdf), "-",
+        ])
+        if extracted.returncode:
+            raise RuntimeError(
+                f"could not extract native PDF evidence for page {page}: "
+                f"{extracted.stderr.strip()}"
+            )
+        width, height = _page_dimensions(source_pdf, page)
+        pages.append(PageInput(
+            page,
+            image_base.with_suffix(".png"),
+            parse_pdf_text_bbox(extracted.stdout),
+            width,
+            height,
+        ))
+    return pages
+
+
+def run_source_pdf_vision_only(
+    config: ProviderConfig,
+    *,
+    source_pdf: Path,
+    runs_directory: Path,
+    requester: Requester | None = None,
+    render_dpi: int = 150,
+) -> VisionOnlyRun:
+    """Highest-level entry point: prepare and process every Source PDF page."""
+    with tempfile.TemporaryDirectory(prefix="accessibilizer-vision-only-") as temporary:
+        pages = _prepare_page_inputs(source_pdf, Path(temporary), dpi=render_dpi)
+        return run_document_vision_only(
+            config,
+            source_pdf=source_pdf,
+            pages=pages,
+            runs_directory=runs_directory,
+            requester=requester,
+        )
 
 
 def _sha256(path: Path) -> str:

@@ -247,6 +247,7 @@ class SchemaValidationTest(unittest.TestCase):
                 },
             ],
             "suspected_source_errors": [],
+            "suspected_prompt_injection": False,
         }
         
         validate_page_response_12(valid_response)
@@ -261,6 +262,7 @@ class SchemaValidationTest(unittest.TestCase):
                 "reading_order_is_unambiguous": True,
                 "nodes": [],
                 "suspected_source_errors": [],
+                "suspected_prompt_injection": False,
             },
             {
                 "title": "Test",
@@ -270,6 +272,7 @@ class SchemaValidationTest(unittest.TestCase):
                 "reading_order_is_unambiguous": True,
                 "nodes": [],
                 "suspected_source_errors": [],
+                "suspected_prompt_injection": False,
             },
         ]
         
@@ -303,6 +306,7 @@ class ReconstructPageVisionOnlyTest(unittest.TestCase):
                     },
                 ],
                 "suspected_source_errors": [],
+                "suspected_prompt_injection": False,
             }
             
             config = ProviderConfig(

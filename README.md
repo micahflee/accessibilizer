@@ -177,10 +177,12 @@ make typecheck
 ## Isolated vision-only full-document prototype
 
 Issue #73's experiment remains separate from production conversion. Its public
-entry point is `accessibilizer.vision_only_run.run_document_vision_only`. Supply
-the complete ordered set of `PageInput` values for the 11-page gold Source PDF
-and a distinct run is written below the requested runs directory. The function
-makes one full-page semantic request per page and no crop or verification calls.
+entry point is `accessibilizer.vision_only_run.run_source_pdf_vision_only`. Pass
+the 11-page gold Source PDF, provider configuration, and a runs directory; the
+function renders every page, extracts available native PDF text and geometry,
+and writes a distinct run. It makes one full-page semantic request per page and
+no crop or verification calls. Its optional `requester` argument accepts a
+replay provider for deterministic experiments and tests.
 
 Each UUID-named run contains `manifest.json` and four files per page: the exact
 provider request (including prompt, schema, and full-page image), schema-valid
