@@ -10,7 +10,7 @@ import base64
 import json
 import math
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from jsonschema import Draft202012Validator
 
@@ -568,6 +568,8 @@ def reconstruct_page_vision_only(
     max_retries: int = 3,
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
+    requester: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    exchange_recorder: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Reconstruct one page using vision-only prototype approach.
     
@@ -599,15 +601,22 @@ def reconstruct_page_vision_only(
         pdf_words=pdf_words,
     )
     
-    result = request_chat_completion(
-        config,
-        payload,
-        failure_message="vision-only page reconstruction failed",
-        budget=budget,
-        max_retries=max_retries,
-        retry_base_seconds=retry_base_seconds,
-        retry_max_seconds=retry_max_seconds,
-    )
+    if requester is None:
+        result = request_chat_completion(
+            config,
+            payload,
+            failure_message="vision-only page reconstruction failed",
+            budget=budget,
+            max_retries=max_retries,
+            retry_base_seconds=retry_base_seconds,
+            retry_max_seconds=retry_max_seconds,
+        )
+    else:
+        if budget is not None:
+            budget.reserve()
+        result = requester(payload)
+        if budget is not None:
+            budget.record_reported_usage(result)
     
     content = parse_schema_content(
         result, "page semantic reconstruction returned an invalid schema response"
@@ -616,6 +625,9 @@ def reconstruct_page_vision_only(
     validate_page_response_12(content)
     
     assert isinstance(content, dict)
+
+    if exchange_recorder is not None:
+        exchange_recorder(payload, content)
     
     # Extract source regions from nodes' boxes
     model_regions_dict: dict[tuple[float, float, float, float], str] = {}

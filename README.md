@@ -174,6 +174,22 @@ make test
 make typecheck
 ```
 
+## Isolated vision-only full-document prototype
+
+Issue #73's experiment remains separate from production conversion. Its public
+entry point is `accessibilizer.vision_only_run.run_document_vision_only`. Supply
+the complete ordered set of `PageInput` values for the 11-page gold Source PDF
+and a distinct run is written below the requested runs directory. The function
+makes one full-page semantic request per page and no crop or verification calls.
+
+Each UUID-named run contains `manifest.json` and four files per page: the exact
+provider request (including prompt, schema, and full-page image), schema-valid
+response content, normalized page result, and native PDF text/geometry inputs.
+The manifest records the source hash, exact endpoint and model, prompt, schema,
+page sequence, and document Logical Reading Order. It deliberately excludes
+credentials, headers, provider transport traces, and hidden reasoning. A new
+invocation always creates a new run and never reuses another run's response.
+
 The acceptance test invokes the public launcher and therefore requires Docker.
 The fast suite selects the deterministic `fake` recognition backend. Set
 `ACCESSIBILIZER_RUN_REAL_OCR=1` to additionally run the opt-in check that pinned
