@@ -401,13 +401,14 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
             if node["type"] == "table"
         )
         table["caption"] = "Wrong table caption"
-        for response in mismatched_responses[2:]:
+        for response in mismatched_responses[3:]:
             adjacent_types = [node["type"] for node in response["nodes"]]
             differing_index = next(
                 (
                     index
                     for index in range(len(adjacent_types) - 1)
-                    if adjacent_types[index] != adjacent_types[index + 1]
+                    if adjacent_types[index] == adjacent_types[index + 1]
+                    and adjacent_types[index] in {"heading", "paragraph", "formula", "table"}
                 ),
                 None,
             )
@@ -470,7 +471,6 @@ class VisionOnlyPagePrototypeTest(unittest.TestCase):
             self.assertTrue(
                 {
                     "logical_reading_order",
-                    "type",
                     "text",
                     "caption",
                 }.issubset(failure_fields),

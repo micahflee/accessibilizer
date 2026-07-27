@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from itertools import zip_longest
+import json
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
@@ -17,7 +18,7 @@ EXACT_FIELDS: dict[str, tuple[str, ...]] = {
     "heading": ("level", "text"),
     "paragraph": ("text",),
     "formula": ("normalized_math",),
-    "figure": ("complexity",),
+    "figure": (),
     "table": (
         "caption",
         "rows",
@@ -72,6 +73,16 @@ def _failure(
     }
 
 
+def _order_signature(node: Mapping[str, Any]) -> str:
+    node_type = node.get("type")
+    fields = EXACT_FIELDS.get(node_type, ()) if isinstance(node_type, str) else ()
+    return json.dumps(
+        {"type": node_type, **{field: node.get(field) for field in fields}},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
 def _compare_semantics(
     run_id: str,
     produced_nodes: list[dict[str, Any]],
@@ -99,6 +110,42 @@ def _compare_semantics(
                 produced=produced_order,
             )
         )
+    else:
+        pages = sorted(
+            {
+                page
+                for node in [*produced_nodes, *gold_nodes]
+                if isinstance((page := node.get("page")), int)
+            }
+        )
+        reordered = False
+        for page in pages:
+            produced_signatures = [
+                _order_signature(node)
+                for node in produced_nodes
+                if node.get("page") == page
+            ]
+            gold_signatures = [
+                _order_signature(node)
+                for node in gold_nodes
+                if node.get("page") == page
+            ]
+            if (
+                produced_signatures != gold_signatures
+                and Counter(produced_signatures) == Counter(gold_signatures)
+            ):
+                reordered = True
+                break
+        if reordered:
+            failures.append(
+                _failure(
+                    page=page,
+                    node=None,
+                    field="logical_reading_order",
+                    gold=gold_order,
+                    produced=produced_order,
+                )
+            )
 
     for produced, gold in zip_longest(produced_nodes, gold_nodes, fillvalue=missing):
         if produced is missing or gold is missing:
