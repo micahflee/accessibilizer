@@ -1,0 +1,365 @@
+{
+  "candidates": [],
+  "page": 8,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn sinusoidal voltage graph. The vertical axis is V and the horizontal axis is t (s). Dashed horizontal lines mark +V₀ and −V₀. An orange bracket beneath the waveform marks 1 cycle.",
+      "id": "page-8-s0001",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0001"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0002",
+      "normalized_math": "V = V_0\\sin(\\omega t)",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0002"
+      ],
+      "spoken_math_alternative": "V equals V sub zero times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0003",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0004"
+      ],
+      "text": "Peak voltage: V₀",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0004",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0005"
+      ],
+      "text": "ω is angular frequency (rad/s)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0005",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0006"
+      ],
+      "text": "(standard) f = 60 Hz (cycle/s)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0006",
+      "normalized_math": "\\omega = 2\\pi f",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0007"
+      ],
+      "spoken_math_alternative": "Omega equals two pi f.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0007",
+      "level": 2,
+      "page": 8,
+      "source_regions": [
+        "page-8-r0008"
+      ],
+      "text": "Ex  Convert 60 Hz to ω:",
+      "type": "heading"
+    },
+    {
+      "id": "page-8-s0008",
+      "normalized_math": "\\left(60\\,\\frac{\\mathrm{cycles}}{\\mathrm{s}}\\right)\\left(\\frac{2\\pi\\,\\mathrm{rad}}{\\mathrm{cycle}}\\right)=377\\,\\frac{\\mathrm{rad}}{\\mathrm{s}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0009"
+      ],
+      "spoken_math_alternative": "Sixty cycles per second times two pi radians per cycle equals three hundred seventy-seven radians per second.",
+      "type": "formula"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn series circuit loop containing a resistor on the left, a capacitor at the top, and a sinusoidal AC source symbol at the lower right. An arrow points to the source with the caption “circuit symbol for AC voltage source.”",
+      "id": "page-8-s0009",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0003"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0010",
+      "level": 2,
+      "page": 8,
+      "source_regions": [
+        "page-8-r0011"
+      ],
+      "text": "“Average” voltage:",
+      "type": "heading"
+    },
+    {
+      "id": "page-8-s0011",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\sqrt{\\overline{V^2}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0010"
+      ],
+      "spoken_math_alternative": "V R M S equals the square root of the average of V squared.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0012",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0012"
+      ],
+      "text": "FACT: the average value of sin² θ (or cos² θ) over a cycle is 1/2.",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn graph with vertical axis y, horizontal axis t, and a vertical value marker at 1. A sequence of rounded, mostly nonnegative humps begins at zero and is labeled “Sin(ωt).”",
+      "id": "page-8-s0013",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0013"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0014",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0014"
+      ],
+      "text": "“average” →",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0015",
+      "normalized_math": "\\left\\langle\\sin^2(\\omega t)\\right\\rangle=\\frac{1}{2}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0015"
+      ],
+      "spoken_math_alternative": "The average of sine squared of omega t equals one half.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0016",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\left(\\overline{V_0^2\\sin^2(\\omega t)}\\right)^{1/2}=\\left(V_0^2\\left(\\frac{1}{2}\\right)\\right)^{1/2}=\\frac{1}{\\sqrt{2}}V_0",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0017"
+      ],
+      "spoken_math_alternative": "V R M S equals the square root of the average of V sub zero squared times sine squared of omega t, which equals the square root of V sub zero squared times one half, which equals V sub zero divided by the square root of two.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0017",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\frac{V_0}{\\sqrt{2}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0016"
+      ],
+      "spoken_math_alternative": "V R M S equals V sub zero divided by the square root of two.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        50.796,
+        0.80325,
+        343.944,
+        150.20775
+      ],
+      "id": "page-8-r0001",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        375.156,
+        45.78525,
+        502.452,
+        77.91525
+      ],
+      "id": "page-8-r0002",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        460.836,
+        128.52,
+        589.968,
+        310.0545
+      ],
+      "id": "page-8-r0003",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        118.728,
+        171.09225,
+        263.772,
+        195.18975
+      ],
+      "id": "page-8-r0004",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        110.16,
+        208.845,
+        418.608,
+        237.762
+      ],
+      "id": "page-8-r0005",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        97.92,
+        251.41725,
+        361.692,
+        280.33425
+      ],
+      "id": "page-8-r0006",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        204.408,
+        288.36675,
+        292.536,
+        324.513
+      ],
+      "id": "page-8-r0007",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        76.5,
+        330.939,
+        295.596,
+        352.62675
+      ],
+      "id": "page-8-r0008",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        116.28,
+        359.05275,
+        373.932,
+        396.00225
+      ],
+      "id": "page-8-r0009",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        202.572,
+        415.28025,
+        337.824,
+        454.6395
+      ],
+      "id": "page-8-r0010",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        44.676,
+        417.69,
+        247.86,
+        449.82
+      ],
+      "id": "page-8-r0011",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        28.764,
+        467.4915,
+        458.388,
+        522.1125
+      ],
+      "id": "page-8-r0012",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        53.244,
+        518.8995,
+        430.848,
+        640.9935
+      ],
+      "id": "page-8-r0013",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        41.616,
+        661.878,
+        125.46,
+        694.81125
+      ],
+      "id": "page-8-r0014",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        125.46,
+        679.5495,
+        307.836,
+        715.69575
+      ],
+      "id": "page-8-r0015",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        476.748,
+        722.12175,
+        594.252,
+        782.3655
+      ],
+      "id": "page-8-r0016",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        44.676,
+        724.5315,
+        449.82,
+        779.95575
+      ],
+      "id": "page-8-r0017",
+      "page": 8
+    }
+  ],
+  "warnings": [
+    {
+      "code": "suspected-source-error",
+      "id": "page-8-w0001",
+      "message": "The graph is visibly labeled “Sin(ωt),” but its repeated mostly nonnegative humps and the surrounding discussion of sin² suggest that “sin²(ωt)” may have been intended. The visible label has been preserved.",
+      "page": 8,
+      "semantic_nodes": [
+        "page-8-s0013"
+      ],
+      "source_regions": [
+        "page-8-r0013"
+      ]
+    }
+  ]
+}

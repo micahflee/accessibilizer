@@ -1,0 +1,211 @@
+{
+  "candidates": [],
+  "page": 5,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-5-s0001",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0001"
+      ],
+      "text": "We say that “voltage drops” across a resistor.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-5-s0002",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0002"
+      ],
+      "text": "The current is the same at A and B!",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-5-s0003",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0003"
+      ],
+      "text": "The current is lower through this whole circuit due to the resistor.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-5-s0004",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0004"
+      ],
+      "text": "Mental model: traffic jam!",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "A closed circuit is drawn as a loop crowded with small rectangular blocks labeled e⁻, representing electrons. At the top of the loop, the blocks pass through a zigzag resistor labeled R, illustrating a traffic-jam mental model. A battery at the bottom is labeled V, with a magenta plus sign on the left and a blue minus sign on the right.",
+      "figure_alternative": "Traffic-jam model of electrons crowded around a closed circuit containing resistor R and voltage source V.",
+      "id": "page-5-s0005",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0005"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-5-s0006",
+      "level": 2,
+      "page": 5,
+      "source_regions": [
+        "page-5-r0007"
+      ],
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "id": "page-5-s0007",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0006"
+      ],
+      "text": "A flashlight bulb draws 300 mA from its 1.5 V battery. What’s the resistance of the bulb? If the battery degrades and only produces 1.2 V how would the current change?",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Drawing of a lit flashlight with a bulb and two batteries inside its casing.",
+      "id": "page-5-s0008",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0008"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-5-s0009",
+      "normalized_math": "I = V/R \\;\\to\\; R = V/I = (1.5\\,\\mathrm{V})/(0.30\\,\\mathrm{A}) = 5.0\\,\\Omega",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0009"
+      ],
+      "spoken_math_alternative": "Current equals voltage divided by resistance. Therefore, resistance equals voltage divided by current, which equals 1.5 volts divided by 0.30 amperes, or 5.0 ohms.",
+      "type": "formula"
+    },
+    {
+      "id": "page-5-s0010",
+      "normalized_math": "V \\to 1.2\\,\\mathrm{V}:\\quad I = (1.2\\,\\mathrm{V})/(5.0\\,\\Omega) = 0.24\\,\\mathrm{A} = 240\\,\\mathrm{mA}",
+      "page": 5,
+      "source_regions": [
+        "page-5-r0010"
+      ],
+      "spoken_math_alternative": "When the voltage changes to 1.2 volts, current equals 1.2 volts divided by 5.0 ohms, which is 0.24 amperes, or 240 milliamperes.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        86.904,
+        30.5235,
+        535.5,
+        55.42425
+      ],
+      "id": "page-5-r0001",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        105.264,
+        69.88275,
+        520.812,
+        103.61925
+      ],
+      "id": "page-5-r0002",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        83.232,
+        114.0615,
+        542.844,
+        162.2565
+      ],
+      "id": "page-5-r0003",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        123.012,
+        180.73125,
+        339.048,
+        202.419
+      ],
+      "id": "page-5-r0004",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        197.064,
+        214.46775,
+        435.744,
+        376.72425
+      ],
+      "id": "page-5-r0005",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        97.308,
+        447.41025,
+        574.668,
+        571.11075
+      ],
+      "id": "page-5-r0006",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        120.564,
+        448.2135,
+        190.332,
+        473.11425
+      ],
+      "id": "page-5-r0007",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        29.376,
+        550.22625,
+        96.084,
+        707.66325
+      ],
+      "id": "page-5-r0008",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        148.716,
+        582.35625,
+        495.108,
+        630.55125
+      ],
+      "id": "page-5-r0009",
+      "page": 5
+    },
+    {
+      "bbox_points": [
+        123.624,
+        667.50075,
+        521.424,
+        711.6795
+      ],
+      "id": "page-5-r0010",
+      "page": 5
+    }
+  ],
+  "warnings": []
+}

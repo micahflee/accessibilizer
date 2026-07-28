@@ -1,0 +1,336 @@
+{
+  "candidates": [],
+  "page": 6,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-6-s0001",
+      "level": 1,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0001"
+      ],
+      "text": "Example : Speaker wires.",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0002",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0004"
+      ],
+      "text": "Suppose you want to connect your stereo to remote speakers. (a) If each wire must be 20 m long, what diameter copper wire should you use to keep the resistance less than 0.10 Ω per wire? (b) If the current to each speaker is 4.0 A, what is the potential difference, or voltage drop, across each wire?",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Illustration of a stereo connected to two remote speakers. Each speaker is connected by a wire labeled 20 m.",
+      "id": "page-6-s0003",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0002"
+      ],
+      "type": "figure"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Circuit schematic showing a voltage source V driving current I around a loop through the resistance R of the wiring and a speaker. Current arrows point clockwise.",
+      "id": "page-6-s0004",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0007"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-6-s0005",
+      "normalized_math": "\\text{(a)}\\quad \\rho_{\\mathrm{Cu}}=1.68\\times10^{-9}\\ \\Omega\\cdot\\mathrm{m},\\qquad L=20\\ \\mathrm{m},\\qquad R=0.10\\ \\Omega;\\quad A=\\pi r^2=\\pi\\left(\\frac d2\\right)^2;\\quad R=\\rho\\frac{L}{A}=\\frac{4\\rho L}{\\pi d^2}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0005"
+      ],
+      "spoken_math_alternative": "Part a. The resistivity of copper equals 1.68 times 10 to the negative 9 ohm meters. L equals 20 meters, and R equals 0.10 ohm. Area equals pi r squared, which equals pi times d over 2 squared. Resistance equals rho L over A, which equals 4 rho L over pi d squared.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0006",
+      "normalized_math": "\\Rightarrow d^2>\\frac{4\\rho L}{\\pi R}\\Rightarrow d>\\left(\\frac{4\\rho L}{\\pi R}\\right)^{1/2}=\\left[\\frac{4(1.68\\times10^{-8}\\ \\Omega\\cdot\\mathrm{m})(20\\ \\mathrm{m})}{\\pi(0.10\\ \\Omega)}\\right]^{1/2}=2.1\\ \\mathrm{mm}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0009"
+      ],
+      "spoken_math_alternative": "Therefore d squared is greater than 4 rho L over pi R, so d is greater than the square root of 4 rho L over pi R. Substitution using 1.68 times 10 to the negative 8 ohm meters, 20 meters, and 0.10 ohm gives 2.1 millimeters.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0007",
+      "normalized_math": "\\text{(b)}\\quad V=IR=(4.0\\ \\mathrm{A})(0.10\\ \\Omega)\\Rightarrow V_R=0.400\\ \\mathrm{V}=400\\ \\mathrm{mV}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0003"
+      ],
+      "spoken_math_alternative": "Part b. V equals I R, which equals 4.0 amperes times 0.10 ohm. Therefore the voltage across the resistance is 0.400 volt, or 400 millivolts. Unit annotations identify amperes as coulombs per second and ohms as volts per ampere.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0008",
+      "level": 1,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0011"
+      ],
+      "text": "Electrical Energy & Power",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0009",
+      "normalized_math": "\\mathrm{Power}=\\frac{\\mathrm{Energy}}{\\mathrm{time}}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0012"
+      ],
+      "spoken_math_alternative": "Power equals energy divided by time.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0010",
+      "level": 2,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0014"
+      ],
+      "text": "Electrical energy:",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0011",
+      "normalized_math": "U=qV",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0015"
+      ],
+      "spoken_math_alternative": "U equals q V.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0012",
+      "normalized_math": "P=\\frac{(\\mathrm{charge})(\\mathrm{Voltage})}{\\mathrm{time}}=IV",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0013"
+      ],
+      "spoken_math_alternative": "Power equals charge times voltage divided by time, which equals current times voltage.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0013",
+      "normalized_math": "P=IV",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0016"
+      ],
+      "spoken_math_alternative": "Power equals current times voltage.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        26.928,
+        16.065,
+        184.824,
+        32.13
+      ],
+      "id": "page-6-r0001",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        206.244,
+        20.08125,
+        327.42,
+        183.94425
+      ],
+      "id": "page-6-r0002",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        368.424,
+        23.29425,
+        594.864,
+        169.48575
+      ],
+      "id": "page-6-r0003",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        26.928,
+        39.35925,
+        206.244,
+        200.00925
+      ],
+      "id": "page-6-r0004",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        274.788,
+        229.7295,
+        541.62,
+        390.3795
+      ],
+      "id": "page-6-r0005",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        422.28,
+        229.7295,
+        481.644,
+        267.48225
+      ],
+      "id": "page-6-r0006",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        23.256,
+        230.53275,
+        234.396,
+        404.838
+      ],
+      "id": "page-6-r0007",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        23.256,
+        230.53275,
+        577.728,
+        491.589
+      ],
+      "id": "page-6-r0008",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        68.544,
+        412.8705,
+        577.728,
+        491.589
+      ],
+      "id": "page-6-r0009",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        334.764,
+        424.91925,
+        515.304,
+        472.311
+      ],
+      "id": "page-6-r0010",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        45.9,
+        511.67025,
+        323.748,
+        547.01325
+      ],
+      "id": "page-6-r0011",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        108.936,
+        553.43925,
+        274.788,
+        599.2245
+      ],
+      "id": "page-6-r0012",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        266.22,
+        562.275,
+        570.384,
+        689.99175
+      ],
+      "id": "page-6-r0013",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        65.484,
+        626.535,
+        206.244,
+        649.82925
+      ],
+      "id": "page-6-r0014",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        104.04,
+        652.239,
+        180.54,
+        690.795
+      ],
+      "id": "page-6-r0015",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        225.216,
+        714.8925,
+        335.376,
+        769.5135
+      ],
+      "id": "page-6-r0016",
+      "page": 6
+    }
+  ],
+  "warnings": [
+    {
+      "code": "suspected-source-error",
+      "id": "page-6-w0001",
+      "message": "The stated copper resistivity in part (a) appears as 1.68 × 10^-9 Ω·m, but the numerical substitution on the following line uses 1.68 × 10^-8 Ω·m.",
+      "page": 6,
+      "semantic_nodes": [
+        "page-6-s0005",
+        "page-6-s0006"
+      ],
+      "source_regions": [
+        "page-6-r0006",
+        "page-6-r0010"
+      ]
+    },
+    {
+      "code": "ambiguous-reading-order",
+      "id": "page-6-w0002",
+      "message": "Part (b) is positioned above part (a), creating a conflict between spatial top-to-bottom order and the semantic order indicated by the part labels. The nodes are ordered semantically as (a) followed by (b).",
+      "page": 6,
+      "semantic_nodes": [
+        "page-6-s0004",
+        "page-6-s0005",
+        "page-6-s0006",
+        "page-6-s0007"
+      ],
+      "source_regions": [
+        "page-6-r0003",
+        "page-6-r0008"
+      ]
+    }
+  ]
+}

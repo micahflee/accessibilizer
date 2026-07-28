@@ -1,0 +1,186 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.05,
+          0.019,
+          0.928,
+          0.058
+        ]
+      ],
+      "level": 1,
+      "text": "Chapter 20: Current, Resistance, Ohm’s Law, Power, AC/DC",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.081,
+          0.088,
+          0.427,
+          0.341
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn simple circuit consisting of a battery on the left connected by a rectangular wire loop. The battery’s upper terminal is marked positive and its lower terminal negative; an orange V labels the voltage. Blue arrows marked I show conventional current moving clockwise around the loop. Black arrows and e⁻ labels show electrons moving in the opposite direction, counterclockwise, including downward through the battery.",
+      "figure_alternative": "Diagram of a battery circuit contrasting clockwise conventional current with counterclockwise electron flow.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.466,
+          0.121,
+          0.947,
+          0.232
+        ]
+      ],
+      "text": "Electrical current (I) is the rate of flow of positive charge.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.548,
+          0.247,
+          0.791,
+          0.295
+        ]
+      ],
+      "normalized_math": "I = Q/\\Delta t = Q/t",
+      "spoken_math_alternative": "I equals Q divided by delta t, which equals Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.448,
+          0.327,
+          0.965,
+          0.465
+        ]
+      ],
+      "text": "It’s direction (from DC, or direct current, voltage) is opposite the “flow” of electrons: from + to −.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.055,
+          0.447,
+          0.309,
+          0.482
+        ]
+      ],
+      "level": 2,
+      "text": "Units of current",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.091,
+          0.493,
+          0.281,
+          0.527
+        ]
+      ],
+      "text": "Amperes (A).",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.126,
+          0.535,
+          0.229,
+          0.553
+        ]
+      ],
+      "text": "SI base unit",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.325,
+          0.483,
+          0.493,
+          0.532
+        ]
+      ],
+      "normalized_math": "[A] = C/s",
+      "spoken_math_alternative": "The unit of amperes equals coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.548,
+          0.492,
+          0.924,
+          0.531
+        ]
+      ],
+      "text": "(Also known as “amps”).",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.126,
+          0.605,
+          0.799,
+          0.642
+        ]
+      ],
+      "level": 2,
+      "text": "Electric fields in a Simple Circuit (1962)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.249,
+          0.67,
+          0.725,
+          0.953
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Annotated grayscale photograph of a simple circuit or conductor arrangement with two leads entering from above and curved field patterns visible around and within the conductor. A left callout points into the conductor and reads, “Internal electric field: constant magnitude and parallel to the axis of the conductor.” A right callout points outside it and reads, “External electric field: Produced by the surface charges.”",
+      "figure_alternative": "Annotated photograph comparing the internal electric field along a conductor with the external electric field produced by surface charges.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.243,
+          0.963,
+          0.558,
+          0.977
+        ]
+      ],
+      "text": "Photograph from Jefimenko (1962: 20). Annotations added",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.473,
+          0.329,
+          0.552,
+          0.358
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The handwritten “It’s direction” appears to use the contraction “It’s” where the possessive “Its” was likely intended; the source wording has been preserved.",
+      "node_indices": [
+        4
+      ]
+    }
+  ]
+}

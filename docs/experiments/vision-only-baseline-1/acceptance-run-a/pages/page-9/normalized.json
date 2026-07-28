@@ -1,0 +1,352 @@
+{
+  "candidates": [],
+  "page": 9,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-9-s0001",
+      "level": 1,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0001"
+      ],
+      "text": "Current also “alternates” in AC Voltage:",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0002",
+      "normalized_math": "I = \\frac{V}{R} \\Rightarrow I = \\frac{V_0}{R}\\sin(\\omega t)",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0002"
+      ],
+      "spoken_math_alternative": "I equals V over R, which implies I equals V naught over R times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0003",
+      "normalized_math": "I = I_0\\sin(\\omega t)",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0004"
+      ],
+      "spoken_math_alternative": "I equals I naught times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0004",
+      "normalized_math": "I_0 = \\frac{V_0}{R}\\quad\\text{(peak current)}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0003"
+      ],
+      "spoken_math_alternative": "I naught equals V naught over R, the peak current.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0005",
+      "normalized_math": "I_{\\mathrm{RMS}} = \\frac{1}{\\sqrt{2}}I_0",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0005"
+      ],
+      "spoken_math_alternative": "I R M S equals one over the square root of two times I naught.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0006",
+      "level": 2,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0006"
+      ],
+      "text": "Power (alternating voltage)",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0007",
+      "normalized_math": "P_{\\mathrm{AVG}} = I_{\\mathrm{RMS}}V_{\\mathrm{RMS}}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0009"
+      ],
+      "spoken_math_alternative": "Average power equals R M S current times R M S voltage.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0008",
+      "normalized_math": "P_{\\mathrm{AVG}} = I_{\\mathrm{RMS}}^2R",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0008"
+      ],
+      "spoken_math_alternative": "Average power equals R M S current squared times R.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0009",
+      "normalized_math": "P_{\\mathrm{AVG}} = \\frac{V_{\\mathrm{RMS}}^2}{R}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0007"
+      ],
+      "spoken_math_alternative": "Average power equals R M S voltage squared over R.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0010",
+      "level": 1,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0010"
+      ],
+      "text": "Electron Drift Velocity",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0011",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0011"
+      ],
+      "text": "MISCONCEPTION #2: electrons travel near the speed of light",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-9-s0012",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0012"
+      ],
+      "text": "Reality: E⃗ fields propagate near the speed of light!",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-9-s0013",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0013"
+      ],
+      "text": "electrons (as current) are hella slow in electrical circuits ...",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "A horizontal cylindrical conductor segment is labeled A at its left end and dx beneath a short section. Above it, an arrow labeled I points to the right. Inside it, a blue arrow labeled E points to the right.",
+      "figure_alternative": "Conductor diagram showing current I and electric field E directed right, with cross-sectional area A and segment length dx.",
+      "id": "page-9-s0014",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0014"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-9-s0015",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0015"
+      ],
+      "text": "e⁻ travel randomly but with average ‘drift’ opposing current.",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "An annotated current relation reads I = (e)(n)(A)v sub r. Arrows identify e as elementary charge, n as the number of electrons per volume, A as cross-sectional area, and v sub r as drift velocity.",
+      "figure_alternative": "Annotated current equation identifying elementary charge, electron number density, cross-sectional area, and drift velocity.",
+      "id": "page-9-s0016",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0016"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-9-s0017",
+      "normalized_math": "I = (e)(n)(A)v_r",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0017"
+      ],
+      "spoken_math_alternative": "I equals e times n times A times v sub r.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        85.68,
+        9.639,
+        443.088,
+        35.343
+      ],
+      "id": "page-9-r0001",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        110.772,
+        43.3755,
+        401.472,
+        81.12825
+      ],
+      "id": "page-9-r0002",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        301.716,
+        87.55425,
+        487.764,
+        132.53625
+      ],
+      "id": "page-9-r0003",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        126.684,
+        95.58675,
+        273.564,
+        132.53625
+      ],
+      "id": "page-9-r0004",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        194.004,
+        135.74925,
+        329.868,
+        179.12475
+      ],
+      "id": "page-9-r0005",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        85.68,
+        191.97675,
+        324.972,
+        217.68075
+      ],
+      "id": "page-9-r0006",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        394.128,
+        223.3035,
+        490.824,
+        276.318
+      ],
+      "id": "page-9-r0007",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        250.92,
+        232.9425,
+        362.304,
+        276.318
+      ],
+      "id": "page-9-r0008",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        71.604,
+        233.74575,
+        213.588,
+        276.318
+      ],
+      "id": "page-9-r0009",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        61.2,
+        326.92275,
+        325.584,
+        371.90475
+      ],
+      "id": "page-9-r0010",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        39.78,
+        387.96975,
+        502.452,
+        415.28025
+      ],
+      "id": "page-9-r0011",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        64.872,
+        416.88675,
+        507.96,
+        446.607
+      ],
+      "id": "page-9-r0012",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        51.408,
+        450.62325,
+        519.588,
+        477.1305
+      ],
+      "id": "page-9-r0013",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        160.956,
+        477.1305,
+        374.544,
+        543.80025
+      ],
+      "id": "page-9-r0014",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        395.964,
+        497.21175,
+        580.176,
+        592.7985
+      ],
+      "id": "page-9-r0015",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        121.176,
+        608.06025,
+        462.06,
+        747.82575
+      ],
+      "id": "page-9-r0016",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        123.012,
+        632.961,
+        293.76,
+        681.156
+      ],
+      "id": "page-9-r0017",
+      "page": 9
+    }
+  ],
+  "warnings": []
+}

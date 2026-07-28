@@ -1,0 +1,293 @@
+{
+  "candidates": [],
+  "page": 1,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-1-s0001",
+      "level": 1,
+      "page": 1,
+      "source_regions": [
+        "page-1-r0001"
+      ],
+      "text": "Chapter 20: Current, Resistance, Ohm’s Law, Power, AC/DC",
+      "type": "heading"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn simple circuit consisting of a battery on the left connected by a rectangular wire loop. The battery’s upper terminal is marked positive and its lower terminal negative; an orange V labels the voltage. Blue arrows marked I show conventional current moving clockwise around the loop. Black arrows and e⁻ labels show electrons moving in the opposite direction, counterclockwise, including downward through the battery.",
+      "figure_alternative": "Diagram of a battery circuit contrasting clockwise conventional current with counterclockwise electron flow.",
+      "id": "page-1-s0002",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0002"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-1-s0003",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0003"
+      ],
+      "text": "Electrical current (I) is the rate of flow of positive charge.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-1-s0004",
+      "normalized_math": "I = Q/\\Delta t = Q/t",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0004"
+      ],
+      "spoken_math_alternative": "I equals Q divided by delta t, which equals Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-1-s0005",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0005"
+      ],
+      "text": "It’s direction (from DC, or direct current, voltage) is opposite the “flow” of electrons: from + to −.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-1-s0006",
+      "level": 2,
+      "page": 1,
+      "source_regions": [
+        "page-1-r0007"
+      ],
+      "text": "Units of current",
+      "type": "heading"
+    },
+    {
+      "id": "page-1-s0007",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0010"
+      ],
+      "text": "Amperes (A).",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-1-s0008",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0011"
+      ],
+      "text": "SI base unit",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-1-s0009",
+      "normalized_math": "[A] = C/s",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0008"
+      ],
+      "spoken_math_alternative": "The unit of amperes equals coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-1-s0010",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0009"
+      ],
+      "text": "(Also known as “amps”).",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-1-s0011",
+      "level": 2,
+      "page": 1,
+      "source_regions": [
+        "page-1-r0012"
+      ],
+      "text": "Electric fields in a Simple Circuit (1962)",
+      "type": "heading"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Annotated grayscale photograph of a simple circuit or conductor arrangement with two leads entering from above and curved field patterns visible around and within the conductor. A left callout points into the conductor and reads, “Internal electric field: constant magnitude and parallel to the axis of the conductor.” A right callout points outside it and reads, “External electric field: Produced by the surface charges.”",
+      "figure_alternative": "Annotated photograph comparing the internal electric field along a conductor with the external electric field produced by surface charges.",
+      "id": "page-1-s0012",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0013"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-1-s0013",
+      "page": 1,
+      "source_regions": [
+        "page-1-r0014"
+      ],
+      "text": "Photograph from Jefimenko (1962: 20). Annotations added",
+      "type": "paragraph"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        30.6,
+        15.26175,
+        567.936,
+        46.5885
+      ],
+      "id": "page-1-r0001",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        49.572,
+        70.686,
+        261.324,
+        273.90825
+      ],
+      "id": "page-1-r0002",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        285.192,
+        97.19325,
+        579.564,
+        186.354
+      ],
+      "id": "page-1-r0003",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        335.376,
+        198.40275,
+        484.092,
+        236.95875
+      ],
+      "id": "page-1-r0004",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        274.176,
+        262.66275,
+        590.58,
+        373.51125
+      ],
+      "id": "page-1-r0005",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        289.476,
+        264.26925,
+        337.824,
+        287.5635
+      ],
+      "id": "page-1-r0006",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        33.66,
+        359.05275,
+        189.108,
+        387.1665
+      ],
+      "id": "page-1-r0007",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        198.9,
+        387.96975,
+        301.716,
+        427.329
+      ],
+      "id": "page-1-r0008",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        335.376,
+        395.199,
+        565.488,
+        426.52575
+      ],
+      "id": "page-1-r0009",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        55.692,
+        396.00225,
+        171.972,
+        423.31275
+      ],
+      "id": "page-1-r0010",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        77.112,
+        429.73875,
+        140.148,
+        444.19725
+      ],
+      "id": "page-1-r0011",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        77.112,
+        485.96625,
+        488.988,
+        515.6865
+      ],
+      "id": "page-1-r0012",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        152.388,
+        538.1775,
+        443.7,
+        765.49725
+      ],
+      "id": "page-1-r0013",
+      "page": 1
+    },
+    {
+      "bbox_points": [
+        148.716,
+        773.52975,
+        341.496,
+        784.77525
+      ],
+      "id": "page-1-r0014",
+      "page": 1
+    }
+  ],
+  "warnings": [
+    {
+      "code": "suspected-source-error",
+      "id": "page-1-w0001",
+      "message": "The handwritten “It’s direction” appears to use the contraction “It’s” where the possessive “Its” was likely intended; the source wording has been preserved.",
+      "page": 1,
+      "semantic_nodes": [
+        "page-1-s0005"
+      ],
+      "source_regions": [
+        "page-1-r0006"
+      ]
+    }
+  ]
+}

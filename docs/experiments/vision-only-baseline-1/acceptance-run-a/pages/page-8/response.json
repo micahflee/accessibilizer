@@ -1,0 +1,240 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.083,
+          0.001,
+          0.562,
+          0.187
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn sinusoidal voltage graph. The vertical axis is V and the horizontal axis is t (s). Dashed horizontal lines mark +V₀ and −V₀. An orange bracket beneath the waveform marks 1 cycle.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.613,
+          0.057,
+          0.821,
+          0.097
+        ]
+      ],
+      "normalized_math": "V = V_0\\sin(\\omega t)",
+      "spoken_math_alternative": "V equals V sub zero times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.194,
+          0.213,
+          0.431,
+          0.243
+        ]
+      ],
+      "text": "Peak voltage: V₀",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.18,
+          0.26,
+          0.684,
+          0.296
+        ]
+      ],
+      "text": "ω is angular frequency (rad/s)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.16,
+          0.313,
+          0.591,
+          0.349
+        ]
+      ],
+      "text": "(standard) f = 60 Hz (cycle/s)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.334,
+          0.359,
+          0.478,
+          0.404
+        ]
+      ],
+      "normalized_math": "\\omega = 2\\pi f",
+      "spoken_math_alternative": "Omega equals two pi f.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.125,
+          0.412,
+          0.483,
+          0.439
+        ]
+      ],
+      "level": 2,
+      "text": "Ex  Convert 60 Hz to ω:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.19,
+          0.447,
+          0.611,
+          0.493
+        ]
+      ],
+      "normalized_math": "\\left(60\\,\\frac{\\mathrm{cycles}}{\\mathrm{s}}\\right)\\left(\\frac{2\\pi\\,\\mathrm{rad}}{\\mathrm{cycle}}\\right)=377\\,\\frac{\\mathrm{rad}}{\\mathrm{s}}",
+      "spoken_math_alternative": "Sixty cycles per second times two pi radians per cycle equals three hundred seventy-seven radians per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.753,
+          0.16,
+          0.964,
+          0.386
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn series circuit loop containing a resistor on the left, a capacitor at the top, and a sinusoidal AC source symbol at the lower right. An arrow points to the source with the caption “circuit symbol for AC voltage source.”",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.073,
+          0.52,
+          0.405,
+          0.56
+        ]
+      ],
+      "level": 2,
+      "text": "“Average” voltage:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.331,
+          0.517,
+          0.552,
+          0.566
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\sqrt{\\overline{V^2}}",
+      "spoken_math_alternative": "V R M S equals the square root of the average of V squared.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.047,
+          0.582,
+          0.749,
+          0.65
+        ]
+      ],
+      "text": "FACT: the average value of sin² θ (or cos² θ) over a cycle is 1/2.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.087,
+          0.646,
+          0.704,
+          0.798
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn graph with vertical axis y, horizontal axis t, and a vertical value marker at 1. A sequence of rounded, mostly nonnegative humps begins at zero and is labeled “Sin(ωt).”",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.068,
+          0.824,
+          0.205,
+          0.865
+        ]
+      ],
+      "text": "“average” →",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.205,
+          0.846,
+          0.503,
+          0.891
+        ]
+      ],
+      "normalized_math": "\\left\\langle\\sin^2(\\omega t)\\right\\rangle=\\frac{1}{2}",
+      "spoken_math_alternative": "The average of sine squared of omega t equals one half.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.073,
+          0.902,
+          0.735,
+          0.971
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\left(\\overline{V_0^2\\sin^2(\\omega t)}\\right)^{1/2}=\\left(V_0^2\\left(\\frac{1}{2}\\right)\\right)^{1/2}=\\frac{1}{\\sqrt{2}}V_0",
+      "spoken_math_alternative": "V R M S equals the square root of the average of V sub zero squared times sine squared of omega t, which equals the square root of V sub zero squared times one half, which equals V sub zero divided by the square root of two.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.779,
+          0.899,
+          0.971,
+          0.974
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\frac{V_0}{\\sqrt{2}}",
+      "spoken_math_alternative": "V R M S equals V sub zero divided by the square root of two.",
+      "type": "formula"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.087,
+          0.646,
+          0.704,
+          0.798
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The graph is visibly labeled “Sin(ωt),” but its repeated mostly nonnegative humps and the surrounding discussion of sin² suggest that “sin²(ωt)” may have been intended. The visible label has been preserved.",
+      "node_indices": [
+        12
+      ]
+    }
+  ]
+}
