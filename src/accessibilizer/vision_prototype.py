@@ -671,6 +671,32 @@ def _write_json(path: Path, value: object) -> None:
     )
 
 
+def _recorded_response_identity(
+    response: Mapping[str, Any],
+    *,
+    run_id: object,
+    experiment_revision: object,
+    page: int,
+) -> str:
+    response_sha256 = hashlib.sha256(
+        json.dumps(
+            response, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "experiment_revision": experiment_revision,
+                "page": page,
+                "response_sha256": response_sha256,
+                "run_id": run_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def _request_page_with_objective_repair(
     config: ProviderConfig,
     *,
@@ -799,6 +825,7 @@ def reconstruct_prototype_document(
     max_retries: int = 3,
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
+    experiment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Reconstruct every Source PDF page as one isolated, auditable run."""
     identity = run_id or f"run-{uuid.uuid4()}"
@@ -839,6 +866,8 @@ def reconstruct_prototype_document(
         shutil.move(rendered_image, page_image)
         image_sha256 = hashlib.sha256(page_image.read_bytes()).hexdigest()
         page_input = {
+            "run_id": identity,
+            "experiment_revision": experiment.get("revision") if experiment else None,
             "page": page,
             "page_dimensions": {
                 "width_points": dimensions[0],
@@ -866,6 +895,12 @@ def reconstruct_prototype_document(
         elapsed_seconds = time.monotonic() - started
         normalized = _normalize_page(response, page=page, dimensions=dimensions)
         _write_json(page_dir / "response.json", response)
+        response_identity = _recorded_response_identity(
+            response,
+            run_id=identity,
+            experiment_revision=experiment.get("revision") if experiment else None,
+            page=page,
+        )
         _write_json(page_dir / "normalized.json", normalized)
         normalized_pages.append(normalized)
         page_artifacts.append(
@@ -873,6 +908,7 @@ def reconstruct_prototype_document(
                 "page": page,
                 "input": f"pages/page-{page}/input.json",
                 "response": f"pages/page-{page}/response.json",
+                "response_identity": response_identity,
                 "normalized": f"pages/page-{page}/normalized.json",
                 "logical_requests": 1,
                 "repaired": repair_reason is not None,
@@ -888,6 +924,7 @@ def reconstruct_prototype_document(
     )
     manifest: dict[str, Any] = {
         "run_id": identity,
+        "experiment": dict(experiment) if experiment else None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source_pdf": {
             "name": source_pdf.name,
@@ -895,6 +932,8 @@ def reconstruct_prototype_document(
         },
         "page_count": page_count,
         "model": config.model,
+        "provider_endpoint": config.base_url,
+        "provider_data_location": config.data_location,
         "prompt_version": PROTOTYPE_PROMPT_VERSION,
         "schema_version": PROTOTYPE_SCHEMA_VERSION,
         "render_dpi": PROTOTYPE_RENDER_DPI,
@@ -949,6 +988,20 @@ def replay_prototype_document(run_dir: Path) -> dict[str, Any]:
         assert isinstance(normalized_path, str)
         page_input = _read_json_object(_replay_artifact_path(run_dir, input_path))
         response = _read_json_object(_replay_artifact_path(run_dir, response_path))
+        if page_input.get("run_id") != manifest.get("run_id"):
+            raise ValueError("prototype page input belongs to another run identity")
+        experiment = manifest.get("experiment")
+        revision = experiment.get("revision") if isinstance(experiment, dict) else None
+        if page_input.get("experiment_revision") != revision:
+            raise ValueError("prototype page input belongs to another experiment revision")
+        expected_response_identity = _recorded_response_identity(
+            response,
+            run_id=manifest.get("run_id"),
+            experiment_revision=revision,
+            page=expected_page,
+        )
+        if artifact.get("response_identity") != expected_response_identity:
+            raise ValueError("prototype recorded response identity does not match this run")
         schema_errors = list(Draft202012Validator(schema).iter_errors(response))
         if schema_errors:
             raise ValueError(
