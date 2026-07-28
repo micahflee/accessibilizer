@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import threading
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -14,10 +15,24 @@ else:  # pragma: no cover - selected by the canonical Python 3.10 runtime
     import tomli as tomllib
 from typing import Any, Callable, Literal, Mapping, TypedDict, cast
 from urllib.error import HTTPError, URLError
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from accessibilizer.configuration import config_path, user_config_default
+from accessibilizer.events import ConversionInterrupted
+
+
+_INTERRUPTED = threading.Event()
+
+
+def reset_interruption() -> None:
+    _INTERRUPTED.clear()
+
+
+def request_interruption() -> None:
+    _INTERRUPTED.set()
 
 
 CAPABILITY_IMAGE = (
@@ -100,6 +115,9 @@ class RequestBudget:
         self._run_start_reported_total_tokens = reported_total_tokens
         self._run_start_requests_with_reported_total = requests_with_reported_total
         self._on_change = on_change
+        self._lock = threading.RLock()
+        self._thread_usage: dict[int, dict[str, int]] = {}
+        self._cooldown_until = 0.0
 
     def update_estimate(self, estimated_requests: int) -> None:
         if estimated_requests < 0:
@@ -108,16 +126,26 @@ class RequestBudget:
             self.estimated_requests = estimated_requests
             self._changed()
 
-    def reserve(self) -> None:
-        if self.actual_requests >= self.ceiling:
-            raise RequestCeilingExceeded(
-                f"conversion paused before exceeding request ceiling {self.ceiling}; "
-                "resume with a higher --max-requests value"
-            )
-        self.actual_requests += 1
-        self._changed()
+    def reserve(self) -> int:
+        """Atomically reserve and return a unique conversion request number."""
+        with self._lock:
+            if _INTERRUPTED.is_set():
+                raise ConversionInterrupted()
+            if self.actual_requests >= self.ceiling:
+                raise RequestCeilingExceeded(
+                    f"conversion paused before exceeding request ceiling {self.ceiling}; "
+                    "resume with a higher --max-requests value"
+                )
+            self.actual_requests += 1
+            request_number = self.actual_requests
+            self._changed()
+            return request_number
 
     def record_reported_usage(self, response: object) -> None:
+        with self._lock:
+            self._record_reported_usage(response)
+
+    def _record_reported_usage(self, response: object) -> None:
         if not isinstance(response, dict) or not isinstance(response.get("usage"), dict):
             return
         usage: dict[object, object] = response["usage"]
@@ -128,6 +156,8 @@ class RequestBudget:
                 self.reported_token_usage[name] = (
                     self.reported_token_usage.get(name, 0) + value
                 )
+                thread_usage = self._thread_usage.setdefault(threading.get_ident(), {})
+                thread_usage[name] = thread_usage.get(name, 0) + value
                 changed = True
         defensible_total: int | None = None
         if "total_tokens" in usage:
@@ -160,6 +190,10 @@ class RequestBudget:
             self._changed()
 
     def reported_token_summary(self) -> ReportedTokenUsage:
+        with self._lock:
+            return self._reported_token_summary()
+
+    def _reported_token_summary(self) -> ReportedTokenUsage:
         run_requests = self.actual_requests - self._run_start_actual_requests
         run_reported_requests = (
             self.requests_with_reported_total
@@ -194,21 +228,59 @@ class RequestBudget:
         Reported usage is cumulative over the whole conversion; a single
         request's contribution is the difference from a snapshot taken before it.
         """
-        return {
-            name: self.reported_token_usage[name] - before.get(name, 0)
-            for name in self.reported_token_usage
-            if self.reported_token_usage[name] - before.get(name, 0) > 0
-        }
+        with self._lock:
+            return {
+                name: self.reported_token_usage[name] - before.get(name, 0)
+                for name in self.reported_token_usage
+                if self.reported_token_usage[name] - before.get(name, 0) > 0
+            }
+
+    def thread_usage_snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._thread_usage.get(threading.get_ident(), {}))
+
+    def thread_usage_since(self, before: Mapping[str, int]) -> dict[str, int]:
+        with self._lock:
+            current = self._thread_usage.get(threading.get_ident(), {})
+            return {
+                name: value - before.get(name, 0)
+                for name, value in current.items()
+                if value - before.get(name, 0) > 0
+            }
+
+    def establish_cooldown(self, seconds: float) -> None:
+        with self._lock:
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + seconds)
+
+    def honor_cooldown(self, sleep: Callable[[float], None]) -> None:
+        while True:
+            with self._lock:
+                remaining = self._cooldown_until - time.monotonic()
+            if remaining <= 0:
+                return
+            if sleep is time.sleep:
+                if _INTERRUPTED.wait(remaining):
+                    raise ConversionInterrupted()
+                continue
+            before_sleep = time.monotonic()
+            sleep(remaining)
+            if time.monotonic() <= before_sleep:
+                # Deterministic test sleepers represent the requested passage
+                # of time without advancing the process monotonic clock.
+                return
+            # A concurrent 429 may have extended the shared deadline while this
+            # worker slept, so recheck before reserving/sending the next attempt.
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "actual_requests": self.actual_requests,
-            "estimated_requests": self.estimated_requests,
-            "reported_token_usage": dict(self.reported_token_usage),
-            "reported_total_tokens": self.reported_total_tokens,
-            "requests_with_reported_total": self.requests_with_reported_total,
-            "request_ceiling": self.ceiling,
-        }
+        with self._lock:
+            return {
+                "actual_requests": self.actual_requests,
+                "estimated_requests": self.estimated_requests,
+                "reported_token_usage": dict(self.reported_token_usage),
+                "reported_total_tokens": self.reported_total_tokens,
+                "requests_with_reported_total": self.requests_with_reported_total,
+                "request_ceiling": self.ceiling,
+            }
 
     def _changed(self) -> None:
         if self._on_change is not None:
@@ -348,6 +420,8 @@ def request_chat_completion(
     sleep: Callable[[float], None] = time.sleep,
     on_retry: Callable[[int, float, str], None] | None = None,
     on_attempt_complete: Callable[[int, float, Mapping[str, int]], None] | None = None,
+    reserved_request_number: int | None = None,
+    on_attempt_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     """POST one chat completion with bounded retries and request accounting.
 
@@ -379,8 +453,15 @@ def request_chat_completion(
     )
     result: Any = None
     for attempt in range(max_retries + 1):
+        if _INTERRUPTED.is_set():
+            raise ConversionInterrupted()
         if budget is not None:
-            budget.reserve()
+            budget.honor_cooldown(sleep)
+        request_number = reserved_request_number if attempt == 0 else None
+        if budget is not None and request_number is None:
+            request_number = budget.reserve()
+        if request_number is not None and on_attempt_start is not None:
+            on_attempt_start(request_number, attempt + 1)
         attempt_started = time.monotonic()
         attempt_usage: dict[str, int] = {}
         try:
@@ -404,6 +485,7 @@ def request_chat_completion(
             if not transient or attempt == max_retries:
                 raise RuntimeError(failure_message) from error
             reason = f"HTTP {code}"
+            retry_after = _retry_after_seconds(error.headers.get("Retry-After"))
         except (URLError, TimeoutError) as error:
             if attempt == max_retries:
                 raise RuntimeError(failure_message) from error
@@ -418,13 +500,37 @@ def request_chat_completion(
                     attempt_usage,
                 )
         delay = min(retry_base_seconds * (2**attempt), retry_max_seconds)
+        if reason == "HTTP 429" and retry_after is not None:
+            delay = retry_after
+        if reason == "HTTP 429" and budget is not None:
+            budget.establish_cooldown(delay)
         if on_retry is not None:
             on_retry(attempt + 1, delay, reason)
+        if reason == "HTTP 429" and budget is not None:
+            # The shared gate performs the wait at the beginning of the next
+            # attempt, so this worker and its peers observe the same cooldown.
+            continue
         if delay:
             sleep(delay)
     if not isinstance(result, dict):
         raise RuntimeError(f"{failure_message}; provider returned an invalid response")
     return result
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value.strip())
+        return max(0.0, seconds)
+    except ValueError:
+        try:
+            moment = parsedate_to_datetime(value)
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=timezone.utc)
+            return max(0.0, (moment - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
 
 
 def _reported_usage(response: object) -> dict[str, int]:
@@ -471,6 +577,7 @@ def check_capabilities(
     retry_max_seconds: float = 8.0,
     sleep: Callable[[float], None] = time.sleep,
     on_retry: Callable[[int, float, str], None] | None = None,
+    on_attempt_start: Callable[[int, int], None] | None = None,
 ) -> None:
     schema = {
         "type": "object",
@@ -514,6 +621,7 @@ def check_capabilities(
         retry_max_seconds=retry_max_seconds,
         sleep=sleep,
         on_retry=on_retry,
+        on_attempt_start=on_attempt_start,
     )
     checked = parse_schema_content(
         result, "provider capability check failed; provider returned an invalid schema response"

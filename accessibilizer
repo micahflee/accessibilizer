@@ -294,6 +294,7 @@ provider_api_key_env=
 provider_data_location=
 allow_remote_flag=
 max_requests=
+provider_concurrency=
 provider_max_retries=
 provider_retry_base_seconds=
 provider_retry_max_seconds=
@@ -308,6 +309,7 @@ while [ "$#" -gt 0 ]; do
         --provider-api-key-env) [ "$#" -ge 2 ] || operational_failure "--provider-api-key-env requires a value"; provider_api_key_env=$2; shift 2 ;;
         --provider-data-location) [ "$#" -ge 2 ] || operational_failure "--provider-data-location requires a value"; provider_data_location=$2; shift 2 ;;
         --max-requests) [ "$#" -ge 2 ] || operational_failure "--max-requests requires a value"; max_requests=$2; shift 2 ;;
+        --provider-concurrency) [ "$#" -ge 2 ] || operational_failure "--provider-concurrency requires a value"; provider_concurrency=$2; shift 2 ;;
         --provider-max-retries) [ "$#" -ge 2 ] || operational_failure "--provider-max-retries requires a value"; provider_max_retries=$2; shift 2 ;;
         --provider-retry-base-seconds) [ "$#" -ge 2 ] || operational_failure "--provider-retry-base-seconds requires a value"; provider_retry_base_seconds=$2; shift 2 ;;
         --provider-retry-max-seconds) [ "$#" -ge 2 ] || operational_failure "--provider-retry-max-seconds requires a value"; provider_retry_max_seconds=$2; shift 2 ;;
@@ -446,6 +448,7 @@ if [ -n "$provider_api_key_env" ]; then set -- "$@" --provider-api-key-env "$pro
 if [ -n "$provider_data_location" ]; then set -- "$@" --provider-data-location "$provider_data_location"; fi
 if [ -n "$allow_remote_flag" ]; then set -- "$@" --allow-remote; fi
 if [ -n "$max_requests" ]; then set -- "$@" --max-requests "$max_requests"; fi
+if [ -n "$provider_concurrency" ]; then set -- "$@" --provider-concurrency "$provider_concurrency"; fi
 if [ -n "$provider_max_retries" ]; then set -- "$@" --provider-max-retries "$provider_max_retries"; fi
 if [ -n "$provider_retry_base_seconds" ]; then set -- "$@" --provider-retry-base-seconds "$provider_retry_base_seconds"; fi
 if [ -n "$provider_retry_max_seconds" ]; then set -- "$@" --provider-retry-max-seconds "$provider_retry_max_seconds"; fi

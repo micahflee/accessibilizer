@@ -134,11 +134,17 @@ class ConversionTest(unittest.TestCase):
         resume: bool = False,
         verbose: bool = False,
         base_url: str | None = None,
+        provider_concurrency: int | None = None,
     ) -> list[str]:
         replacement_arguments = ["--replace"] if replace else []
         resume_arguments = ["--resume"] if resume else []
         verbose_arguments = ["--verbose"] if verbose else []
         page_arguments = ["--page", page] if page is not None else []
+        concurrency_arguments = (
+            ["--provider-concurrency", str(provider_concurrency)]
+            if provider_concurrency is not None
+            else []
+        )
         return [
             str(ROOT / "accessibilizer"),
             "convert",
@@ -152,6 +158,7 @@ class ConversionTest(unittest.TestCase):
             "acceptance-model-2026-07-19",
             "--provider-data-location",
             "local",
+            *concurrency_arguments,
             *replacement_arguments,
             *resume_arguments,
             *verbose_arguments,
@@ -179,6 +186,7 @@ class ConversionTest(unittest.TestCase):
         resume: bool = False,
         verbose: bool = False,
         base_url: str | None = None,
+        provider_concurrency: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             self.conversion_command(
@@ -189,6 +197,7 @@ class ConversionTest(unittest.TestCase):
                 resume=resume,
                 verbose=verbose,
                 base_url=base_url,
+                provider_concurrency=provider_concurrency,
             ),
             cwd=ROOT,
             text=True,
@@ -1391,6 +1400,178 @@ class ConversionTest(unittest.TestCase):
             # The whole-document output carries a bookmark outline for navigation.
             self.assertIn(b"/Outlines", (bundle / "output.pdf").read_bytes())
 
+    def test_page_reconstruction_overlaps_but_each_page_remains_sequential(self) -> None:
+        with (
+            FakeProvider(
+                page_response_delay=0.3,
+                usage={"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
+            ) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "concurrent.accessibilizer"
+            result = self.run_conversion(
+                SOURCE,
+                bundle,
+                page="1-3",
+                base_url=provider.base_url,
+                provider_concurrency=2,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            events = [
+                event
+                for event in read_event_lines(bundle / "conversion-events.jsonl")
+                if event["stage"] == "provider-reconstruction"
+            ]
+            page_starts = [
+                event for event in events
+                if event["state"] == "started"
+                and event["purpose"] == "page-reconstruction"
+            ]
+            first_completion = next(
+                index for index, event in enumerate(events) if event["state"] == "completed"
+            )
+            self.assertEqual({event["page"] for event in page_starts[:2]}, {1, 2})
+            self.assertEqual(provider.max_active_page_requests, 2)
+            self.assertGreaterEqual(
+                sum(event["state"] == "started" for event in events[:first_completion]),
+                2,
+            )
+            for page_number in (1, 2, 3):
+                page_events = [event for event in events if event.get("page") == page_number]
+                purposes = [
+                    event["purpose"] for event in page_events if event["state"] == "started"
+                ]
+                self.assertEqual(purposes[0], "page-reconstruction")
+                self.assertEqual(purposes[1:], ["region-verification"] * 3)
+                active = 0
+                for event in page_events:
+                    if event["state"] == "started":
+                        active += 1
+                    elif event["state"] in {"completed", "failed"}:
+                        active -= 1
+                    self.assertLessEqual(active, 1)
+            record = yaml.safe_load((bundle / "review-record.yaml").read_text())
+            self.assertEqual(record["pages"], [1, 2, 3])
+            completed_requests = [
+                event for event in events if event["state"] == "completed"
+            ]
+            self.assertTrue(completed_requests)
+            self.assertTrue(
+                all(event.get("token_usage", {}).get("total_tokens") == 7 for event in completed_requests)
+            )
+            usage = json.loads((bundle / "request-usage.json").read_text())
+            self.assertEqual(usage["actual_requests"], 13)
+            self.assertEqual(usage["reported_total_tokens"], 91)
+            self.assertEqual(usage["reported_token_usage"]["total_tokens"], 91)
+
+    def test_page_failure_drains_active_success_and_resume_reuses_its_checkpoint(self) -> None:
+        with (
+            FakeProvider(page_response_delay=0.3, failed_page=2) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            temporary = Path(temporary_directory)
+            bundle = temporary / "failed-page.accessibilizer"
+            failed = self.run_conversion(
+                SOURCE,
+                bundle,
+                page="1-3",
+                base_url=provider.base_url,
+                provider_concurrency=2,
+            )
+
+            self.assertEqual(failed.returncode, 1)
+            workspace = temporary / ".failed-page.accessibilizer.in-progress"
+            self.assertTrue((workspace / "page-semantics" / "page-1.json").is_file())
+            self.assertFalse((workspace / "page-semantics" / "page-3.json").exists())
+
+            provider.failed_page = None
+            resumed = self.run_conversion(
+                SOURCE,
+                bundle,
+                page="1-3",
+                resume=True,
+                base_url=provider.base_url,
+                provider_concurrency=2,
+            )
+            self.assertEqual(resumed.returncode, 0, resumed.stderr + resumed.stdout)
+
+            reconstructed_pages: list[int] = []
+            for request in provider.requests:
+                if request["response_format"]["json_schema"]["name"] != "accessibilizer_page_semantics":
+                    continue
+                evidence = request["messages"][1]["content"][1]["text"]
+                document = json.loads(evidence.split("\n", 1)[1])
+                region = str(document["source_regions"][0])
+                reconstructed_pages.append(int(region.split("-")[1]))
+            self.assertEqual(reconstructed_pages.count(1), 1)
+            self.assertEqual(reconstructed_pages.count(2), 2)
+            self.assertEqual(reconstructed_pages.count(3), 1)
+
+    def test_provider_concurrency_one_preserves_sequential_page_behavior(self) -> None:
+        with (
+            FakeProvider(page_response_delay=0.2) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "sequential-pages.accessibilizer"
+            result = self.run_conversion(
+                SOURCE,
+                bundle,
+                page="1-2",
+                base_url=provider.base_url,
+                provider_concurrency=1,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            events = [
+                event
+                for event in read_event_lines(bundle / "conversion-events.jsonl")
+                if event["stage"] == "provider-reconstruction"
+            ]
+            page_two_start = next(
+                index for index, event in enumerate(events)
+                if event["state"] == "started" and event.get("page") == 2
+            )
+            self.assertTrue(
+                any(
+                    event["state"] == "completed"
+                    and event.get("page") == 1
+                    and event.get("purpose") == "region-verification"
+                    for event in events[:page_two_start]
+                )
+            )
+
+    def test_rate_limit_cooldown_gates_follow_up_attempts_across_pages(self) -> None:
+        with (
+            FakeProvider(
+                page_response_delay=0.05,
+                rate_limited_page=1,
+                retry_after="0.3",
+            ) as provider,
+            tempfile.TemporaryDirectory() as temporary_directory,
+        ):
+            bundle = Path(temporary_directory) / "rate-limited.accessibilizer"
+            result = self.run_conversion(
+                SOURCE,
+                bundle,
+                page="1-2",
+                base_url=provider.base_url,
+                provider_concurrency=2,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIsNotNone(provider.rate_limit_time)
+            assert provider.rate_limit_time is not None
+            # Capability plus the two initially assigned page requests may be in
+            # flight before the 429 is observed. Every retry/region request that
+            # follows honors the positive shared Retry-After cooldown.
+            self.assertGreaterEqual(len(provider.request_times), 4)
+            self.assertTrue(
+                all(
+                    started >= provider.rate_limit_time + 0.25
+                    for started in provider.request_times[3:]
+                ),
+                provider.request_times,
+            )
+
     def test_conversion_events_log_is_versioned_secret_free_and_confined_to_stderr(
         self,
     ) -> None:
@@ -1513,10 +1694,13 @@ class ConversionTest(unittest.TestCase):
             self.assertEqual(
                 interruption["reported_token_usage"],
                 {
-                    "this_run": {"complete": False, "total_tokens": 15},
-                    "conversion_total": {"complete": False, "total_tokens": 15},
+                    "this_run": {"complete": True, "total_tokens": 30},
+                    "conversion_total": {"complete": True, "total_tokens": 30},
                 },
             )
+            # The in-flight page request settled, but interruption prevented the
+            # first follow-up region request from being reserved or sent.
+            self.assertEqual(len(provider.requests), 2)
             self.assertNotIn("Estimated provider requests", stdout)
             self.assertIn("Resume with", stderr)
 
@@ -1540,7 +1724,7 @@ class ConversionTest(unittest.TestCase):
                 json.loads(resumed.stdout)["reported_token_usage"],
                 {
                     "this_run": {"complete": True, "total_tokens": 60},
-                    "conversion_total": {"complete": False, "total_tokens": 75},
+                    "conversion_total": {"complete": True, "total_tokens": 90},
                 },
             )
 
@@ -1706,6 +1890,7 @@ class ConversionTest(unittest.TestCase):
             events = read_event_lines(bundle / "conversion-events.jsonl")
             retrying = [e for e in events if e["state"] == "retrying"]
             self.assertGreaterEqual(len(retrying), 2)
+            self.assertEqual([event["request"] for event in retrying[:2]], [2, 3])
             for event in retrying:
                 jsonschema.validate(instance=event, schema=CONVERSION_EVENTS_SCHEMA)
                 self.assertIn("attempt", event)

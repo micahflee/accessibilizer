@@ -150,6 +150,36 @@ class HeartbeatTest(unittest.TestCase):
 
 
 class InterruptionTest(unittest.TestCase):
+    def test_concurrent_operations_may_complete_out_of_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            reporter = ProgressReporter(
+                log_path=Path(directory) / CONVERSION_EVENTS_FILENAME,
+                stream=io.StringIO(),
+                heartbeat_interval=0,
+            )
+            first_started = threading.Event()
+            release_first = threading.Event()
+
+            def first() -> None:
+                with reporter.operation("provider-reconstruction", page=1):
+                    first_started.set()
+                    release_first.wait(5)
+
+            worker = threading.Thread(target=first)
+            worker.start()
+            self.assertTrue(first_started.wait(5))
+            with reporter.operation("provider-reconstruction", page=2):
+                pass
+            release_first.set()
+            worker.join()
+
+            events = read_events(Path(directory) / CONVERSION_EVENTS_FILENAME)
+            completed_pages = [
+                event["page"] for event in events if event["state"] == "completed"
+            ]
+            self.assertEqual(completed_pages, [2, 1])
+            self.assertIsNone(reporter.active_stage)
+
     def test_interruption_records_the_active_operation_and_resume_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             terminal = io.StringIO()
