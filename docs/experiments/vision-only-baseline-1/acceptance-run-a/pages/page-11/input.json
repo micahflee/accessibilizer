@@ -1,0 +1,258 @@
+{
+  "experiment_revision": "vision-only-baseline-1",
+  "image": {
+    "path": "page.png",
+    "sha256": "3f3cb91232eb5d41960d5b72d47ddb67bce33a9c110aa47e6f0b915806c06723"
+  },
+  "native_pdf_words": [
+    {
+      "bbox_points": [
+        44.78,
+        29.46,
+        77.38,
+        52.64
+      ],
+      "text": "Our"
+    },
+    {
+      "bbox_points": [
+        99.81,
+        24.89,
+        152.72,
+        45.49
+      ],
+      "text": "bodies"
+    },
+    {
+      "bbox_points": [
+        108.52,
+        69.7,
+        148.56,
+        91.59
+      ],
+      "text": "wear"
+    },
+    {
+      "bbox_points": [
+        175.32,
+        29.69,
+        198.93,
+        49.01
+      ],
+      "text": "are"
+    },
+    {
+      "bbox_points": [
+        173.82,
+        69.78,
+        264.88,
+        95.54
+      ],
+      "text": "insulating"
+    },
+    {
+      "bbox_points": [
+        158.56,
+        104.8,
+        202.55,
+        125.41
+      ],
+      "text": "being"
+    },
+    {
+      "bbox_points": [
+        102.22,
+        158.48,
+        157.07,
+        189.38
+      ],
+      "text": "large"
+    },
+    {
+      "bbox_points": [
+        225.38,
+        18.89,
+        329.99,
+        44.64
+      ],
+      "text": "electrical'T"
+    },
+    {
+      "bbox_points": [
+        345.28,
+        17.58,
+        358.31,
+        42.05
+      ],
+      "text": "9"
+    },
+    {
+      "bbox_points": [
+        194.7,
+        163.79,
+        203.16,
+        181.82
+      ],
+      "text": "c"
+    },
+    {
+      "bbox_points": [
+        230.99,
+        103.12,
+        238.73,
+        119.86
+      ],
+      "text": "a"
+    },
+    {
+      "bbox_points": [
+        214.19,
+        158.23,
+        250.9,
+        182.69
+      ],
+      "text": "rent"
+    },
+    {
+      "bbox_points": [
+        375.09,
+        17.07,
+        470.58,
+        37.67
+      ],
+      "text": "Pacemakers"
+    },
+    {
+      "bbox_points": [
+        291.83,
+        62.28,
+        346.75,
+        86.75
+      ],
+      "text": "shoes"
+    },
+    {
+      "bbox_points": [
+        359.65,
+        63.55,
+        378.95,
+        89.31
+      ],
+      "text": "to"
+    },
+    {
+      "bbox_points": [
+        394.78,
+        70.16,
+        464.44,
+        94.63
+      ],
+      "text": "prevent"
+    },
+    {
+      "bbox_points": [
+        275.88,
+        96.64,
+        321.43,
+        119.82
+      ],
+      "text": "short"
+    },
+    {
+      "bbox_points": [
+        339.76,
+        98.48,
+        355.34,
+        121.66
+      ],
+      "text": "in"
+    },
+    {
+      "bbox_points": [
+        283.62,
+        160.05,
+        298.03,
+        183.22
+      ],
+      "text": "is"
+    },
+    {
+      "bbox_points": [
+        493.35,
+        20.05,
+        534.85,
+        47.09
+      ],
+      "text": "final"
+    },
+    {
+      "bbox_points": [
+        498.39,
+        53.64,
+        515.3,
+        75.53
+      ],
+      "text": "to"
+    },
+    {
+      "bbox_points": [
+        530.3,
+        56.93,
+        594.2,
+        74.96
+      ],
+      "text": "stimulate"
+    },
+    {
+      "bbox_points": [
+        379.31,
+        110.7,
+        424.32,
+        132.59
+      ],
+      "text": "many"
+    },
+    {
+      "bbox_points": [
+        440.45,
+        105.87,
+        531.34,
+        126.47
+      ],
+      "text": "professions"
+    },
+    {
+      "bbox_points": [
+        327.77,
+        168.79,
+        411.29,
+        189.39
+      ],
+      "text": "dangerous"
+    },
+    {
+      "bbox_points": [
+        540.42,
+        36.39,
+        594.31,
+        58.28
+      ],
+      "text": "pulses"
+    },
+    {
+      "bbox_points": [
+        536.36,
+        85.47,
+        594.89,
+        115.09
+      ],
+      "text": "heifle"
+    }
+  ],
+  "page": 11,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "run_id": "acceptance-run-a"
+}

@@ -1,0 +1,332 @@
+{
+  "candidates": [],
+  "page": 2,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-2-s0001",
+      "level": 2,
+      "page": 2,
+      "source_regions": [
+        "page-2-r0002"
+      ],
+      "text": "Example:",
+      "type": "heading"
+    },
+    {
+      "id": "page-2-s0002",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0001",
+        "page-2-r0003",
+        "page-2-r0004"
+      ],
+      "text": "A steady current of 2.5 A is created in a wire for 1.0 minute. How much charge passed by any given point, and how many electrons would this be?",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-2-s0003",
+      "normalized_math": "I=\\frac{Q}{\\Delta t}\\;\\to\\;I=\\frac{2.5\\,\\mathrm{C}}{\\mathrm{s}}=\\frac{Q}{t}",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0005"
+      ],
+      "spoken_math_alternative": "I equals Q divided by delta t; therefore I equals 2.5 coulombs per second, which equals Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-2-s0004",
+      "normalized_math": "Q=I\\cdot t=\\left(\\frac{2.5\\,\\mathrm{C}}{\\mathrm{s}}\\right)(60\\,\\mathrm{s})=150\\,\\mathrm{C}",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0006"
+      ],
+      "spoken_math_alternative": "Q equals I times t, which equals 2.5 coulombs per second times 60 seconds, or 150 coulombs.",
+      "type": "formula"
+    },
+    {
+      "id": "page-2-s0005",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0007"
+      ],
+      "text": "# of electrons:",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-2-s0006",
+      "normalized_math": "N=(150\\,\\mathrm{C})\\left(\\frac{1\\,e^-}{1.6\\times10^{-19}\\,\\mathrm{C}}\\right)=9.4\\times10^{20}\\ \\text{electrons}",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0008"
+      ],
+      "spoken_math_alternative": "N equals 150 coulombs times one electron per 1.6 times 10 to the negative 19 coulombs, which equals 9.4 times 10 to the 20 electrons.",
+      "type": "formula"
+    },
+    {
+      "id": "page-2-s0007",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0009"
+      ],
+      "text": "In moles:",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-2-s0008",
+      "normalized_math": "n=9.4\\times10^{20}\\ \\text{electrons}\\left(\\frac{1}{6.022\\times10^{23}\\ \\text{electrons}/\\mathrm{mol}}\\right)=0.0016\\,\\mathrm{mol}",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0010"
+      ],
+      "spoken_math_alternative": "n equals 9.4 times 10 to the 20 electrons times one divided by 6.022 times 10 to the 23 electrons per mole, which equals 0.0016 mole.",
+      "type": "formula"
+    },
+    {
+      "id": "page-2-s0009",
+      "level": 1,
+      "page": 2,
+      "source_regions": [
+        "page-2-r0011"
+      ],
+      "text": "Electrical Resistance",
+      "type": "heading"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "A closed rectangular circuit has a battery on the left labeled V, with its positive terminal marked, and a zigzag resistor on the right labeled R in orange. Electron symbols, e⁻, and arrows around the wire show electron motion from the battery along the bottom toward the right, upward past the resistor, leftward across the top, and downward toward the battery.",
+      "figure_alternative": "Closed battery-and-resistor circuit showing electron flow around the wire.",
+      "id": "page-2-s0010",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0012"
+      ],
+      "type": "figure"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "The resistor circuit symbol: R followed by a zigzag line. An arrow labels it “circuit symbol.”",
+      "id": "page-2-s0011",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0013"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-2-s0012",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0014"
+      ],
+      "text": "UNIT: Ω Ohm (Greek Omega)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-2-s0013",
+      "normalized_math": "[\\Omega]=\\left[\\frac{V}{A}\\right]=\\left[\\frac{J/C}{C/s}\\right]",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0015"
+      ],
+      "spoken_math_alternative": "The units of ohms equal volts per ampere, which equal joules per coulomb divided by coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-2-s0014",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0016"
+      ],
+      "text": "A resistor resists the flow of current.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-2-s0015",
+      "page": 2,
+      "source_regions": [
+        "page-2-r0017"
+      ],
+      "text": "They're often used to limit current in a part of a circuit. Wires themselves have some resistance, but we'll usually ignore it.",
+      "type": "paragraph"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        143.82,
+        24.90075,
+        539.172,
+        48.99825
+      ],
+      "id": "page-2-r0001",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        56.304,
+        25.704,
+        132.804,
+        48.99825
+      ],
+      "id": "page-2-r0002",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        55.692,
+        60.24375,
+        519.588,
+        82.73475
+      ],
+      "id": "page-2-r0003",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        58.752,
+        89.964,
+        507.348,
+        114.86475
+      ],
+      "id": "page-2-r0004",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        161.568,
+        127.71675,
+        457.164,
+        170.289
+      ],
+      "id": "page-2-r0005",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        77.724,
+        185.55075,
+        378.828,
+        216.8775
+      ],
+      "id": "page-2-r0006",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        99.756,
+        236.1555,
+        219.708,
+        260.253
+      ],
+      "id": "page-2-r0007",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        123.012,
+        264.26925,
+        488.376,
+        306.8415
+      ],
+      "id": "page-2-r0008",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        106.488,
+        325.31625,
+        187.884,
+        346.20075
+      ],
+      "id": "page-2-r0009",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        86.292,
+        348.6105,
+        555.084,
+        387.1665
+      ],
+      "id": "page-2-r0010",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        283.356,
+        418.49325,
+        452.268,
+        445.0005
+      ],
+      "id": "page-2-r0011",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        64.26,
+        443.394,
+        243.576,
+        636.97725
+      ],
+      "id": "page-2-r0012",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        293.76,
+        469.90125,
+        553.248,
+        522.1125
+      ],
+      "id": "page-2-r0013",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        290.088,
+        536.571,
+        461.448,
+        568.701
+      ],
+      "id": "page-2-r0014",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        399.024,
+        573.5205,
+        576.504,
+        618.5025
+      ],
+      "id": "page-2-r0015",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        87.516,
+        661.878,
+        498.78,
+        697.221
+      ],
+      "id": "page-2-r0016",
+      "page": 2
+    },
+    {
+      "bbox_points": [
+        54.468,
+        702.84375,
+        561.816,
+        775.9395
+      ],
+      "id": "page-2-r0017",
+      "page": 2
+    }
+  ],
+  "warnings": []
+}

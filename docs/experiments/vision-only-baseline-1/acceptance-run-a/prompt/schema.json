@@ -1,0 +1,435 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "boxes": {
+                "items": {
+                  "items": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "maxItems": 4,
+                  "minItems": 4,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "level": {
+                "maximum": 6,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "text": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "heading"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "level",
+              "text",
+              "boxes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "boxes": {
+                "items": {
+                  "items": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "maxItems": 4,
+                  "minItems": 4,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "text": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "paragraph"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text",
+              "boxes"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "boxes": {
+                "items": {
+                  "items": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "maxItems": 4,
+                  "minItems": 4,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "normalized_math": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "spoken_math_alternative": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "formula"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "normalized_math",
+              "spoken_math_alternative",
+              "boxes"
+            ],
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "boxes": {
+                    "items": {
+                      "items": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "maxItems": 4,
+                      "minItems": 4,
+                      "type": "array"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "complexity": {
+                    "enum": [
+                      "simple"
+                    ],
+                    "type": "string"
+                  },
+                  "detailed_figure_description": {
+                    "type": "null"
+                  },
+                  "figure_alternative": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "figure"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "complexity",
+                  "figure_alternative",
+                  "detailed_figure_description",
+                  "boxes"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "boxes": {
+                    "items": {
+                      "items": {
+                        "maximum": 1,
+                        "minimum": 0,
+                        "type": "number"
+                      },
+                      "maxItems": 4,
+                      "minItems": 4,
+                      "type": "array"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "complexity": {
+                    "enum": [
+                      "complex"
+                    ],
+                    "type": "string"
+                  },
+                  "detailed_figure_description": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "figure_alternative": {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "figure"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "complexity",
+                  "figure_alternative",
+                  "detailed_figure_description",
+                  "boxes"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "boundaries_are_uncertain": {
+                "type": "boolean"
+              },
+              "boxes": {
+                "items": {
+                  "items": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "maxItems": 4,
+                  "minItems": 4,
+                  "type": "array"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "caption": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "headers_are_uncertain": {
+                "type": "boolean"
+              },
+              "rows": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cells": {
+                      "items": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "col_span": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "header"
+                                ],
+                                "type": "string"
+                              },
+                              "row_span": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "scope": {
+                                "enum": [
+                                  "col",
+                                  "row",
+                                  "both"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "text",
+                              "scope",
+                              "row_span",
+                              "col_span"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "col_span": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "data"
+                                ],
+                                "type": "string"
+                              },
+                              "row_span": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "scope": {
+                                "enum": [
+                                  "none"
+                                ],
+                                "type": "string"
+                              },
+                              "text": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "text",
+                              "scope",
+                              "row_span",
+                              "col_span"
+                            ],
+                            "type": "object"
+                          }
+                        ]
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "cells"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "table"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "caption",
+              "boundaries_are_uncertain",
+              "headers_are_uncertain",
+              "rows",
+              "boxes"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "boxes": {
+            "items": {
+              "items": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "code": {
+            "enum": [
+              "ambiguous-reading-order",
+              "illegible-content",
+              "table-boundaries-uncertain",
+              "table-headers-uncertain",
+              "table-merged-cells",
+              "suspected-source-error",
+              "suspected-prompt-injection",
+              "missing-semantic-content",
+              "unsupported-input"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "node_indices": {
+            "items": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "node_indices",
+          "boxes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "nodes",
+    "warnings"
+  ],
+  "type": "object"
+}

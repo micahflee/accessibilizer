@@ -1,0 +1,223 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.116,
+          0.027,
+          0.894,
+          0.059
+        ]
+      ],
+      "text": "Resistivity depends on temperature — usually in metals",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.307,
+          0.066,
+          0.478,
+          0.096
+        ]
+      ],
+      "normalized_math": "R\\uparrow,\\quad T\\uparrow",
+      "spoken_math_alternative": "Resistance increases as temperature increases.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.117,
+          0.108,
+          0.788,
+          0.225
+        ]
+      ],
+      "text": "(Superconductors — materials with zero resistance — are generally extremely low temperature. “High temperature” superconductors are those which exhibit",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.712,
+          0.192,
+          0.777,
+          0.218
+        ]
+      ],
+      "normalized_math": "R=0",
+      "spoken_math_alternative": "Resistance equals zero.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.154,
+          0.231,
+          0.769,
+          0.263
+        ]
+      ],
+      "text": "above 77 K, the boiling point of nitrogen.)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.116,
+          0.324,
+          0.858,
+          0.365
+        ]
+      ],
+      "level": 1,
+      "text": "Ohmic Materials (Every material in 1B)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.086,
+          0.41,
+          0.671,
+          0.447
+        ]
+      ],
+      "text": "Ohmic materials obey Ohm’s Law:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.169,
+          0.483,
+          0.315,
+          0.549
+        ]
+      ],
+      "normalized_math": "I=\\frac{V}{R}",
+      "spoken_math_alternative": "Current equals voltage divided by resistance.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.596,
+          0.469,
+          0.716,
+          0.512
+        ]
+      ],
+      "normalized_math": "I=\\left(\\frac{1}{R}\\right)V",
+      "spoken_math_alternative": "Current equals one over resistance times voltage.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.332,
+          0.501,
+          0.729,
+          0.671
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A coordinate graph has current I on the vertical axis and voltage V on the horizontal axis. Two blue straight lines pass through the origin with positive slopes; one is steep and the other is shallow. The graph illustrates that an ohmic material has a linear current-voltage relationship and that increasing resistance decreases the slope.",
+      "figure_alternative": "Current-versus-voltage graph for ohmic materials, showing two straight lines through the origin with different slopes.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.725,
+          0.519,
+          0.965,
+          0.568
+        ]
+      ],
+      "normalized_math": "\\text{as }R\\uparrow,\\quad \\frac{\\Delta I}{\\Delta V}\\downarrow",
+      "spoken_math_alternative": "As resistance increases, the change in current divided by the change in voltage decreases.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.091,
+          0.711,
+          0.305,
+          0.745
+        ]
+      ],
+      "level": 2,
+      "text": "Ohm’s Law:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.318,
+          0.713,
+          0.433,
+          0.743
+        ]
+      ],
+      "normalized_math": "V=IR",
+      "spoken_math_alternative": "Voltage equals current times resistance.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.116,
+          0.769,
+          0.231,
+          0.798
+        ]
+      ],
+      "level": 2,
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.278,
+          0.768,
+          0.789,
+          0.843
+        ]
+      ],
+      "text": "In the circuit below, is V higher at point A or B? What about I?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.197,
+          0.85,
+          0.454,
+          0.984
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A single-loop circuit contains a resistor in the top wire and a battery in the bottom wire. Point A is immediately to the left of the resistor, and point B is immediately to its right. An orange arrow above the resistor indicates current I flowing from A toward B. The battery’s positive terminal is on the left and its negative terminal is on the right.",
+      "figure_alternative": "Series circuit with current flowing from point A through a resistor to point B; the battery is positive on the left and negative on the right.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.544,
+          0.894,
+          0.86,
+          0.935
+        ]
+      ],
+      "normalized_math": "V=IR,\\quad \\text{so}\\quad V_A>V_B",
+      "spoken_math_alternative": "Voltage equals current times resistance, so the voltage at A is greater than the voltage at B.",
+      "type": "formula"
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,295 @@
+{
+  "candidates": [],
+  "page": 11,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-11-s0001",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0002"
+      ],
+      "text": "Our bodies are electrical!",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-11-s0002",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0001"
+      ],
+      "text": "Eg pacemakers use electrical pulses to stimulate heart muscle",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-11-s0003",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0003"
+      ],
+      "text": "– wear insulating shoes to prevent being a “short” in many professions",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-11-s0004",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0004"
+      ],
+      "text": "– large current is dangerous!",
+      "type": "paragraph"
+    },
+    {
+      "boundaries_are_uncertain": false,
+      "caption": "Table 20.3 Effects of Electrical Shock as a Function of Current³",
+      "headers_are_uncertain": false,
+      "id": "page-11-s0005",
+      "page": 11,
+      "rows": [
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Current (mA)"
+            },
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Effect"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "1"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Threshold of sensation"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "5"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Maximum harmless current"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "10–20"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of sustained muscular contraction; cannot let go for duration of shock; contraction of chest muscles may stop breathing during shock"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "50"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of pain"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "100–300+"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Ventricular fibrillation possible; often fatal"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "300"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of burns depending on concentration of current"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "6000 (6 A)"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of sustained ventricular contraction and respiratory paralysis; both cease when shock ends; heartbeat may return to normal; used to defibrillate the heart"
+            }
+          ]
+        }
+      ],
+      "source_regions": [
+        "page-11-r0005"
+      ],
+      "type": "table"
+    },
+    {
+      "id": "page-11-s0006",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0006"
+      ],
+      "text": "– Pure H₂O is an insulator, but in everyday life water has ions → conductive.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-11-s0007",
+      "page": 11,
+      "source_regions": [
+        "page-11-r0007"
+      ],
+      "text": "Water + electronics don’t mix!",
+      "type": "paragraph"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        294.372,
+        8.83575,
+        595.476,
+        113.25825
+      ],
+      "id": "page-11-r0001",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        45.9,
+        20.08125,
+        318.852,
+        46.5885
+      ],
+      "id": "page-11-r0002",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        85.68,
+        61.047,
+        532.44,
+        121.29075
+      ],
+      "id": "page-11-r0003",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        76.5,
+        148.60125,
+        420.444,
+        193.58325
+      ],
+      "id": "page-11-r0004",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        75.888,
+        216.07425,
+        529.992,
+        432.1485
+      ],
+      "id": "page-11-r0005",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        61.812,
+        491.589,
+        536.724,
+        565.488
+      ],
+      "id": "page-11-r0006",
+      "page": 11
+    },
+    {
+      "bbox_points": [
+        88.74,
+        573.5205,
+        438.192,
+        604.84725
+      ],
+      "id": "page-11-r0007",
+      "page": 11
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,293 @@
+{
+  "candidates": [],
+  "page": 10,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-10-s0001",
+      "level": 1,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0001"
+      ],
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0002",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0002"
+      ],
+      "text": "What current would be produced in 12-Gauge copper wire (r = 1 mm) if the electron drift velocity was 1.0 mm/s?",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0003",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0003"
+      ],
+      "text": "0.0022 mph",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0004",
+      "normalized_math": "e = 1.60 × 10⁻¹⁹ C\nA = π(0.001 m)²\nn = □\nI = enAv\nv = 0.001 m/s",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0004"
+      ],
+      "spoken_math_alternative": "The electron charge e equals 1.60 times 10 to the negative 19 coulombs. Area A equals pi times 0.001 meter squared. Number density n is left blank. Current I equals e times n times A times v. Velocity v equals 0.001 meter per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0005",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0005"
+      ],
+      "text": "Copper (Z = 29) has 1 ‘free’ electron, so atoms/m³ will give us # e⁻/m³.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0006",
+      "normalized_math": "n = (8.96 g Cu/cm³)(1 mol/(63.55 g Cu))(6.02 × 10²³ atoms/mol)(100 cm/1 m)³ = 8.5 × 10²⁸/m³",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0006"
+      ],
+      "spoken_math_alternative": "Number density n equals 8.96 grams of copper per cubic centimeter, times 1 mole per 63.55 grams of copper, times 6.02 times 10 to the 23 atoms per mole, times the quantity 100 centimeters per 1 meter cubed, which equals 8.5 times 10 to the 28 per cubic meter.",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0007",
+      "normalized_math": "I = (1.6 × 10⁻¹⁹ C)(8.5 × 10²⁸/m³)(π(0.001 m)²)(0.001 m/s) = 43 A",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0007"
+      ],
+      "spoken_math_alternative": "Current I equals 1.6 times 10 to the negative 19 coulombs, times 8.5 times 10 to the 28 per cubic meter, times pi times 0.001 meter squared, times 0.001 meter per second, which equals 43 amperes.",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0008",
+      "level": 1,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0008"
+      ],
+      "text": "Electrical Hazards",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0009",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0009"
+      ],
+      "text": "Electrical power produces heat → too much produces fires / burns / melting etc...",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0010",
+      "level": 2,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0010"
+      ],
+      "text": "Ex",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0011",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0011"
+      ],
+      "text": "A short is when there’s an unplanned low-resistance path in a circuit.",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Panel (a) shows an alternating-current source at left connected by a two-conductor cable to a heating appliance at right. The appliance load is represented by a zigzag resistor labeled R between two vertical heating elements. Near the appliance, a small jagged connection bridges the cable conductors and is labeled r, indicating an unintended low-resistance short-circuit path. A blue arrow points to this location from the handwritten annotation “insulation wore away in.”",
+      "figure_alternative": "Circuit diagram showing worn cable insulation creating a low-resistance short, r, in parallel with the appliance resistance, R.",
+      "id": "page-10-s0012",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0012"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-10-s0013",
+      "normalized_math": "P = V²/r     I = V/r",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0014"
+      ],
+      "spoken_math_alternative": "Power P equals voltage V squared divided by the short-circuit resistance r. Current I equals voltage V divided by r.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        37.332,
+        23.29425,
+        137.7,
+        53.0145
+      ],
+      "id": "page-10-r0001",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        77.724,
+        24.0975,
+        500.004,
+        114.86475
+      ],
+      "id": "page-10-r0002",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        395.964,
+        118.881,
+        526.932,
+        145.38825
+      ],
+      "id": "page-10-r0003",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        91.188,
+        135.74925,
+        422.28,
+        237.762
+      ],
+      "id": "page-10-r0004",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        92.412,
+        253.827,
+        466.344,
+        318.89025
+      ],
+      "id": "page-10-r0005",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        25.092,
+        334.95525,
+        533.664,
+        392.78925
+      ],
+      "id": "page-10-r0006",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        44.676,
+        401.625,
+        545.292,
+        449.82
+      ],
+      "id": "page-10-r0007",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        37.332,
+        489.9825,
+        227.052,
+        530.145
+      ],
+      "id": "page-10-r0008",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        19.584,
+        547.8165,
+        589.356,
+        626.535
+      ],
+      "id": "page-10-r0009",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        40.392,
+        610.47,
+        74.052,
+        641.79675
+      ],
+      "id": "page-10-r0010",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        78.948,
+        624.12525,
+        416.16,
+        689.1885
+      ],
+      "id": "page-10-r0011",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        108.936,
+        639.387,
+        504.9,
+        783.16875
+      ],
+      "id": "page-10-r0012",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        244.8,
+        715.69575,
+        414.936,
+        755.055
+      ],
+      "id": "page-10-r0013",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        241.128,
+        761.481,
+        408.816,
+        799.23375
+      ],
+      "id": "page-10-r0014",
+      "page": 10
+    }
+  ],
+  "warnings": [
+    {
+      "code": "suspected-source-error",
+      "id": "page-10-w0001",
+      "message": "The handwritten figure annotation reads “insulation wore away in,” which appears grammatically incomplete; it is preserved as shown.",
+      "page": 10,
+      "semantic_nodes": [
+        "page-10-s0012"
+      ],
+      "source_regions": [
+        "page-10-r0013"
+      ]
+    }
+  ]
+}

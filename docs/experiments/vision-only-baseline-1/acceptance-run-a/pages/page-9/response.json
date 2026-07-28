@@ -1,0 +1,224 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.14,
+          0.012,
+          0.724,
+          0.044
+        ]
+      ],
+      "level": 1,
+      "text": "Current also “alternates” in AC Voltage:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.181,
+          0.054,
+          0.656,
+          0.101
+        ]
+      ],
+      "normalized_math": "I = \\frac{V}{R} \\Rightarrow I = \\frac{V_0}{R}\\sin(\\omega t)",
+      "spoken_math_alternative": "I equals V over R, which implies I equals V naught over R times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.207,
+          0.119,
+          0.447,
+          0.165
+        ]
+      ],
+      "normalized_math": "I = I_0\\sin(\\omega t)",
+      "spoken_math_alternative": "I equals I naught times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.493,
+          0.109,
+          0.797,
+          0.165
+        ]
+      ],
+      "normalized_math": "I_0 = \\frac{V_0}{R}\\quad\\text{(peak current)}",
+      "spoken_math_alternative": "I naught equals V naught over R, the peak current.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.317,
+          0.169,
+          0.539,
+          0.223
+        ]
+      ],
+      "normalized_math": "I_{\\mathrm{RMS}} = \\frac{1}{\\sqrt{2}}I_0",
+      "spoken_math_alternative": "I R M S equals one over the square root of two times I naught.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.14,
+          0.239,
+          0.531,
+          0.271
+        ]
+      ],
+      "level": 2,
+      "text": "Power (alternating voltage)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.117,
+          0.291,
+          0.349,
+          0.344
+        ]
+      ],
+      "normalized_math": "P_{\\mathrm{AVG}} = I_{\\mathrm{RMS}}V_{\\mathrm{RMS}}",
+      "spoken_math_alternative": "Average power equals R M S current times R M S voltage.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.41,
+          0.29,
+          0.592,
+          0.344
+        ]
+      ],
+      "normalized_math": "P_{\\mathrm{AVG}} = I_{\\mathrm{RMS}}^2R",
+      "spoken_math_alternative": "Average power equals R M S current squared times R.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.644,
+          0.278,
+          0.802,
+          0.344
+        ]
+      ],
+      "normalized_math": "P_{\\mathrm{AVG}} = \\frac{V_{\\mathrm{RMS}}^2}{R}",
+      "spoken_math_alternative": "Average power equals R M S voltage squared over R.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.1,
+          0.407,
+          0.532,
+          0.463
+        ]
+      ],
+      "level": 1,
+      "text": "Electron Drift Velocity",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.065,
+          0.483,
+          0.821,
+          0.517
+        ]
+      ],
+      "text": "MISCONCEPTION #2: electrons travel near the speed of light",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.106,
+          0.519,
+          0.83,
+          0.556
+        ]
+      ],
+      "text": "Reality: E⃗ fields propagate near the speed of light!",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.084,
+          0.561,
+          0.849,
+          0.594
+        ]
+      ],
+      "text": "electrons (as current) are hella slow in electrical circuits ...",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.263,
+          0.594,
+          0.612,
+          0.677
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A horizontal cylindrical conductor segment is labeled A at its left end and dx beneath a short section. Above it, an arrow labeled I points to the right. Inside it, a blue arrow labeled E points to the right.",
+      "figure_alternative": "Conductor diagram showing current I and electric field E directed right, with cross-sectional area A and segment length dx.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.647,
+          0.619,
+          0.948,
+          0.738
+        ]
+      ],
+      "text": "e⁻ travel randomly but with average ‘drift’ opposing current.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.198,
+          0.757,
+          0.755,
+          0.931
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "An annotated current relation reads I = (e)(n)(A)v sub r. Arrows identify e as elementary charge, n as the number of electrons per volume, A as cross-sectional area, and v sub r as drift velocity.",
+      "figure_alternative": "Annotated current equation identifying elementary charge, electron number density, cross-sectional area, and drift velocity.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.201,
+          0.788,
+          0.48,
+          0.848
+        ]
+      ],
+      "normalized_math": "I = (e)(n)(A)v_r",
+      "spoken_math_alternative": "I equals e times n times A times v sub r.",
+      "type": "formula"
+    }
+  ],
+  "warnings": []
+}
