@@ -240,10 +240,19 @@ from accessibilizer.vision_prototype import replay_prototype_document
 
 replayed = replay_prototype_document(Path("prototype-runs/run-UUID"))
 gold = load_yaml(Path("testdata/gold-review-record.yaml").read_text())
-result = evaluate_prototype_fidelity(replayed, gold)
+result = evaluate_prototype_fidelity(
+    replayed,
+    gold,
+    visual_review_dir=Path("prototype-runs/run-UUID/geometry-review"),
+)
 ```
 
 The result reports semantic fidelity failures separately from Conversion
-Warning recall and precision failures. Warning identity, wording, and geometry
-do not affect the comparison; the page/code pairs must match the approved gold
-Review Record exactly.
+Warning recall and precision failures and reviewer-localization geometry failures.
+Geometry accepts coarse and shared Source Regions without IoU or proposal-area
+matching, but requires finite in-page boxes, deterministic identity, coverage of
+the corresponding gold content's center, and justification for regions covering
+at least 80% of a page. The optional review directory remains empty on a geometry
+pass; each failed check creates one focused SVG comparing the produced and gold
+locations. Warning identity, wording, and geometry do not affect warning
+comparison; the page/code pairs must match the approved gold Review Record exactly.
