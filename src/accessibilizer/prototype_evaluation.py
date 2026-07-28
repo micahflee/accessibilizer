@@ -29,7 +29,6 @@ def _semantic_signature(node: Mapping[str, Any]) -> str:
     fields = (
         "type",
         *_EXACT_FIELDS.get(node_type, ()),
-        *_WORDING_FIELDS.get(node_type, ()),
     )
     return json.dumps(
         {field: node.get(field) for field in fields},
@@ -206,6 +205,21 @@ def evaluate_prototype_fidelity(
             for field in _WORDING_FIELDS.get(node_type, ()):
                 if produced.get(field) == expected.get(field):
                     continue
+                gold_wording = expected.get(field)
+                produced_wording = produced.get(field)
+                if not isinstance(gold_wording, str) or not isinstance(
+                    produced_wording, str
+                ):
+                    failures.append(
+                        {
+                            "page": page,
+                            "node": node_id,
+                            "field": field,
+                            "gold": gold_wording,
+                            "produced": produced_wording,
+                        }
+                    )
+                    continue
                 item_id = f"{run_id}:{node_id}:{field}"
                 decision = decisions.get(item_id)
                 adjudications.append(
@@ -215,8 +229,8 @@ def evaluate_prototype_fidelity(
                         "page": page,
                         "node": node_id,
                         "field": field,
-                        "gold_wording": expected.get(field),
-                        "produced_wording": produced.get(field),
+                        "gold_wording": gold_wording,
+                        "produced_wording": produced_wording,
                         "reviewer_decision": decision,
                     }
                 )
@@ -226,8 +240,8 @@ def evaluate_prototype_fidelity(
                             "page": page,
                             "node": node_id,
                             "field": field,
-                            "gold": expected.get(field),
-                            "produced": produced.get(field),
+                            "gold": gold_wording,
+                            "produced": produced_wording,
                         }
                     )
 

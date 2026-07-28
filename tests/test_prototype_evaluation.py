@@ -109,6 +109,17 @@ class PrototypeFidelityEvaluationTests(unittest.TestCase):
 
         result = evaluate_prototype_fidelity(replayed, self.gold)
 
+        self.assertEqual(
+            {(warning["page"], warning["code"]) for warning in self.gold["warnings"]},
+            {
+                (1, "ambiguous-reading-order"),
+                (3, "ambiguous-reading-order"),
+                (3, "table-merged-cells"),
+                (6, "ambiguous-reading-order"),
+                (6, "suspected-source-error"),
+                (7, "ambiguous-reading-order"),
+            },
+        )
         self.assertTrue(result["passed"])
         self.assertEqual(result["run_id"], "replayed-run-75")
         self.assertEqual(result["semantic_fidelity_failures"], [])
@@ -221,6 +232,43 @@ class PrototypeFidelityEvaluationTests(unittest.TestCase):
         self.assertEqual(
             result["semantic_fidelity_failures"][0]["field"],
             "logical_reading_order",
+        )
+
+    def test_wording_change_does_not_mask_logical_reading_order_failure(self) -> None:
+        run = replayed_gold_run(self.gold)
+        formulas = [
+            node
+            for node in run["pages"][0]["semantic_layer"]
+            if node["type"] == "formula"
+        ]
+        first_index = run["pages"][0]["semantic_layer"].index(formulas[0])
+        second_index = run["pages"][0]["semantic_layer"].index(formulas[1])
+        formulas[0]["spoken_math_alternative"] = "Changed wording."
+        nodes = run["pages"][0]["semantic_layer"]
+        nodes[first_index], nodes[second_index] = nodes[second_index], nodes[first_index]
+
+        result = evaluate_prototype_fidelity(run, self.gold)
+
+        self.assertIn(
+            "logical_reading_order",
+            {failure["field"] for failure in result["semantic_fidelity_failures"]},
+        )
+
+    def test_missing_alternative_is_a_semantic_failure_not_an_adjudication(self) -> None:
+        run = replayed_gold_run(self.gold)
+        formula = next(
+            node
+            for node in run["pages"][0]["semantic_layer"]
+            if node["type"] == "formula"
+        )
+        formula["spoken_math_alternative"] = None
+
+        result = evaluate_prototype_fidelity(run, self.gold)
+
+        self.assertEqual(result["adjudication_queue"], [])
+        self.assertEqual(
+            result["semantic_fidelity_failures"][0]["field"],
+            "spoken_math_alternative",
         )
 
 
