@@ -12,7 +12,7 @@ from accessibilizer.vision_prototype import (
     reconstruct_prototype_document,
     replay_prototype_document,
 )
-from tests.test_vision_prototype import FakeVisionProvider, POPPLER, SOURCE
+from tests.test_vision_prototype import FakeVisionProvider, POPPLER, PRICING, SOURCE
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,6 +98,7 @@ class PrototypeFidelityEvaluationTests(unittest.TestCase):
                 run_id="replayed-run-75",
                 include_native_pdf_context=False,
                 max_retries=0,
+                pricing=PRICING,
             )
             replayed = replay_prototype_document(Path(directory) / "replayed-run-75")
         return replayed
