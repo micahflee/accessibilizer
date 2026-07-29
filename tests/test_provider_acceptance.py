@@ -100,6 +100,9 @@ class FakeProvider:
         page_overrides: dict[str, Any] | None = None,
         region_agrees: bool = True,
         page_response_delay: float = 0.0,
+        failed_page: int | None = None,
+        rate_limited_page: int | None = None,
+        retry_after: str = "0",
     ) -> None:
         self.compatible = compatible
         self.transient_failures = transient_failures
@@ -110,8 +113,17 @@ class FakeProvider:
         # Seconds a page-reconstruction request lingers before responding, so a
         # test can interrupt a conversion while a provider request is in flight.
         self.page_response_delay = page_response_delay
+        self.failed_page = failed_page
+        self.rate_limited_page = rate_limited_page
+        self.retry_after = retry_after
+        self.rate_limit_sent = False
+        self.rate_limit_time: float | None = None
         self.requests: list[dict[str, Any]] = []
+        self.request_times: list[float] = []
         self.authorizations: list[str | None] = []
+        self.active_page_requests = 0
+        self.max_active_page_requests = 0
+        self.activity_lock = threading.Lock()
         provider = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -122,6 +134,7 @@ class FakeProvider:
                     self.send_error(400)
                     return
                 provider.requests.append(request)
+                provider.request_times.append(time.monotonic())
                 provider.authorizations.append(self.headers.get("Authorization"))
                 request_index = len(provider.requests) - 1
                 response_usage = (
@@ -178,11 +191,42 @@ class FakeProvider:
                     self.end_headers()
                     self.wfile.write(b'{"error":{"message":"response_format unsupported"}}')
                     return
+                request_page: int | None = None
+                if name == "accessibilizer_page_semantics":
+                    evidence = request["messages"][1]["content"][1]["text"]
+                    evidence_document = json.loads(evidence.split("\n", 1)[1])
+                    region_ids = evidence_document.get("source_regions", [])
+                    if region_ids:
+                        request_page = int(str(region_ids[0]).split("-")[1])
+                    if provider.failed_page == request_page:
+                        self.send_response(400)
+                        self.end_headers()
+                        return
+                    if (
+                        provider.rate_limited_page == request_page
+                        and not provider.rate_limit_sent
+                    ):
+                        provider.rate_limit_sent = True
+                        provider.rate_limit_time = time.monotonic()
+                        self.send_response(429)
+                        self.send_header("Retry-After", provider.retry_after)
+                        self.end_headers()
+                        return
                 if name == "accessibilizer_capability_check":
                     body: Any = {"blue_square_count": 3}
                 elif name == "accessibilizer_page_semantics":
-                    if provider.page_response_delay:
-                        time.sleep(provider.page_response_delay)
+                    with provider.activity_lock:
+                        provider.active_page_requests += 1
+                        provider.max_active_page_requests = max(
+                            provider.max_active_page_requests,
+                            provider.active_page_requests,
+                        )
+                    try:
+                        if provider.page_response_delay:
+                            time.sleep(provider.page_response_delay)
+                    finally:
+                        with provider.activity_lock:
+                            provider.active_page_requests -= 1
                     body = json.loads(json.dumps(BASE_PAGE_CONTENT))
                     evidence = request["messages"][1]["content"][1]["text"]
                     evidence_document = json.loads(evidence.split("\n", 1)[1])
@@ -381,6 +425,30 @@ class ProviderConfigurationTest(unittest.TestCase):
             self.assertIn("capability check", json.loads(result.stdout)["error"])
             self.assertEqual(len(provider.requests), 1)
             self.assertFalse(bundle.exists())
+
+    def test_localhost_concurrency_warning_depends_on_effective_concurrency(self) -> None:
+        with FakeProvider(compatible=False) as provider, tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            common = (
+                "--provider-base-url", provider.loopback_base_url,
+                "--provider-model", "exact-model",
+                "--provider-data-location", "local",
+            )
+            concurrent = self.run_conversion(
+                temporary,
+                temporary / "concurrent.accessibilizer",
+                extra_arguments=(*common, "--provider-concurrency", "2"),
+            )
+            sequential = self.run_conversion(
+                temporary,
+                temporary / "sequential.accessibilizer",
+                extra_arguments=(*common, "--provider-concurrency", "1"),
+            )
+
+            warning = "Local providers may serialize requests"
+            self.assertIn(warning, concurrent.stderr)
+            self.assertNotIn("Ollama", concurrent.stderr)
+            self.assertNotIn(warning, sequential.stderr)
 
     def test_provider_endpoint_rejects_query_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

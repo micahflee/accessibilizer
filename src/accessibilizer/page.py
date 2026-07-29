@@ -1046,6 +1046,8 @@ def generate_page_semantics(
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
     on_retry: Callable[[int, float, str], None] | None = None,
+    reserved_request_number: int | None = None,
+    on_attempt_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     payload = build_page_request(
         model=config.model,
@@ -1063,6 +1065,8 @@ def generate_page_semantics(
         retry_base_seconds=retry_base_seconds,
         retry_max_seconds=retry_max_seconds,
         on_retry=on_retry,
+        reserved_request_number=reserved_request_number,
+        on_attempt_start=on_attempt_start,
     )
     content = parse_schema_content(
         result, "page semantic reconstruction returned an invalid schema response"
@@ -1083,6 +1087,8 @@ def verify_region(
     retry_base_seconds: float = 0.5,
     retry_max_seconds: float = 8.0,
     on_retry: Callable[[int, float, str], None] | None = None,
+    reserved_request_number: int | None = None,
+    on_attempt_start: Callable[[int, int], None] | None = None,
 ) -> dict[str, Any]:
     payload = build_region_request(
         model=config.model,
@@ -1099,6 +1105,8 @@ def verify_region(
         retry_base_seconds=retry_base_seconds,
         retry_max_seconds=retry_max_seconds,
         on_retry=on_retry,
+        reserved_request_number=reserved_request_number,
+        on_attempt_start=on_attempt_start,
     )
     content = parse_schema_content(
         result, "region verification returned an invalid schema response"
@@ -1116,7 +1124,14 @@ def _reported_provider_call(
     page: int,
     page_count: int,
     budget: RequestBudget | None,
-    call: Callable[[Callable[[int, float, str], None] | None], _T],
+    call: Callable[
+        [
+            Callable[[int, float, str], None] | None,
+            int | None,
+            Callable[[int, int], None] | None,
+        ],
+        _T,
+    ],
 ) -> _T:
     """Emit start/completion (and retry) provider events around one request.
 
@@ -1126,15 +1141,24 @@ def _reported_provider_call(
     provider's reported token usage. Heartbeats keep a slow request observable.
     """
     if reporter is None:
-        return call(None)
-    request_number = budget.actual_requests + 1 if budget is not None else None
+        return call(None, None, None)
+    request_number = budget.reserve() if budget is not None else None
     request_total = budget.estimated_requests if budget is not None else None
-    before = dict(budget.reported_token_usage) if budget is not None else {}
+    before = budget.thread_usage_snapshot() if budget is not None else {}
+
+    retry: tuple[int, float, str] | None = None
 
     def on_retry(attempt: int, delay: float, reason: str) -> None:
+        nonlocal retry
+        retry = (attempt, delay, reason)
+
+    def on_attempt_start(attempt_request: int, attempt: int) -> None:
+        if attempt <= 1 or retry is None:
+            return
+        _, delay, reason = retry
         reporter.retrying(
             "provider-reconstruction", page=page, purpose=purpose,
-            request=request_number, request_total=request_total,
+            request=attempt_request, request_total=request_total,
             attempt=attempt, delay=delay, detail=reason,
         )
 
@@ -1143,9 +1167,9 @@ def _reported_provider_call(
         request=request_number, request_total=request_total,
         endpoint=config.base_url, model=config.model,
     ) as handle:
-        result = call(on_retry)
+        result = call(on_retry, request_number, on_attempt_start)
         if budget is not None:
-            usage = budget.usage_since(before)
+            usage = budget.thread_usage_since(before)
             if usage:
                 handle.extra["token_usage"] = usage
     return result
@@ -1172,7 +1196,7 @@ def reconstruct_page(
     page_response = _reported_provider_call(
         reporter, config, purpose="page-reconstruction", page=page,
         page_count=page_count, budget=budget,
-        call=lambda on_retry: generate_page_semantics(
+        call=lambda on_retry, reserved_request_number, on_attempt_start: generate_page_semantics(
             config,
             page_image=page_image,
             candidates=candidates,
@@ -1183,6 +1207,8 @@ def reconstruct_page(
             retry_base_seconds=retry_base_seconds,
             retry_max_seconds=retry_max_seconds,
             on_retry=on_retry,
+            reserved_request_number=reserved_request_number,
+            on_attempt_start=on_attempt_start,
         ),
     )
     region_verifications: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -1191,6 +1217,8 @@ def reconstruct_page(
 
         def verify(
             on_retry: Callable[[int, float, str], None] | None,
+            reserved_request_number: int | None,
+            on_attempt_start: Callable[[int, int], None] | None,
             candidate: dict[str, Any] = candidate,
             crop: Path = crop,
         ) -> dict[str, Any]:
@@ -1204,6 +1232,8 @@ def reconstruct_page(
                 retry_base_seconds=retry_base_seconds,
                 retry_max_seconds=retry_max_seconds,
                 on_retry=on_retry,
+                reserved_request_number=reserved_request_number,
+                on_attempt_start=on_attempt_start,
             )
 
         verification = _reported_provider_call(

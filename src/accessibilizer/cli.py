@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import redirect_stdout
 import copy
 import ctypes
@@ -18,8 +19,9 @@ import tempfile
 import time
 from types import FrameType
 from typing import Any, Mapping, TextIO, TypedDict
+from urllib.parse import urlparse
 
-from accessibilizer import __version__, page, recognition, review
+from accessibilizer import __version__, page, provider as provider_runtime, recognition, review
 from accessibilizer.checkpoint import (
     CheckpointStore,
     atomic_write_json,
@@ -179,6 +181,11 @@ def _parser() -> argparse.ArgumentParser:
         "--max-requests",
         type=int,
         help="maximum provider requests to allow before pausing the conversion (default: 100)",
+    )
+    convert.add_argument(
+        "--provider-concurrency",
+        type=int,
+        help="maximum pages reconstructed concurrently (default: 4)",
     )
     convert.add_argument(
         "--provider-max-retries",
@@ -556,6 +563,8 @@ def _resume_command(args: argparse.Namespace) -> str:
         parts.append("--allow-remote")
     if args.max_requests is not None:
         parts += ["--max-requests", str(args.max_requests)]
+    if args.provider_concurrency is not None:
+        parts += ["--provider-concurrency", str(args.provider_concurrency)]
     if args.json:
         parts.append("--json")
     if getattr(args, "verbose", False):
@@ -565,6 +574,7 @@ def _resume_command(args: argparse.Namespace) -> str:
 
 
 def _raise_interrupt(signum: int, frame: FrameType | None) -> None:
+    provider_runtime.request_interruption()
     raise ConversionInterrupted()
 
 
@@ -1214,6 +1224,7 @@ def _emit_reported_token_summary(
 
 
 def _convert(args: argparse.Namespace) -> int:
+    provider_runtime.reset_interruption()
     attempt = _ConversionAttempt()
     reporter = ProgressReporter(verbose=getattr(args, "verbose", False))
     # Install controlled-interruption handling before configuration and workspace
@@ -1228,6 +1239,17 @@ def _convert(args: argparse.Namespace) -> int:
                 )
             provider = resolve_provider(args)
             limits = resolve_conversion_limits(args)
+            if (
+                limits.provider_concurrency > 1
+                and urlparse(provider.base_url).hostname
+                in {"localhost", "127.0.0.1", "::1"}
+            ):
+                print(
+                    "Local providers may serialize requests or require substantial memory "
+                    "for concurrent inference; use --provider-concurrency 1 if conversion "
+                    "becomes unstable.",
+                    file=sys.stderr,
+                )
             if args.json:
                 with redirect_stdout(sys.stderr):
                     authorize_remote(provider, allow_remote=args.allow_remote)
@@ -1325,10 +1347,19 @@ def _run_conversion(
             )
         before_capability = dict(budget.reported_token_usage)
 
+        capability_retry_metadata: tuple[float, str] | None = None
+
         def capability_retry(attempt: int, delay: float, reason: str) -> None:
+            nonlocal capability_retry_metadata
+            capability_retry_metadata = (delay, reason)
+
+        def capability_attempt_start(request: int, attempt: int) -> None:
+            if attempt <= 1 or capability_retry_metadata is None:
+                return
+            delay, reason = capability_retry_metadata
             reporter.retrying(
                 "provider-capability", purpose="capability-check",
-                request=budget.actual_requests, attempt=attempt, delay=delay, detail=reason,
+                request=request, attempt=attempt, delay=delay, detail=reason,
             )
 
         with reporter.operation(
@@ -1343,6 +1374,7 @@ def _run_conversion(
                 retry_base_seconds=limits.provider_retry_base_seconds,
                 retry_max_seconds=limits.provider_retry_max_seconds,
                 on_retry=capability_retry,
+                on_attempt_start=capability_attempt_start,
             )
             capability_usage = budget.usage_since(before_capability)
             if capability_usage:
@@ -1427,8 +1459,10 @@ def _run_conversion(
         file=sys.stderr,
     )
 
-    # Second pass: reconstruct each page that cannot be reused, enforcing the
-    # request ceiling against the running total before every page.
+    # Second pass: reconstruct non-reusable pages concurrently. Each worker owns
+    # one entire page, preserving the page-before-regions sequence inside
+    # ``reconstruct_page`` while completed artifacts remain independently reusable.
+    pages_to_reconstruct: list[int] = []
     for page_number in pages:
         # The whole-page fallback source region (...-r0000) can anchor a
         # reconstructed formula/table/figure node, so region verification reads
@@ -1443,12 +1477,16 @@ def _run_conversion(
                 "provider-reconstruction", page=page_number, page_count=page_count
             )
             continue
-        page_requests = page.expected_request_count(page_candidates[page_number])
-        if budget.actual_requests + page_requests > budget.ceiling:
-            raise RequestCeilingExceeded(
-                f"conversion paused before exceeding request ceiling {budget.ceiling}; "
-                "resume with a higher --max-requests value"
-            )
+        pages_to_reconstruct.append(page_number)
+
+    def reconstruct_and_checkpoint_artifacts(page_number: int) -> None:
+        if limits.provider_concurrency == 1:
+            page_requests = page.expected_request_count(page_candidates[page_number])
+            if budget.actual_requests + page_requests > budget.ceiling:
+                raise RequestCeilingExceeded(
+                    f"conversion paused before exceeding request ceiling {budget.ceiling}; "
+                    "resume with a higher --max-requests value"
+                )
         semantics_document = page.reconstruct_page(
             provider,
             page=page_number,
@@ -1476,6 +1514,48 @@ def _run_conversion(
             page_semantics_keys[page_number],
             [page_semantics_dir / f"page-{page_number}.json"],
         )
+
+    def reconstruct_and_checkpoint(page_number: int) -> None:
+        # Retain the page-level operation for interruption reporting even when
+        # the just-settled HTTP request completes before the worker can begin
+        # (and report) the next sequential region request.
+        with reporter.tracked(
+            "provider-reconstruction", page=page_number, page_count=page_count
+        ):
+            reconstruct_and_checkpoint_artifacts(page_number)
+
+    next_page = 0
+    active: set[Future[None]] = set()
+    first_failure: BaseException | None = None
+    with ThreadPoolExecutor(
+        max_workers=limits.provider_concurrency,
+        thread_name_prefix="provider-page",
+    ) as executor:
+        while next_page < len(pages_to_reconstruct) and len(active) < limits.provider_concurrency:
+            active.add(executor.submit(reconstruct_and_checkpoint, pages_to_reconstruct[next_page]))
+            next_page += 1
+        while active:
+            completed, active = wait(active, return_when=FIRST_COMPLETED)
+            for future in completed:
+                try:
+                    future.result()
+                except BaseException as error:
+                    if first_failure is None:
+                        first_failure = error
+            if first_failure is None:
+                while (
+                    next_page < len(pages_to_reconstruct)
+                    and len(active) < limits.provider_concurrency
+                ):
+                    active.add(
+                        executor.submit(
+                            reconstruct_and_checkpoint,
+                            pages_to_reconstruct[next_page],
+                        )
+                    )
+                    next_page += 1
+    if first_failure is not None:
+        raise first_failure
 
     # Assemble the whole-document Review Record from every page's reconstruction,
     # injecting each page's retained recognition candidates.

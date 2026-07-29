@@ -71,6 +71,7 @@ data_location = "remote"
 
 [conversion]
 max_requests = 100
+provider_concurrency = 4
 provider_max_retries = 3
 provider_retry_base_seconds = 0.5
 provider_retry_max_seconds = 8.0
@@ -86,7 +87,7 @@ For the initial hosted OpenAI quality baseline, use `gpt-5.6-sol`, the official 
 
 After authorization, Accessibilizer sends a small base64 capability image to `POST /chat/completions` beneath the configured base URL and requires a strict JSON-Schema answer derived from its visible content. A provider that cannot use the image and satisfy the response schema fails before the Source PDF is copied, rendered, inspected, or converted. Conversion Provenance records the resolved base URL, exact model, and data location, but not credentials, environment-variable names, request dumps, or hidden reasoning.
 
-Transient timeouts, connection failures, rate limits, and server errors receive bounded exponential-backoff retries. The pipeline estimates the provider requests it will make — the capability check when needed, plus one page-level reconstruction call and one call per verified Formula, table, and Figure crop — counting zero for any stage whose checkpoint can be reused, then enforces `max_requests` before every attempt, including retries. Use `--max-requests`, `--provider-max-retries`, `--provider-retry-base-seconds`, and `--provider-retry-max-seconds` to override the layered settings. Reaching the request ceiling pauses the Conversion Bundle instead of exceeding it; raise the ceiling and pass `--resume` to continue. Conversion Provenance retains estimated and actual request counts and any prompt, completion, and total token usage reported by the provider. Accessibilizer does not estimate dollar cost.
+Transient timeouts, connection failures, rate limits, and server errors receive bounded retries; an HTTP 429 establishes a shared cooldown and honors `Retry-After`. The provider-backed reconstruction pass processes up to `provider_concurrency` pages at once (default `4`), while each page's whole-page and region requests remain sequential. The pipeline estimates the provider requests it will make — the capability check when needed, plus one page-level reconstruction call and one call per verified Formula, table, and Figure crop — counting zero for any stage whose checkpoint can be reused, then enforces `max_requests` before every attempt, including retries. Use `--provider-concurrency`, `--max-requests`, `--provider-max-retries`, `--provider-retry-base-seconds`, and `--provider-retry-max-seconds` to override the layered settings. Reaching the request ceiling pauses the Conversion Bundle instead of exceeding it; raise the ceiling and pass `--resume` to continue. Conversion Provenance retains estimated and actual request counts and any prompt, completion, and total token usage reported by the provider. Accessibilizer does not estimate dollar cost.
 
 ## Conversion Bundle
 

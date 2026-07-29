@@ -142,7 +142,7 @@ class ProgressReporter:
         self._monotonic = monotonic if monotonic is not None else time.monotonic
         self._now = now
         self._write_lock = threading.Lock()
-        self._active: list[_Operation] = []
+        self._active: dict[int, _Operation] = {}
 
     # -- durable + terminal emission ------------------------------------------
 
@@ -293,7 +293,9 @@ class ProgressReporter:
         handle = OperationHandle()
         self.emit(stage, STATE_STARTED, durable=durable, **fields)
         operation = _Operation(stage=stage, fields={k: v for k, v in fields.items() if v is not None})
-        self._active.append(operation)
+        operation_id = id(operation)
+        with self._write_lock:
+            self._active[operation_id] = operation
         stop = threading.Event()
         thread: threading.Thread | None = None
         if heartbeat and self._heartbeat_interval > 0:
@@ -314,7 +316,8 @@ class ProgressReporter:
             stop.set()
             if thread is not None:
                 thread.join()
-            self._active.pop()
+            with self._write_lock:
+                self._active.pop(operation_id, None)
             elapsed = round(self._monotonic() - start, 3)
             # Record error state without a message: an arbitrary exception string
             # could echo a raw body or model content, which the log must exclude.
@@ -323,7 +326,8 @@ class ProgressReporter:
         stop.set()
         if thread is not None:
             thread.join()
-        self._active.pop()
+        with self._write_lock:
+            self._active.pop(operation_id, None)
         elapsed = round(self._monotonic() - start, 3)
         self.emit(
             stage, STATE_COMPLETED, durable=durable, elapsed_seconds=elapsed,
@@ -339,15 +343,20 @@ class ProgressReporter:
         after the workspace has been renamed onto the bundle). The operation is
         left on the active stack on an interruption so it can still be named.
         """
-        self._active.append(_Operation(stage=stage, fields={k: v for k, v in fields.items() if v is not None}))
+        operation = _Operation(stage=stage, fields={k: v for k, v in fields.items() if v is not None})
+        operation_id = id(operation)
+        with self._write_lock:
+            self._active[operation_id] = operation
         try:
             yield
         except ConversionInterrupted:
             raise
         except BaseException:
-            self._active.pop()
+            with self._write_lock:
+                self._active.pop(operation_id, None)
             raise
-        self._active.pop()
+        with self._write_lock:
+            self._active.pop(operation_id, None)
 
     def _beat(
         self, stage: str, start: float, fields: dict[str, Any], stop: threading.Event
@@ -360,7 +369,8 @@ class ProgressReporter:
 
     def interrupted(self, *, resume_command: str | None = None) -> dict[str, Any]:
         """Record the interruption of whatever operation was most recently active."""
-        active = self._active[-1] if self._active else None
+        with self._write_lock:
+            active = next(reversed(self._active.values()), None)
         stage = active.stage if active is not None else "conversion"
         fields = dict(active.fields) if active is not None else {}
         fields.pop("elapsed_seconds", None)
@@ -370,4 +380,6 @@ class ProgressReporter:
 
     @property
     def active_stage(self) -> str | None:
-        return self._active[-1].stage if self._active else None
+        with self._write_lock:
+            active = next(reversed(self._active.values()), None)
+            return active.stage if active is not None else None

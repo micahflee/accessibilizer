@@ -17,6 +17,7 @@ from accessibilizer.configuration import config_path, user_config_default
 @dataclass(frozen=True)
 class ConversionLimits:
     max_requests: int
+    provider_concurrency: int
     provider_max_retries: int
     provider_retry_base_seconds: float
     provider_retry_max_seconds: float
@@ -24,6 +25,7 @@ class ConversionLimits:
 
 DEFAULTS: dict[str, int | float] = {
     "max_requests": 100,
+    "provider_concurrency": 4,
     "provider_max_retries": 3,
     "provider_retry_base_seconds": 0.5,
     "provider_retry_max_seconds": 8.0,
@@ -69,6 +71,15 @@ def resolve_conversion_limits(args: argparse.Namespace) -> ConversionLimits:
         value = resolved[name]
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(f"--{name.replace('_', '-')} must be a non-negative integer")
+    concurrency = resolved["provider_concurrency"]
+    if (
+        not isinstance(concurrency, int)
+        or isinstance(concurrency, bool)
+        or concurrency < 1
+    ):
+        raise ValueError(
+            "--provider-concurrency must be an integer greater than or equal to 1"
+        )
     delay_names = ("provider_retry_base_seconds", "provider_retry_max_seconds")
     for name in delay_names:
         value = resolved[name]
@@ -76,6 +87,7 @@ def resolve_conversion_limits(args: argparse.Namespace) -> ConversionLimits:
             raise ValueError(f"--{name.replace('_', '-')} must be non-negative")
     return ConversionLimits(
         max_requests=int(resolved["max_requests"]),
+        provider_concurrency=int(concurrency),
         provider_max_retries=int(resolved["provider_max_retries"]),
         provider_retry_base_seconds=float(resolved["provider_retry_base_seconds"]),
         provider_retry_max_seconds=float(resolved["provider_retry_max_seconds"]),
