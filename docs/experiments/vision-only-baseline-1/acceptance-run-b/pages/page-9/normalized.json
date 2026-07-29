@@ -1,0 +1,292 @@
+{
+  "candidates": [],
+  "page": 9,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-9-s0001",
+      "level": 1,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0001"
+      ],
+      "text": "Current also “alternates” in AC Voltage:",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0002",
+      "normalized_math": "I=\\frac{V}{R}\\Rightarrow I=\\frac{V_0}{R}\\sin(\\omega t)",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0002"
+      ],
+      "spoken_math_alternative": "I equals V over R, which implies I equals V sub zero over R times sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0003",
+      "normalized_math": "I=I_0\\sin(\\omega t),\\quad I_0=\\frac{V_0}{R}\\;\\text{(peak current)}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0003"
+      ],
+      "spoken_math_alternative": "I equals I sub zero times sine of omega t, where I sub zero equals V sub zero over R and is the peak current.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0004",
+      "normalized_math": "I_{\\mathrm{RMS}}=\\frac{1}{\\sqrt{2}}I_0",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0004"
+      ],
+      "spoken_math_alternative": "I R M S equals one over the square root of two times I sub zero.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0005",
+      "level": 2,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0005"
+      ],
+      "text": "Power (alternating voltage)",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0006",
+      "normalized_math": "P_{\\mathrm{AVG}}=I_{\\mathrm{RMS}}V_{\\mathrm{RMS}}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0007"
+      ],
+      "spoken_math_alternative": "Average power equals R M S current times R M S voltage.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0007",
+      "normalized_math": "P_{\\mathrm{AVG}}=I_{\\mathrm{RMS}}^2R",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0008"
+      ],
+      "spoken_math_alternative": "Average power equals R M S current squared times resistance.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0008",
+      "normalized_math": "P_{\\mathrm{AVG}}=\\frac{V_{\\mathrm{RMS}}^2}{R}",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0006"
+      ],
+      "spoken_math_alternative": "Average power equals R M S voltage squared divided by resistance.",
+      "type": "formula"
+    },
+    {
+      "id": "page-9-s0009",
+      "level": 1,
+      "page": 9,
+      "source_regions": [
+        "page-9-r0009"
+      ],
+      "text": "Electron Drift Velocity",
+      "type": "heading"
+    },
+    {
+      "id": "page-9-s0010",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0010"
+      ],
+      "text": "MISCONCEPTION #2: electrons travel near the speed of light",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-9-s0011",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0011"
+      ],
+      "text": "Reality: E⃗ fields propagate near the speed of light!",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-9-s0012",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0012"
+      ],
+      "text": "electrons (as current) are hella slow in electrical circuits ...",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "A cylindrical wire is drawn horizontally. Its left circular cross-section is labeled A. A right-pointing arrow above the wire is labeled I, indicating conventional current. A right-pointing blue arrow inside is labeled E, indicating the electric field. A short section of the wire is marked dx. To the right, a squiggly electron path and an e-minus symbol illustrate random electron motion. The accompanying note says, “e⁻ travel randomly but with average ‘drift’ opposing current.”",
+      "figure_alternative": "Wire diagram showing current and electric field to the right, while electrons move randomly with an average drift opposite the current.",
+      "id": "page-9-s0013",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0013"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-9-s0014",
+      "normalized_math": "I=(e)(n)(A)v_d",
+      "page": 9,
+      "source_regions": [
+        "page-9-r0014"
+      ],
+      "spoken_math_alternative": "I equals e times n times A times v sub d, where e is elementary charge, n is the number of electrons per volume, A is cross-sectional area, and v sub d is drift velocity.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        86.292,
+        9.639,
+        440.028,
+        36.14625
+      ],
+      "id": "page-9-r0001",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        110.772,
+        44.17875,
+        400.86,
+        82.73475
+      ],
+      "id": "page-9-r0002",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        126.684,
+        87.55425,
+        489.6,
+        134.14275
+      ],
+      "id": "page-9-r0003",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        194.616,
+        135.74925,
+        329.256,
+        179.12475
+      ],
+      "id": "page-9-r0004",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        86.292,
+        192.78,
+        324.972,
+        219.28725
+      ],
+      "id": "page-9-r0005",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        394.128,
+        223.3035,
+        490.824,
+        276.318
+      ],
+      "id": "page-9-r0006",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        71.604,
+        232.13925,
+        214.2,
+        276.318
+      ],
+      "id": "page-9-r0007",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        251.532,
+        232.13925,
+        360.468,
+        276.318
+      ],
+      "id": "page-9-r0008",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        61.812,
+        327.726,
+        328.644,
+        371.90475
+      ],
+      "id": "page-9-r0009",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        39.78,
+        388.773,
+        502.452,
+        412.06725
+      ],
+      "id": "page-9-r0010",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        64.26,
+        414.477,
+        498.78,
+        448.2135
+      ],
+      "id": "page-9-r0011",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        53.244,
+        452.22975,
+        545.292,
+        478.737
+      ],
+      "id": "page-9-r0012",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        160.956,
+        477.93375,
+        579.564,
+        595.20825
+      ],
+      "id": "page-9-r0013",
+      "page": 9
+    },
+    {
+      "bbox_points": [
+        121.176,
+        605.6505,
+        464.508,
+        746.21925
+      ],
+      "id": "page-9-r0014",
+      "page": 9
+    }
+  ],
+  "warnings": []
+}

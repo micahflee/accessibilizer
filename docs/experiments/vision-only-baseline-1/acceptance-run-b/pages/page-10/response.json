@@ -1,0 +1,266 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.116,
+          0.03,
+          0.225,
+          0.063
+        ]
+      ],
+      "level": 1,
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.13,
+          0.03,
+          0.81,
+          0.143
+        ]
+      ],
+      "text": "What current would be produced in 12-Gauge copper wire (r = 1 mm) if the electron drift velocity was 1.0 mm/s?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.645,
+          0.146,
+          0.855,
+          0.18
+        ]
+      ],
+      "text": "≈ 0.0022 mph",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.149,
+          0.169,
+          0.369,
+          0.207
+        ]
+      ],
+      "normalized_math": "e = 1.60 \\times 10^{-19}\\ \\mathrm{C}",
+      "spoken_math_alternative": "e equals 1.60 times 10 to the negative 19 coulombs",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.153,
+          0.216,
+          0.395,
+          0.253
+        ]
+      ],
+      "normalized_math": "A = \\pi(0.001\\ \\mathrm{m})^2",
+      "spoken_math_alternative": "A equals pi times 0.001 meter squared",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.157,
+          0.266,
+          0.281,
+          0.299
+        ]
+      ],
+      "normalized_math": "n = \\square",
+      "spoken_math_alternative": "n equals a blank box",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.504,
+          0.218,
+          0.688,
+          0.251
+        ]
+      ],
+      "normalized_math": "I = enAv",
+      "spoken_math_alternative": "I equals e times n times A times v",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.389,
+          0.265,
+          0.566,
+          0.296
+        ]
+      ],
+      "normalized_math": "v = 0.001\\ \\mathrm{m/s}",
+      "spoken_math_alternative": "v equals 0.001 meter per second",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.154,
+          0.322,
+          0.746,
+          0.4
+        ]
+      ],
+      "text": "Copper (z = 29) has 1 “free” electron, so atoms/m³ will give us # e⁻/m³",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.04,
+          0.414,
+          0.87,
+          0.486
+        ]
+      ],
+      "normalized_math": "n = \\left(\\frac{8.960\\ \\mathrm{g\\ Cu}}{\\mathrm{cm}^3}\\right)\\left(\\frac{1\\ \\mathrm{mol}}{63.55\\ \\mathrm{g\\ Cu}}\\right)\\left(\\frac{6.02\\times10^{23}\\ \\mathrm{atoms}}{\\mathrm{mol}}\\right)\\left(\\frac{100\\ \\mathrm{cm}}{1\\ \\mathrm{m}}\\right)^3 = 8.5\\times10^{28}/\\mathrm{m}^3",
+      "spoken_math_alternative": "n equals 8.960 grams of copper per cubic centimeter, times 1 mole per 63.55 grams of copper, times 6.02 times 10 to the 23 atoms per mole, times the quantity 100 centimeters per 1 meter cubed, which equals 8.5 times 10 to the 28 per cubic meter",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.073,
+          0.499,
+          0.89,
+          0.557
+        ]
+      ],
+      "normalized_math": "I = (1.6\\times10^{-19}\\ \\mathrm{C})(8.5\\times10^{28}/\\mathrm{m}^3)\\left(\\pi(0.001\\ \\mathrm{m})^2\\right)\\left(\\frac{0.001\\ \\mathrm{m}}{\\mathrm{s}}\\right) = 43\\ \\mathrm{A}",
+      "spoken_math_alternative": "I equals 1.6 times 10 to the negative 19 coulombs, times 8.5 times 10 to the 28 per cubic meter, times pi times 0.001 meter squared, times 0.001 meter per second, which equals 43 amperes",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.059,
+          0.61,
+          0.372,
+          0.662
+        ]
+      ],
+      "level": 1,
+      "text": "Electrical Hazards",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.032,
+          0.68,
+          0.968,
+          0.781
+        ]
+      ],
+      "text": "Electrical power produces heat → too much produces fires / burns / melting etc...",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.065,
+          0.761,
+          0.101,
+          0.795
+        ]
+      ],
+      "level": 2,
+      "text": "Ex",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.13,
+          0.778,
+          0.72,
+          0.86
+        ]
+      ],
+      "text": "A short is when there’s an unplanned low-resistance path in a circuit.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.188,
+          0.794,
+          0.82,
+          0.968
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Diagram labeled “(a)” showing an AC source at left connected by a two-conductor cable to a toaster-like appliance at right. Inside the appliance, a resistor labeled R bridges the conductors. A small unintended connection labeled r bridges the cable conductors near the right side, representing a low-resistance short. A blue arrow points to this defect with the handwritten annotation “insulation wore away in.”",
+      "figure_alternative": "Circuit diagram of a short caused by worn insulation, with unintended resistance r in parallel with appliance resistance R.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.391,
+          0.951,
+          0.515,
+          0.997
+        ]
+      ],
+      "normalized_math": "P = \\frac{V^2}{r}",
+      "spoken_math_alternative": "P equals V squared divided by r",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.554,
+          0.953,
+          0.657,
+          0.997
+        ]
+      ],
+      "normalized_math": "I = \\frac{V}{r}",
+      "spoken_math_alternative": "I equals V divided by r",
+      "type": "formula"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.157,
+          0.266,
+          0.281,
+          0.299
+        ]
+      ],
+      "code": "missing-semantic-content",
+      "message": "The value of n is represented only by an empty box in the source.",
+      "node_indices": [
+        5
+      ]
+    },
+    {
+      "boxes": [
+        [
+          0.394,
+          0.891,
+          0.716,
+          0.946
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The handwritten figure annotation “insulation wore away in” appears incomplete.",
+      "node_indices": [
+        15
+      ]
+    }
+  ]
+}

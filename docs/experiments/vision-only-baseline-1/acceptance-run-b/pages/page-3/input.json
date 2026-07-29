@@ -1,0 +1,222 @@
+{
+  "experiment_revision": "vision-only-baseline-1",
+  "image": {
+    "path": "page.png",
+    "sha256": "b8a6d7b81d528de28b5c62c3643dd7420582e1e31ceef4a9c22d84c2c9e574b1"
+  },
+  "native_pdf_words": [
+    {
+      "bbox_points": [
+        342.43,
+        40.47,
+        417.19,
+        63.65
+      ],
+      "text": "resistors"
+    },
+    {
+      "bbox_points": [
+        345.28,
+        122.58,
+        420.04,
+        145.76
+      ],
+      "text": "resistors"
+    },
+    {
+      "bbox_points": [
+        48.88,
+        201.5,
+        119.67,
+        224.68
+      ],
+      "text": "Analogy"
+    },
+    {
+      "bbox_points": [
+        398.58,
+        190.78,
+        498.42,
+        210.09
+      ],
+      "text": "Simplification"
+    },
+    {
+      "bbox_points": [
+        181.62,
+        195.81,
+        239.71,
+        217.7
+      ],
+      "text": "friction"
+    },
+    {
+      "bbox_points": [
+        377.25,
+        218.35,
+        393.4,
+        253.11
+      ],
+      "text": "É"
+    },
+    {
+      "bbox_points": [
+        405.47,
+        222.9,
+        452.76,
+        246.07
+      ],
+      "text": "fields"
+    },
+    {
+      "bbox_points": [
+        469.08,
+        225.49,
+        484.66,
+        248.67
+      ],
+      "text": "in"
+    },
+    {
+      "bbox_points": [
+        498.1,
+        227.98,
+        565.8,
+        247.29
+      ],
+      "text": "materials"
+    },
+    {
+      "bbox_points": [
+        86.47,
+        234.27,
+        255.51,
+        294.79
+      ],
+      "text": "FIEFDIE"
+    },
+    {
+      "bbox_points": [
+        364.9,
+        261.79,
+        425.11,
+        282.39
+      ],
+      "text": "interact"
+    },
+    {
+      "bbox_points": [
+        271.77,
+        301.43,
+        317.91,
+        356.8
+      ],
+      "text": "FII"
+    },
+    {
+      "bbox_points": [
+        286.88,
+        359.52,
+        297.3,
+        381.41
+      ],
+      "text": "L"
+    },
+    {
+      "bbox_points": [
+        53.86,
+        404.18,
+        162.47,
+        433.8
+      ],
+      "text": "Resistivity"
+    },
+    {
+      "bbox_points": [
+        174.16,
+        403.8,
+        189.21,
+        435.99
+      ],
+      "text": "p"
+    },
+    {
+      "bbox_points": [
+        82.59,
+        470.28,
+        111.33,
+        499.89
+      ],
+      "text": "Ro"
+    },
+    {
+      "bbox_points": [
+        263.43,
+        467.06,
+        278.74,
+        496.67
+      ],
+      "text": "R"
+    },
+    {
+      "bbox_points": [
+        298.47,
+        471.23,
+        313.01,
+        502.13
+      ],
+      "text": "p"
+    },
+    {
+      "bbox_points": [
+        258.56,
+        505.61,
+        263.98,
+        530.08
+      ],
+      "text": "I"
+    },
+    {
+      "bbox_points": [
+        311.61,
+        507.5,
+        333.05,
+        528.1
+      ],
+      "text": "rm"
+    },
+    {
+      "bbox_points": [
+        359.46,
+        499.86,
+        389.68,
+        530.77
+      ],
+      "text": "T2"
+    },
+    {
+      "bbox_points": [
+        443.08,
+        259.73,
+        477.89,
+        281.62
+      ],
+      "text": "with"
+    },
+    {
+      "bbox_points": [
+        496.96,
+        258.94,
+        560.1,
+        282.12
+      ],
+      "text": "current"
+    }
+  ],
+  "page": 3,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "run_id": "acceptance-run-b"
+}

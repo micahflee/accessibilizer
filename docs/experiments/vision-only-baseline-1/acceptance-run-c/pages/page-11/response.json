@@ -1,0 +1,237 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.074,
+          0.025,
+          0.519,
+          0.058
+        ]
+      ],
+      "text": "Our bodies are electrical!",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.482,
+          0.011,
+          0.973,
+          0.139
+        ]
+      ],
+      "text": "E.g. pacemakers use electrical pulses to stimulate heart muscle",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.143,
+          0.076,
+          0.86,
+          0.149
+        ]
+      ],
+      "text": "– Wear insulating shoes to prevent being a “short” in many professions",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.126,
+          0.182,
+          0.684,
+          0.235
+        ]
+      ],
+      "text": "– Large current is dangerous!",
+      "type": "paragraph"
+    },
+    {
+      "boundaries_are_uncertain": false,
+      "boxes": [
+        [
+          0.124,
+          0.264,
+          0.866,
+          0.548
+        ]
+      ],
+      "caption": "Table 20.3 Effects of Electrical Shock as a Function of Current³",
+      "headers_are_uncertain": false,
+      "rows": [
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Current (mA)"
+            },
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Effect"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "1"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Threshold of sensation"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "5"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Maximum harmless current"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "10–20"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of sustained muscular contraction; cannot let go for duration of shock; contraction of chest muscles may stop breathing during shock"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "50"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of pain"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "100–300+"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Ventricular fibrillation possible; often fatal"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "300"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of burns depending on concentration of current"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "6000 (6 A)"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Onset of sustained ventricular contraction and respiratory paralysis; both cease when shock ends; heartbeat may return to normal; used to defibrillate the heart"
+            }
+          ]
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "boxes": [
+        [
+          0.102,
+          0.603,
+          0.865,
+          0.689
+        ]
+      ],
+      "text": "– Pure H₂O is an insulator, but in everyday life water has ions → conductive.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.145,
+          0.701,
+          0.711,
+          0.741
+        ]
+      ],
+      "text": "Water + electronics don’t mix!",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,704 @@
+{
+  "candidates": [],
+  "page": 3,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Photograph of a populated green circuit board. Two handwritten arrows labeled “resistors!” point to rows of cylindrical, color-banded resistors.",
+      "id": "page-3-s0001",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0001"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-3-s0002",
+      "level": 2,
+      "page": 3,
+      "source_regions": [
+        "page-3-r0005",
+        "page-3-r0004"
+      ],
+      "text": "Analogy — “friction”",
+      "type": "heading"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Friction analogy: four adjacent blocks, each labeled e⁻, rest on a rough surface. A rightward force arrow labeled F acts above them, while an orange friction arrow labeled f points left.",
+      "id": "page-3-s0003",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0007"
+      ],
+      "type": "figure"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Sketch of a cylindrical resistor or wire carrying current I to the right. Its cross-sectional area is labeled A and its length is labeled L.",
+      "id": "page-3-s0004",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0008"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-3-s0005",
+      "level": 2,
+      "page": 3,
+      "source_regions": [
+        "page-3-r0003"
+      ],
+      "text": "Simplification:",
+      "type": "heading"
+    },
+    {
+      "id": "page-3-s0006",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0006"
+      ],
+      "text": "E⃗ fields in materials interact with current?",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-3-s0007",
+      "level": 2,
+      "page": 3,
+      "source_regions": [
+        "page-3-r0009"
+      ],
+      "text": "Resistivity (ρ)",
+      "type": "heading"
+    },
+    {
+      "id": "page-3-s0008",
+      "normalized_math": "R \\propto \\frac{L}{A}",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0011"
+      ],
+      "spoken_math_alternative": "R is proportional to L divided by A.",
+      "type": "formula"
+    },
+    {
+      "id": "page-3-s0009",
+      "normalized_math": "R = \\rho \\frac{L}{A}",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0010"
+      ],
+      "spoken_math_alternative": "R equals rho times L divided by A.",
+      "type": "formula"
+    },
+    {
+      "id": "page-3-s0010",
+      "normalized_math": "[\\Omega] = (\\Omega \\cdot \\mathrm{m})\\left(\\frac{\\mathrm{m}}{\\mathrm{m}^2}\\right)",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0012"
+      ],
+      "spoken_math_alternative": "The units of resistance, ohms, equal ohm-meters times meters divided by meters squared.",
+      "type": "formula"
+    },
+    {
+      "boundaries_are_uncertain": false,
+      "caption": "TABLE 25–1  Resistivity and Temperature Coefficients (at 20°C)",
+      "headers_are_uncertain": false,
+      "id": "page-3-s0011",
+      "page": 3,
+      "rows": [
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Material"
+            },
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Resistivity, ρ (Ω · m)"
+            },
+            {
+              "col_span": 1,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "col",
+              "text": "Temperature Coefficient, α (C°)⁻¹"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 3,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "both",
+              "text": "Conductors"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Silver"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "1.59 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0061"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Copper"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "1.68 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0068"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Gold"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "2.44 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0034"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Aluminum"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "2.65 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.00429"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Tungsten"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "5.60 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0045"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Iron"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "9.71 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.00651"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Platinum"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "10.60 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.003927"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Mercury"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "98.00 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0009"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Nichrome (Ni, Fe, Cr alloy)"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "100.00 × 10⁻⁸"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.0004"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 3,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "both",
+              "text": "Semiconductors†"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Carbon (graphite)"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "(3–60) × 10⁻⁵"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "−0.0005"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Germanium"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "(1–500) × 10⁻³"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "−0.05"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Silicon"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "0.1–60"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "−0.07"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 3,
+              "kind": "header",
+              "row_span": 1,
+              "scope": "both",
+              "text": "Insulators"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Glass"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "10⁹–10¹²"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": ""
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "Hard rubber"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": "10¹³–10¹⁵"
+            },
+            {
+              "col_span": 1,
+              "kind": "data",
+              "row_span": 1,
+              "scope": "none",
+              "text": ""
+            }
+          ]
+        }
+      ],
+      "source_regions": [
+        "page-3-r0013"
+      ],
+      "type": "table"
+    },
+    {
+      "id": "page-3-s0012",
+      "page": 3,
+      "source_regions": [
+        "page-3-r0014"
+      ],
+      "text": "† Values depend strongly on the presence of even slight amounts of impurities.",
+      "type": "paragraph"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        50.184,
+        20.08125,
+        435.132,
+        166.27275
+      ],
+      "id": "page-3-r0001",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        49.572,
+        176.715,
+        566.1,
+        368.69175
+      ],
+      "id": "page-3-r0002",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        397.8,
+        178.3215,
+        509.184,
+        203.22225
+      ],
+      "id": "page-3-r0003",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        173.196,
+        186.354,
+        249.084,
+        211.25475
+      ],
+      "id": "page-3-r0004",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        50.184,
+        187.15725,
+        125.46,
+        212.058
+      ],
+      "id": "page-3-r0005",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        365.364,
+        213.6645,
+        564.876,
+        274.7115
+      ],
+      "id": "page-3-r0006",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        79.56,
+        219.28725,
+        257.04,
+        276.318
+      ],
+      "id": "page-3-r0007",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        235.62,
+        284.3505,
+        379.44,
+        367.8885
+      ],
+      "id": "page-3-r0008",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        56.304,
+        383.15025,
+        214.2,
+        413.67375
+      ],
+      "id": "page-3-r0009",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        214.812,
+        440.181,
+        348.84,
+        490.78575
+      ],
+      "id": "page-3-r0010",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        74.664,
+        444.19725,
+        155.448,
+        488.376
+      ],
+      "id": "page-3-r0011",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        230.112,
+        489.9825,
+        400.86,
+        524.52225
+      ],
+      "id": "page-3-r0012",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        122.4,
+        537.37425,
+        434.52,
+        769.5135
+      ],
+      "id": "page-3-r0013",
+      "page": 3
+    },
+    {
+      "bbox_points": [
+        125.46,
+        769.5135,
+        432.684,
+        779.1525
+      ],
+      "id": "page-3-r0014",
+      "page": 3
+    }
+  ],
+  "warnings": [
+    {
+      "code": "ambiguous-reading-order",
+      "id": "page-3-w0001",
+      "message": "The Analogy material on the left and the Simplification material on the right form parallel handwritten regions, so either column-wise or interleaved top-to-bottom reading is plausible. Column-wise reading is used here.",
+      "page": 3,
+      "semantic_nodes": [
+        "page-3-s0002",
+        "page-3-s0003",
+        "page-3-s0004",
+        "page-3-s0005",
+        "page-3-s0006"
+      ],
+      "source_regions": [
+        "page-3-r0002"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,405 @@
+{
+  "candidates": [],
+  "page": 10,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-10-s0001",
+      "level": 1,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0001"
+      ],
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0002",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0002"
+      ],
+      "text": "What current would be produced in 12-Gauge copper wire (r = 1 mm) if the electron drift velocity was 1.0 mm/s?",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0003",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0003"
+      ],
+      "text": "≈ 0.0022 mph",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0004",
+      "normalized_math": "e = 1.60 \\times 10^{-19}\\ \\mathrm{C}",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0004"
+      ],
+      "spoken_math_alternative": "e equals 1.60 times 10 to the negative 19 coulombs",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0005",
+      "normalized_math": "A = \\pi(0.001\\ \\mathrm{m})^2",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0005"
+      ],
+      "spoken_math_alternative": "A equals pi times 0.001 meter squared",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0006",
+      "normalized_math": "n = \\square",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0008"
+      ],
+      "spoken_math_alternative": "n equals a blank box",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0007",
+      "normalized_math": "I = enAv",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0006"
+      ],
+      "spoken_math_alternative": "I equals e times n times A times v",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0008",
+      "normalized_math": "v = 0.001\\ \\mathrm{m/s}",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0007"
+      ],
+      "spoken_math_alternative": "v equals 0.001 meter per second",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0009",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0009"
+      ],
+      "text": "Copper (z = 29) has 1 “free” electron, so atoms/m³ will give us # e⁻/m³",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0010",
+      "normalized_math": "n = \\left(\\frac{8.960\\ \\mathrm{g\\ Cu}}{\\mathrm{cm}^3}\\right)\\left(\\frac{1\\ \\mathrm{mol}}{63.55\\ \\mathrm{g\\ Cu}}\\right)\\left(\\frac{6.02\\times10^{23}\\ \\mathrm{atoms}}{\\mathrm{mol}}\\right)\\left(\\frac{100\\ \\mathrm{cm}}{1\\ \\mathrm{m}}\\right)^3 = 8.5\\times10^{28}/\\mathrm{m}^3",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0010"
+      ],
+      "spoken_math_alternative": "n equals 8.960 grams of copper per cubic centimeter, times 1 mole per 63.55 grams of copper, times 6.02 times 10 to the 23 atoms per mole, times the quantity 100 centimeters per 1 meter cubed, which equals 8.5 times 10 to the 28 per cubic meter",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0011",
+      "normalized_math": "I = (1.6\\times10^{-19}\\ \\mathrm{C})(8.5\\times10^{28}/\\mathrm{m}^3)\\left(\\pi(0.001\\ \\mathrm{m})^2\\right)\\left(\\frac{0.001\\ \\mathrm{m}}{\\mathrm{s}}\\right) = 43\\ \\mathrm{A}",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0011"
+      ],
+      "spoken_math_alternative": "I equals 1.6 times 10 to the negative 19 coulombs, times 8.5 times 10 to the 28 per cubic meter, times pi times 0.001 meter squared, times 0.001 meter per second, which equals 43 amperes",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0012",
+      "level": 1,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0012"
+      ],
+      "text": "Electrical Hazards",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0013",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0013"
+      ],
+      "text": "Electrical power produces heat → too much produces fires / burns / melting etc...",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-10-s0014",
+      "level": 2,
+      "page": 10,
+      "source_regions": [
+        "page-10-r0014"
+      ],
+      "text": "Ex",
+      "type": "heading"
+    },
+    {
+      "id": "page-10-s0015",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0015"
+      ],
+      "text": "A short is when there’s an unplanned low-resistance path in a circuit.",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Diagram labeled “(a)” showing an AC source at left connected by a two-conductor cable to a toaster-like appliance at right. Inside the appliance, a resistor labeled R bridges the conductors. A small unintended connection labeled r bridges the cable conductors near the right side, representing a low-resistance short. A blue arrow points to this defect with the handwritten annotation “insulation wore away in.”",
+      "figure_alternative": "Circuit diagram of a short caused by worn insulation, with unintended resistance r in parallel with appliance resistance R.",
+      "id": "page-10-s0016",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0016"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-10-s0017",
+      "normalized_math": "P = \\frac{V^2}{r}",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0018"
+      ],
+      "spoken_math_alternative": "P equals V squared divided by r",
+      "type": "formula"
+    },
+    {
+      "id": "page-10-s0018",
+      "normalized_math": "I = \\frac{V}{r}",
+      "page": 10,
+      "source_regions": [
+        "page-10-r0019"
+      ],
+      "spoken_math_alternative": "I equals V divided by r",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        70.992,
+        24.0975,
+        137.7,
+        50.60475
+      ],
+      "id": "page-10-r0001",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        79.56,
+        24.0975,
+        495.72,
+        114.86475
+      ],
+      "id": "page-10-r0002",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        394.74,
+        117.2745,
+        523.26,
+        144.585
+      ],
+      "id": "page-10-r0003",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        91.188,
+        135.74925,
+        225.828,
+        166.27275
+      ],
+      "id": "page-10-r0004",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        93.636,
+        173.502,
+        241.74,
+        203.22225
+      ],
+      "id": "page-10-r0005",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        308.448,
+        175.1085,
+        421.056,
+        201.61575
+      ],
+      "id": "page-10-r0006",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        238.068,
+        212.86125,
+        346.392,
+        237.762
+      ],
+      "id": "page-10-r0007",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        96.084,
+        213.6645,
+        171.972,
+        240.17175
+      ],
+      "id": "page-10-r0008",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        94.248,
+        258.6465,
+        456.552,
+        321.3
+      ],
+      "id": "page-10-r0009",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        24.48,
+        332.5455,
+        532.44,
+        390.3795
+      ],
+      "id": "page-10-r0010",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        44.676,
+        400.82175,
+        544.68,
+        447.41025
+      ],
+      "id": "page-10-r0011",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        36.108,
+        489.9825,
+        227.664,
+        531.7515
+      ],
+      "id": "page-10-r0012",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        19.584,
+        546.21,
+        592.416,
+        627.33825
+      ],
+      "id": "page-10-r0013",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        39.78,
+        611.27325,
+        61.812,
+        638.58375
+      ],
+      "id": "page-10-r0014",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        79.56,
+        624.9285,
+        440.64,
+        690.795
+      ],
+      "id": "page-10-r0015",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        115.056,
+        637.7805,
+        501.84,
+        777.546
+      ],
+      "id": "page-10-r0016",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        241.128,
+        715.69575,
+        438.192,
+        759.8745
+      ],
+      "id": "page-10-r0017",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        239.292,
+        763.89075,
+        315.18,
+        800.84025
+      ],
+      "id": "page-10-r0018",
+      "page": 10
+    },
+    {
+      "bbox_points": [
+        339.048,
+        765.49725,
+        402.084,
+        800.84025
+      ],
+      "id": "page-10-r0019",
+      "page": 10
+    }
+  ],
+  "warnings": [
+    {
+      "code": "missing-semantic-content",
+      "id": "page-10-w0001",
+      "message": "The value of n is represented only by an empty box in the source.",
+      "page": 10,
+      "semantic_nodes": [
+        "page-10-s0006"
+      ],
+      "source_regions": [
+        "page-10-r0008"
+      ]
+    },
+    {
+      "code": "suspected-source-error",
+      "id": "page-10-w0002",
+      "message": "The handwritten figure annotation “insulation wore away in” appears incomplete.",
+      "page": 10,
+      "semantic_nodes": [
+        "page-10-s0016"
+      ],
+      "source_regions": [
+        "page-10-r0017"
+      ]
+    }
+  ]
+}

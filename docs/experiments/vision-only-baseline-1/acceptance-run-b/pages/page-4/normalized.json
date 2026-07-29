@@ -1,0 +1,292 @@
+{
+  "candidates": [],
+  "page": 4,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-4-s0001",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0001"
+      ],
+      "text": "Resistivity depends on temperature — usually in metals",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-4-s0002",
+      "normalized_math": "R \\uparrow \\qquad T \\uparrow",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0002"
+      ],
+      "spoken_math_alternative": "R increases; T increases",
+      "type": "formula"
+    },
+    {
+      "id": "page-4-s0003",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0003"
+      ],
+      "text": "(Superconductors — materials with zero resistance — are generally extremely low temperature. “High temperature” superconductors are those which exhibit R=0 above 77K, the boiling point of nitrogen.)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-4-s0004",
+      "level": 1,
+      "page": 4,
+      "source_regions": [
+        "page-4-r0004"
+      ],
+      "text": "Ohmic Materials (Every material in 1B)",
+      "type": "heading"
+    },
+    {
+      "id": "page-4-s0005",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0005"
+      ],
+      "text": "Ohmic materials obey Ohm’s Law:",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-4-s0006",
+      "normalized_math": "I=\\frac{V}{R}",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0007"
+      ],
+      "spoken_math_alternative": "I equals V divided by R",
+      "type": "formula"
+    },
+    {
+      "id": "page-4-s0007",
+      "normalized_math": "I=\\left(\\frac{1}{R}\\right)V",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0006"
+      ],
+      "spoken_math_alternative": "I equals one over R times V",
+      "type": "formula"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Current-versus-voltage graph with vertical axis I and horizontal axis V. Two straight blue lines pass through the origin; one has a steeper positive slope than the other.",
+      "id": "page-4-s0008",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0008"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-4-s0009",
+      "normalized_math": "R\\uparrow \\;\\Longrightarrow\\; \\frac{\\Delta I}{\\Delta V}\\downarrow",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0009"
+      ],
+      "spoken_math_alternative": "As R increases, delta I over delta V decreases",
+      "type": "formula"
+    },
+    {
+      "id": "page-4-s0010",
+      "level": 2,
+      "page": 4,
+      "source_regions": [
+        "page-4-r0010"
+      ],
+      "text": "Ohm’s Law:",
+      "type": "heading"
+    },
+    {
+      "id": "page-4-s0011",
+      "normalized_math": "V=IR",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0011"
+      ],
+      "spoken_math_alternative": "V equals I R",
+      "type": "formula"
+    },
+    {
+      "id": "page-4-s0012",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0012"
+      ],
+      "text": "Example  In the circuit below, is V higher at point A or B? What about I?",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Single-loop circuit containing a resistor on the top branch between points A and B and a battery on the bottom branch. An arrow above the resistor shows current I flowing from A toward B. The battery’s positive terminal is on the left and negative terminal on the right.",
+      "id": "page-4-s0013",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0013"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-4-s0014",
+      "normalized_math": "V=IR,\\quad \\text{so}\\quad V_A>V_B",
+      "page": 4,
+      "source_regions": [
+        "page-4-r0014"
+      ],
+      "spoken_math_alternative": "V equals I R, so V sub A is greater than V sub B",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        70.38,
+        21.68775,
+        545.292,
+        46.5885
+      ],
+      "id": "page-4-r0001",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        189.72,
+        52.21125,
+        290.7,
+        77.91525
+      ],
+      "id": "page-4-r0002",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        70.992,
+        86.751,
+        493.884,
+        209.64825
+      ],
+      "id": "page-4-r0003",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        70.992,
+        259.44975,
+        522.648,
+        293.18625
+      ],
+      "id": "page-4-r0004",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        52.632,
+        327.726,
+        412.488,
+        357.44625
+      ],
+      "id": "page-4-r0005",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        367.2,
+        375.921,
+        438.192,
+        409.6575
+      ],
+      "id": "page-4-r0006",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        103.428,
+        388.773,
+        192.78,
+        440.181
+      ],
+      "id": "page-4-r0007",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        203.796,
+        399.21525,
+        443.088,
+        538.1775
+      ],
+      "id": "page-4-r0008",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        444.924,
+        416.0835,
+        586.296,
+        454.6395
+      ],
+      "id": "page-4-r0009",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        55.692,
+        571.11075,
+        189.108,
+        602.4375
+      ],
+      "id": "page-4-r0010",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        195.84,
+        571.914,
+        264.996,
+        599.2245
+      ],
+      "id": "page-4-r0011",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        71.604,
+        616.09275,
+        473.076,
+        683.56575
+      ],
+      "id": "page-4-r0012",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        120.564,
+        682.7625,
+        277.236,
+        792.80775
+      ],
+      "id": "page-4-r0013",
+      "page": 4
+    },
+    {
+      "bbox_points": [
+        333.54,
+        718.1055,
+        526.932,
+        748.629
+      ],
+      "id": "page-4-r0014",
+      "page": 4
+    }
+  ],
+  "warnings": []
+}

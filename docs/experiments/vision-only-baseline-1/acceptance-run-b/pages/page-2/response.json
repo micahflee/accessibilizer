@@ -1,0 +1,249 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.091,
+          0.031,
+          0.214,
+          0.061
+        ]
+      ],
+      "level": 2,
+      "text": "Example:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.236,
+          0.031,
+          0.877,
+          0.067
+        ],
+        [
+          0.091,
+          0.074,
+          0.856,
+          0.105
+        ],
+        [
+          0.094,
+          0.116,
+          0.829,
+          0.145
+        ]
+      ],
+      "text": "A steady current of 2.5 A is created in a wire for 1.0 minute. How much charge passed by any given point, and how many electrons would this be?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.264,
+          0.161,
+          0.738,
+          0.209
+        ]
+      ],
+      "normalized_math": "I = \\frac{Q}{\\Delta t} \\rightarrow I = \\frac{2.5\\,\\mathrm{C}}{\\mathrm{s}} = \\frac{Q}{t}",
+      "spoken_math_alternative": "I equals Q divided by delta t, which leads to I equals 2.5 coulombs per second, equal to Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.126,
+          0.231,
+          0.619,
+          0.269
+        ]
+      ],
+      "normalized_math": "Q = I t = \\left(2.5\\,\\frac{\\mathrm{C}}{\\mathrm{s}}\\right)(60\\,\\mathrm{s}) = 150\\,\\mathrm{C}",
+      "spoken_math_alternative": "Q equals I times t, equal to 2.5 coulombs per second times 60 seconds, equal to 150 coulombs.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.163,
+          0.296,
+          0.361,
+          0.325
+        ]
+      ],
+      "text": "# of electrons:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.2,
+          0.327,
+          0.802,
+          0.38
+        ]
+      ],
+      "normalized_math": "N = (150\\,\\mathrm{C})\\left(\\frac{1\\,e^-}{1.60\\times10^{-19}\\,\\mathrm{C}}\\right) = 9.4\\times10^{20}\\ \\mathrm{electrons}",
+      "spoken_math_alternative": "N equals 150 coulombs times one electron per 1.60 times 10 to the negative 19 coulombs, equal to 9.4 times 10 to the 20 electrons.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.173,
+          0.407,
+          0.313,
+          0.429
+        ]
+      ],
+      "text": "In moles:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.14,
+          0.432,
+          0.911,
+          0.478
+        ]
+      ],
+      "normalized_math": "n = 9.4\\times10^{20}\\ \\mathrm{electrons}\\left(\\frac{1}{6.022\\times10^{23}\\ \\mathrm{electrons/mol}}\\right) = 0.0016\\,\\mathrm{mol}",
+      "spoken_math_alternative": "n equals 9.4 times 10 to the 20 electrons times one divided by 6.022 times 10 to the 23 electrons per mole, equal to 0.0016 mole.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.465,
+          0.523,
+          0.738,
+          0.552
+        ]
+      ],
+      "level": 1,
+      "text": "Electrical Resistance",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.119,
+          0.552,
+          0.399,
+          0.79
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A closed rectangular circuit contains a battery labeled V on the lower left and a zigzag resistor labeled R on the right. Multiple e-minus labels and arrowheads around the wire indicate electron motion: rightward along the bottom, upward on the right, leftward along the top, and downward on the left, forming a counterclockwise path.",
+      "figure_alternative": "Circuit with a battery V, resistor R, and counterclockwise electron-flow arrows.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.477,
+          0.587,
+          0.895,
+          0.653
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "A resistor labeled R is drawn as a zigzag circuit symbol, with an arrow and the words “circuit symbol” identifying it.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.475,
+          0.679,
+          0.555,
+          0.704
+        ]
+      ],
+      "text": "UNIT:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.569,
+          0.671,
+          0.753,
+          0.71
+        ]
+      ],
+      "normalized_math": "\\Omega = \\mathrm{Ohm}",
+      "spoken_math_alternative": "Omega equals ohm.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.46,
+          0.721,
+          0.617,
+          0.773
+        ]
+      ],
+      "text": "Greek Omiga",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.655,
+          0.72,
+          0.938,
+          0.773
+        ]
+      ],
+      "normalized_math": "[\\Omega] = \\left[\\frac{V}{A}\\right] = \\left[\\frac{J/C}{C/s}\\right]",
+      "spoken_math_alternative": "The units of ohms equal volts per ampere, equal joules per coulomb divided by coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.143,
+          0.828,
+          0.816,
+          0.872
+        ]
+      ],
+      "text": "A resistor resists the flow of current.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.089,
+          0.877,
+          0.913,
+          0.968
+        ]
+      ],
+      "text": "They're often used to limit current in a part of a circuit. Wires themselves have some resistance, but we'll usually ignore it.",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.46,
+          0.721,
+          0.617,
+          0.773
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The handwritten annotation reads “Greek Omiga,” likely a misspelling of “Greek Omega.”",
+      "node_indices": [
+        13
+      ]
+    }
+  ]
+}

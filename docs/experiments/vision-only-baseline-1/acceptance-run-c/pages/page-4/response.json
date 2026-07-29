@@ -1,0 +1,172 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.115,
+          0.027,
+          0.893,
+          0.092
+        ]
+      ],
+      "text": "Resistivity depends on temperature — usually in metals",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.309,
+          0.066,
+          0.477,
+          0.096
+        ]
+      ],
+      "normalized_math": "R \\uparrow \\quad T \\uparrow",
+      "spoken_math_alternative": "R increases as T increases",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.116,
+          0.108,
+          0.792,
+          0.263
+        ]
+      ],
+      "text": "(Superconductors — materials with zero resistance — are generally extremely low temperature. “High temperature” superconductors are those which exhibit R = 0 above 77 K, the boiling point of nitrogen.)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.116,
+          0.322,
+          0.858,
+          0.361
+        ]
+      ],
+      "level": 1,
+      "text": "Ohmic Materials (Every material in 1B)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.087,
+          0.405,
+          0.669,
+          0.444
+        ]
+      ],
+      "text": "Ohmic materials obey Ohm’s Law:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.169,
+          0.486,
+          0.315,
+          0.548
+        ]
+      ],
+      "normalized_math": "I=\\frac{V}{R}",
+      "spoken_math_alternative": "I equals V divided by R",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.332,
+          0.462,
+          0.949,
+          0.67
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "An I-versus-V coordinate graph has current I on the vertical axis and voltage V on the horizontal axis. Two blue straight lines pass through the origin with different positive slopes. Above the graph is the relation I = (1/R)V. A blue note to the right says that as R increases, delta I over delta V decreases.",
+      "figure_alternative": "I-versus-V graph for ohmic materials, showing straight lines through the origin and a smaller slope for greater resistance.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.596,
+          0.469,
+          0.721,
+          0.507
+        ]
+      ],
+      "normalized_math": "I=\\left(\\frac{1}{R}\\right)V",
+      "spoken_math_alternative": "I equals one over R times V",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.729,
+          0.524,
+          0.964,
+          0.567
+        ]
+      ],
+      "normalized_math": "R\\uparrow \\quad \\frac{\\Delta I}{\\Delta V}\\downarrow",
+      "spoken_math_alternative": "As R increases, delta I over delta V decreases",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.092,
+          0.713,
+          0.436,
+          0.747
+        ]
+      ],
+      "level": 2,
+      "text": "Ohm’s Law: V = IR",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.115,
+          0.768,
+          0.778,
+          0.842
+        ]
+      ],
+      "text": "Example In the circuit below, is V higher at point A or B? What about I?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.197,
+          0.849,
+          0.454,
+          0.983
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A single-loop circuit contains a resistor in the top wire between labeled points A on the left and B on the right. An orange arrow above the resistor points from A toward B and is labeled I. A battery is in the bottom wire, with its positive terminal on the left and negative terminal on the right.",
+      "figure_alternative": "Series circuit with current flowing from A through a resistor to B; the battery is positive on the left and negative on the right.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.546,
+          0.895,
+          0.859,
+          0.937
+        ]
+      ],
+      "normalized_math": "V=IR,\\quad \\text{so}\\quad V_A>V_B.",
+      "spoken_math_alternative": "V equals I R, so V sub A is greater than V sub B",
+      "type": "formula"
+    }
+  ],
+  "warnings": []
+}

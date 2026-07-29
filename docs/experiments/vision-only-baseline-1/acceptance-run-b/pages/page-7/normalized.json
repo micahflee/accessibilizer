@@ -1,0 +1,486 @@
+{
+  "candidates": [],
+  "page": 7,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-7-s0001",
+      "level": 1,
+      "page": 7,
+      "source_regions": [
+        "page-7-r0001"
+      ],
+      "text": "UNITS",
+      "type": "heading"
+    },
+    {
+      "id": "page-7-s0002",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0005"
+      ],
+      "text": "I (current)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0003",
+      "normalized_math": "[A] = C/s",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0003"
+      ],
+      "spoken_math_alternative": "The unit ampere equals coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0004",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0008"
+      ],
+      "text": "V (potential difference)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0005",
+      "normalized_math": "[V] = J/C",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0007"
+      ],
+      "spoken_math_alternative": "The unit volt equals joules per coulomb.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0006",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0004"
+      ],
+      "text": "P (power)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0007",
+      "normalized_math": "[W] = J/s",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0002"
+      ],
+      "spoken_math_alternative": "The unit watt equals joules per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0008",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0009"
+      ],
+      "text": "R (resistance)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0009",
+      "normalized_math": "[Ω] = V/A = (V·s)/C = (J·s)/C^2",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0006"
+      ],
+      "spoken_math_alternative": "The unit ohm equals volts per ampere, which equals volt seconds per coulomb, which equals joule seconds per coulomb squared.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0010",
+      "level": 2,
+      "page": 7,
+      "source_regions": [
+        "page-7-r0010"
+      ],
+      "text": "UNITS: Watts",
+      "type": "heading"
+    },
+    {
+      "id": "page-7-s0011",
+      "normalized_math": "W = AV = (C/s)(J/C) = J/s",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0011"
+      ],
+      "spoken_math_alternative": "Watts equal amperes times volts, equal coulombs per second times joules per coulomb, equal joules per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0012",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0012"
+      ],
+      "text": "Power can also be expressed:",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0013",
+      "normalized_math": "(V = IR) → P = I(IR) = I^2R",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0013"
+      ],
+      "spoken_math_alternative": "Using V equals I R, power equals I times I R, which equals I squared R.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0014",
+      "normalized_math": "(I = V/R) → P = (V/R)V = V^2/R",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0014"
+      ],
+      "spoken_math_alternative": "Using I equals V over R, power equals V over R times V, which equals V squared over R.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0015",
+      "normalized_math": "P = IV",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0016"
+      ],
+      "spoken_math_alternative": "Power equals current times voltage.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0016",
+      "normalized_math": "P = I^2R",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0017"
+      ],
+      "spoken_math_alternative": "Power equals current squared times resistance.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0017",
+      "normalized_math": "P = V^2/R",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0015"
+      ],
+      "spoken_math_alternative": "Power equals voltage squared divided by resistance.",
+      "type": "formula"
+    },
+    {
+      "id": "page-7-s0018",
+      "level": 1,
+      "page": 7,
+      "source_regions": [
+        "page-7-r0018"
+      ],
+      "text": "Power Sources (Voltage Source)",
+      "type": "heading"
+    },
+    {
+      "id": "page-7-s0019",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0020"
+      ],
+      "text": "• Battery (DC)\ndirect current",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Line graph of voltage V versus time t in seconds. A nearly horizontal line remains at approximately 1.5 volts, illustrating a constant DC voltage source.",
+      "id": "page-7-s0020",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0019"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-7-s0021",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0022"
+      ],
+      "text": "• Generator (AC)\nalternating current",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0022",
+      "level": 2,
+      "page": 7,
+      "source_regions": [
+        "page-7-r0021"
+      ],
+      "text": "Advantages over DC:",
+      "type": "heading"
+    },
+    {
+      "id": "page-7-s0023",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0023"
+      ],
+      "text": "• Easier/safer to transmit over long distances.",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-7-s0024",
+      "page": 7,
+      "source_regions": [
+        "page-7-r0024"
+      ],
+      "text": "• Easy/efficient to generate.",
+      "type": "paragraph"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        63.648,
+        16.86825,
+        107.712,
+        34.53975
+      ],
+      "id": "page-7-r0001",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        398.412,
+        35.343,
+        481.644,
+        65.8665
+      ],
+      "id": "page-7-r0002",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        202.572,
+        36.14625,
+        274.788,
+        67.473
+      ],
+      "id": "page-7-r0003",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        307.836,
+        41.769,
+        395.352,
+        67.473
+      ],
+      "id": "page-7-r0004",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        64.26,
+        44.982,
+        173.196,
+        69.88275
+      ],
+      "id": "page-7-r0005",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        403.92,
+        69.0795,
+        529.992,
+        126.9135
+      ],
+      "id": "page-7-r0006",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        206.856,
+        70.686,
+        282.744,
+        102.01275
+      ],
+      "id": "page-7-r0007",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        66.096,
+        74.70225,
+        189.72,
+        106.83225
+      ],
+      "id": "page-7-r0008",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        312.12,
+        74.70225,
+        412.488,
+        100.40625
+      ],
+      "id": "page-7-r0009",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        64.872,
+        155.8305,
+        182.376,
+        183.141
+      ],
+      "id": "page-7-r0010",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        148.104,
+        171.8955,
+        443.088,
+        212.058
+      ],
+      "id": "page-7-r0011",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        78.336,
+        234.549,
+        358.632,
+        264.26925
+      ],
+      "id": "page-7-r0012",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        87.516,
+        271.4985,
+        407.592,
+        306.8415
+      ],
+      "id": "page-7-r0013",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        88.74,
+        318.89025,
+        403.92,
+        354.23325
+      ],
+      "id": "page-7-r0014",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        375.768,
+        361.4625,
+        449.82,
+        416.0835
+      ],
+      "id": "page-7-r0015",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        96.696,
+        362.26575,
+        201.348,
+        414.477
+      ],
+      "id": "page-7-r0016",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        228.888,
+        363.87225,
+        313.344,
+        411.264
+      ],
+      "id": "page-7-r0017",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        92.412,
+        440.98425,
+        418.608,
+        475.524
+      ],
+      "id": "page-7-r0018",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        276.012,
+        509.2605,
+        511.632,
+        618.5025
+      ],
+      "id": "page-7-r0019",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        60.588,
+        510.867,
+        233.172,
+        568.701
+      ],
+      "id": "page-7-r0020",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        275.4,
+        629.748,
+        452.268,
+        656.25525
+      ],
+      "id": "page-7-r0021",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        55.08,
+        630.55125,
+        238.68,
+        706.05675
+      ],
+      "id": "page-7-r0022",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        291.924,
+        659.46825,
+        498.78,
+        700.434
+      ],
+      "id": "page-7-r0023",
+      "page": 7
+    },
+    {
+      "bbox_points": [
+        293.148,
+        710.073,
+        512.856,
+        740.5965
+      ],
+      "id": "page-7-r0024",
+      "page": 7
+    }
+  ],
+  "warnings": []
+}

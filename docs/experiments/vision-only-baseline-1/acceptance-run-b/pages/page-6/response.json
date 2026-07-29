@@ -1,0 +1,188 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.044,
+          0.019,
+          0.303,
+          0.039
+        ]
+      ],
+      "level": 1,
+      "text": "Example : Speaker wires.",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.044,
+          0.048,
+          0.339,
+          0.249
+        ]
+      ],
+      "text": "Suppose you want to connect your stereo to remote speakers. (a) If each wire must be 20 m long, what diameter copper wire should you use to keep the resistance less than 0.10 Ω per wire? (b) If the current to each speaker is 4.0 A, what is the potential difference, or voltage drop, across each wire?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.338,
+          0.025,
+          0.532,
+          0.229
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A stereo receiver is connected to two remote speakers. Curved wire paths run from the receiver to each speaker, and each path is labeled 20 m.",
+      "figure_alternative": "Diagram of a stereo connected by 20 m wires to two remote speakers.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.603,
+          0.029,
+          0.968,
+          0.211
+        ]
+      ],
+      "normalized_math": "\\text{(b)}\\quad V=IR=(4.0\\,\\mathrm{A})(0.10\\,\\Omega),\\qquad V_R=0.400\\,\\mathrm{V}=400\\,\\mathrm{mV}",
+      "spoken_math_alternative": "Part b. Voltage equals current times resistance, equal to 4.0 amperes times 0.10 ohm. The voltage across the resistance is 0.400 volt, or 400 millivolts. Annotations indicate amperes as coulombs per second and ohms as volts per ampere.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.037,
+          0.286,
+          0.386,
+          0.507
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn series circuit. A voltage source V is at left with positive and negative terminals. Current I is shown clockwise around the loop. On the right, a resistor labeled R and WIRING is above a speaker symbol labeled SPEAKER.",
+      "figure_alternative": "Series-circuit sketch showing a voltage source, wire resistance, speaker, and clockwise current.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.45,
+          0.286,
+          0.873,
+          0.373
+        ]
+      ],
+      "normalized_math": "\\text{(a)}\\quad \\rho_{\\mathrm{Cu}}=1.68\\times10^{-8}\\,\\Omega\\!\\cdot\\!\\mathrm{m},\\qquad L=20\\,\\mathrm{m},\\qquad R=0.10\\,\\Omega",
+      "spoken_math_alternative": "Part a. The resistivity of copper is 1.68 times 10 to the negative 8 ohm meters. The length is 20 meters, and the resistance is 0.10 ohm.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.525,
+          0.381,
+          0.873,
+          0.49
+        ]
+      ],
+      "normalized_math": "A=\\pi r^2=\\pi\\left(\\frac d2\\right)^2,\\qquad R=\\rho\\frac LA=\\frac{4\\rho L}{\\pi d^2}",
+      "spoken_math_alternative": "Area equals pi r squared, equal to pi times d over 2 squared. Resistance equals resistivity times length over area, equal to 4 rho L over pi d squared.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.113,
+          0.517,
+          0.959,
+          0.612
+        ]
+      ],
+      "normalized_math": "d^2>\\frac{4\\rho L}{\\pi R}\\quad\\Rightarrow\\quad d>\\left(\\frac{4\\rho L}{\\pi R}\\right)^{1/2}=\\left[\\frac{4(1.68\\times10^{-8}\\,\\Omega\\!\\cdot\\!\\mathrm{m})(20\\,\\mathrm{m})}{\\pi(0.10\\,\\Omega)}\\right]^{1/2}=2.1\\,\\mathrm{mm}",
+      "spoken_math_alternative": "d squared is greater than 4 rho L over pi R. Therefore, d is greater than the square root of 4 rho L over pi R. Substitution gives a diameter of 2.1 millimeters.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.075,
+          0.638,
+          0.458,
+          0.683
+        ]
+      ],
+      "level": 1,
+      "text": "Electrical Energy & Power",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.179,
+          0.69,
+          0.476,
+          0.757
+        ]
+      ],
+      "normalized_math": "\\mathrm{Power}=\\frac{\\mathrm{Energy}}{\\mathrm{time}}",
+      "spoken_math_alternative": "Power equals energy divided by time.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.106,
+          0.781,
+          0.332,
+          0.811
+        ]
+      ],
+      "level": 2,
+      "text": "Electrical energy:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.174,
+          0.815,
+          0.302,
+          0.867
+        ]
+      ],
+      "normalized_math": "U=qV",
+      "spoken_math_alternative": "Electrical energy U equals charge q times voltage V.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.444,
+          0.704,
+          0.925,
+          0.866
+        ]
+      ],
+      "normalized_math": "P=\\frac{(\\mathrm{charge})(\\mathrm{voltage})}{\\mathrm{time}}=IV",
+      "spoken_math_alternative": "Power equals charge times voltage divided by time, which equals current times voltage.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.371,
+          0.892,
+          0.541,
+          0.957
+        ]
+      ],
+      "normalized_math": "\\boxed{P=IV}",
+      "spoken_math_alternative": "Power equals current times voltage.",
+      "type": "formula"
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,151 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.137,
+          0.037,
+          0.854,
+          0.068
+        ]
+      ],
+      "text": "We say that “voltage drops” across a resistor.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.166,
+          0.087,
+          0.833,
+          0.128
+        ]
+      ],
+      "text": "The current is the same at A and B!",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.13,
+          0.141,
+          0.864,
+          0.201
+        ]
+      ],
+      "text": "The current is lower through this whole circuit due to the resistor.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.195,
+          0.224,
+          0.546,
+          0.255
+        ]
+      ],
+      "level": 2,
+      "text": "Mental model: traffic jam!",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.311,
+          0.267,
+          0.697,
+          0.465
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A closed circuit is drawn as a traffic jam of small car-like boxes labeled “e⁻.” The boxes form a loop. A zigzag resistor labeled R interrupts the top of the loop, while a battery labeled V interrupts the bottom. The battery’s positive terminal is on the left and its negative terminal is on the right. The crowded electron boxes illustrate the traffic-jam mental model for current through a resistor.",
+      "figure_alternative": "Traffic-jam model of electrons crowded around a closed circuit containing a resistor R and a battery V.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.192,
+          0.558,
+          0.303,
+          0.589
+        ]
+      ],
+      "level": 2,
+      "text": "Example",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.354,
+          0.553,
+          0.843,
+          0.594
+        ],
+        [
+          0.153,
+          0.6,
+          0.88,
+          0.638
+        ],
+        [
+          0.166,
+          0.64,
+          0.917,
+          0.677
+        ],
+        [
+          0.181,
+          0.681,
+          0.66,
+          0.71
+        ]
+      ],
+      "text": "A flashlight bulb draws 300mA from its 1.5 V battery. What’s the resistance of the bulb? If the battery degrades and only produces 1.2 V how would the current change?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.047,
+          0.681,
+          0.154,
+          0.884
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Sketch of a glowing flashlight with a bulb and two batteries inside.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.239,
+          0.725,
+          0.802,
+          0.788
+        ]
+      ],
+      "normalized_math": "I = \\frac{V}{R} \\Rightarrow R = \\frac{V}{I} = \\frac{1.5\\,\\mathrm{V}}{0.30\\,\\mathrm{A}} = 5.0\\,\\Omega",
+      "spoken_math_alternative": "Current equals voltage divided by resistance. Therefore, resistance equals voltage divided by current, which equals 1.5 volts divided by 0.30 amperes, or 5.0 ohms.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.198,
+          0.84,
+          0.833,
+          0.888
+        ]
+      ],
+      "normalized_math": "V \\to 1.2\\,\\mathrm{V}:\\quad I = \\frac{1.2\\,\\mathrm{V}}{5.0\\,\\Omega} = 0.24\\,\\mathrm{A} = 240\\,\\mathrm{mA}",
+      "spoken_math_alternative": "When the voltage decreases to 1.2 volts, current equals 1.2 volts divided by 5.0 ohms, which is 0.24 amperes, or 240 milliamperes.",
+      "type": "formula"
+    }
+  ],
+  "warnings": []
+}
