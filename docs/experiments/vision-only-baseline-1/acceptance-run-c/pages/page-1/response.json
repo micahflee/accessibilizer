@@ -1,0 +1,186 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.049,
+          0.018,
+          0.934,
+          0.052
+        ]
+      ],
+      "level": 1,
+      "text": "Chapter 20: Current, Resistance, Ohm’s Law, Power, AC/DC",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.078,
+          0.085,
+          0.446,
+          0.342
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn simple circuit. A battery on the left is labeled V, with a pink plus sign at its upper terminal and a blue minus sign at its lower terminal. A black wire forms a rectangular loop. Blue arrows labeled I show conventional current moving clockwise: rightward across the top, downward along the right side, and leftward across the bottom. Black arrows and repeated e⁻ labels show electrons moving in the opposite, counterclockwise direction around the loop and downward through the battery.",
+      "figure_alternative": "Circuit diagram contrasting clockwise conventional current I with counterclockwise electron flow around a battery labeled V.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.466,
+          0.119,
+          0.949,
+          0.23
+        ]
+      ],
+      "text": "Electrical current (I) is the rate of flow of positive charge.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.548,
+          0.247,
+          0.793,
+          0.296
+        ]
+      ],
+      "normalized_math": "I = \\frac{Q}{\\Delta t} = \\frac{Q}{t}",
+      "spoken_math_alternative": "I equals Q divided by delta t, which equals Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.451,
+          0.325,
+          0.958,
+          0.464
+        ]
+      ],
+      "text": "It’s direction (from DC, or direct current, voltage) is opposite the ‘flow’ of electrons: from + to −.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.055,
+          0.447,
+          0.316,
+          0.477
+        ]
+      ],
+      "level": 2,
+      "text": "Units of current",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.09,
+          0.495,
+          0.273,
+          0.526
+        ]
+      ],
+      "text": "Amperes (A).",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.327,
+          0.482,
+          0.49,
+          0.528
+        ]
+      ],
+      "normalized_math": "[A] = \\frac{C}{s}",
+      "spoken_math_alternative": "The unit ampere equals coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.125,
+          0.531,
+          0.243,
+          0.552
+        ]
+      ],
+      "text": "SI base unit",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.549,
+          0.492,
+          0.931,
+          0.531
+        ]
+      ],
+      "text": "(Also known as “amps”).",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.125,
+          0.602,
+          0.801,
+          0.637
+        ]
+      ],
+      "level": 2,
+      "text": "Electric fields in a Simple Circuit (1962)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.252,
+          0.669,
+          0.725,
+          0.951
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Black-and-white photograph of a simple circuit or conductor apparatus with two leads entering from the top. Dense curved field-line patterns surround and pass through the conductor. A left callout pointing into the conductor reads, “Internal electric field: constant magnitude and parallel to the axis of the conductor.” A right callout pointing to the surrounding region reads, “External electric field: Produced by the surface charges.”",
+      "figure_alternative": "Annotated photograph showing internal and external electric fields in a simple circuit.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.245,
+          0.962,
+          0.554,
+          0.976
+        ]
+      ],
+      "text": "Photograph from Jefimenko (1962: 20). Annotations added",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.451,
+          0.325,
+          0.958,
+          0.464
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The source reads “It’s direction,” where the possessive “Its direction” was likely intended; the visible wording has been preserved.",
+      "node_indices": [
+        4
+      ]
+    }
+  ]
+}

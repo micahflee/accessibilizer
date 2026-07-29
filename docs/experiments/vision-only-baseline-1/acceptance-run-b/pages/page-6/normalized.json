@@ -1,0 +1,295 @@
+{
+  "candidates": [],
+  "page": 6,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "id": "page-6-s0001",
+      "level": 1,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0001"
+      ],
+      "text": "Example : Speaker wires.",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0002",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0004"
+      ],
+      "text": "Suppose you want to connect your stereo to remote speakers. (a) If each wire must be 20 m long, what diameter copper wire should you use to keep the resistance less than 0.10 Ω per wire? (b) If the current to each speaker is 4.0 A, what is the potential difference, or voltage drop, across each wire?",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "A stereo receiver is connected to two remote speakers. Curved wire paths run from the receiver to each speaker, and each path is labeled 20 m.",
+      "figure_alternative": "Diagram of a stereo connected by 20 m wires to two remote speakers.",
+      "id": "page-6-s0003",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0002"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-6-s0004",
+      "normalized_math": "\\text{(b)}\\quad V=IR=(4.0\\,\\mathrm{A})(0.10\\,\\Omega),\\qquad V_R=0.400\\,\\mathrm{V}=400\\,\\mathrm{mV}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0003"
+      ],
+      "spoken_math_alternative": "Part b. Voltage equals current times resistance, equal to 4.0 amperes times 0.10 ohm. The voltage across the resistance is 0.400 volt, or 400 millivolts. Annotations indicate amperes as coulombs per second and ohms as volts per ampere.",
+      "type": "formula"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn series circuit. A voltage source V is at left with positive and negative terminals. Current I is shown clockwise around the loop. On the right, a resistor labeled R and WIRING is above a speaker symbol labeled SPEAKER.",
+      "figure_alternative": "Series-circuit sketch showing a voltage source, wire resistance, speaker, and clockwise current.",
+      "id": "page-6-s0005",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0005"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-6-s0006",
+      "normalized_math": "\\text{(a)}\\quad \\rho_{\\mathrm{Cu}}=1.68\\times10^{-8}\\,\\Omega\\!\\cdot\\!\\mathrm{m},\\qquad L=20\\,\\mathrm{m},\\qquad R=0.10\\,\\Omega",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0006"
+      ],
+      "spoken_math_alternative": "Part a. The resistivity of copper is 1.68 times 10 to the negative 8 ohm meters. The length is 20 meters, and the resistance is 0.10 ohm.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0007",
+      "normalized_math": "A=\\pi r^2=\\pi\\left(\\frac d2\\right)^2,\\qquad R=\\rho\\frac LA=\\frac{4\\rho L}{\\pi d^2}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0007"
+      ],
+      "spoken_math_alternative": "Area equals pi r squared, equal to pi times d over 2 squared. Resistance equals resistivity times length over area, equal to 4 rho L over pi d squared.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0008",
+      "normalized_math": "d^2>\\frac{4\\rho L}{\\pi R}\\quad\\Rightarrow\\quad d>\\left(\\frac{4\\rho L}{\\pi R}\\right)^{1/2}=\\left[\\frac{4(1.68\\times10^{-8}\\,\\Omega\\!\\cdot\\!\\mathrm{m})(20\\,\\mathrm{m})}{\\pi(0.10\\,\\Omega)}\\right]^{1/2}=2.1\\,\\mathrm{mm}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0008"
+      ],
+      "spoken_math_alternative": "d squared is greater than 4 rho L over pi R. Therefore, d is greater than the square root of 4 rho L over pi R. Substitution gives a diameter of 2.1 millimeters.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0009",
+      "level": 1,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0009"
+      ],
+      "text": "Electrical Energy & Power",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0010",
+      "normalized_math": "\\mathrm{Power}=\\frac{\\mathrm{Energy}}{\\mathrm{time}}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0010"
+      ],
+      "spoken_math_alternative": "Power equals energy divided by time.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0011",
+      "level": 2,
+      "page": 6,
+      "source_regions": [
+        "page-6-r0012"
+      ],
+      "text": "Electrical energy:",
+      "type": "heading"
+    },
+    {
+      "id": "page-6-s0012",
+      "normalized_math": "U=qV",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0013"
+      ],
+      "spoken_math_alternative": "Electrical energy U equals charge q times voltage V.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0013",
+      "normalized_math": "P=\\frac{(\\mathrm{charge})(\\mathrm{voltage})}{\\mathrm{time}}=IV",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0011"
+      ],
+      "spoken_math_alternative": "Power equals charge times voltage divided by time, which equals current times voltage.",
+      "type": "formula"
+    },
+    {
+      "id": "page-6-s0014",
+      "normalized_math": "\\boxed{P=IV}",
+      "page": 6,
+      "source_regions": [
+        "page-6-r0014"
+      ],
+      "spoken_math_alternative": "Power equals current times voltage.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        26.928,
+        15.26175,
+        185.436,
+        31.32675
+      ],
+      "id": "page-6-r0001",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        206.856,
+        20.08125,
+        325.584,
+        183.94425
+      ],
+      "id": "page-6-r0002",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        369.036,
+        23.29425,
+        592.416,
+        169.48575
+      ],
+      "id": "page-6-r0003",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        26.928,
+        38.556,
+        207.468,
+        200.00925
+      ],
+      "id": "page-6-r0004",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        22.644,
+        229.7295,
+        236.232,
+        407.24775
+      ],
+      "id": "page-6-r0005",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        275.4,
+        229.7295,
+        534.276,
+        299.61225
+      ],
+      "id": "page-6-r0006",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        321.3,
+        306.03825,
+        534.276,
+        393.5925
+      ],
+      "id": "page-6-r0007",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        69.156,
+        415.28025,
+        586.908,
+        491.589
+      ],
+      "id": "page-6-r0008",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        45.9,
+        512.4735,
+        280.296,
+        548.61975
+      ],
+      "id": "page-6-r0009",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        109.548,
+        554.2425,
+        291.312,
+        608.06025
+      ],
+      "id": "page-6-r0010",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        271.728,
+        565.488,
+        566.1,
+        695.6145
+      ],
+      "id": "page-6-r0011",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        64.872,
+        627.33825,
+        203.184,
+        651.43575
+      ],
+      "id": "page-6-r0012",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        106.488,
+        654.64875,
+        184.824,
+        696.41775
+      ],
+      "id": "page-6-r0013",
+      "page": 6
+    },
+    {
+      "bbox_points": [
+        227.052,
+        716.499,
+        331.092,
+        768.71025
+      ],
+      "id": "page-6-r0014",
+      "page": 6
+    }
+  ],
+  "warnings": []
+}

@@ -1,0 +1,252 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.082,
+          0.001,
+          0.562,
+          0.193
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn voltage-versus-time graph. The vertical axis is labeled V, with dashed horizontal guides at +V₀ and −V₀. A sinusoidal waveform oscillates about the horizontal t(s) axis. An orange bracket beneath the graph marks the interval labeled “1 cycle.”",
+      "figure_alternative": "Sinusoidal voltage waveform ranging from +V₀ to −V₀ over time, with one cycle marked.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.613,
+          0.056,
+          0.838,
+          0.103
+        ]
+      ],
+      "normalized_math": "V = V_0\\sin(\\omega t)",
+      "spoken_math_alternative": "V equals V naught sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.76,
+          0.158,
+          0.968,
+          0.387
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn series circuit containing a resistor, capacitor, and circular AC voltage-source symbol. An arrow identifies the circular sine-wave symbol with the text “circuit symbol for AC voltage source.”",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.194,
+          0.21,
+          0.431,
+          0.249
+        ]
+      ],
+      "text": "Peak voltage: V₀",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.179,
+          0.258,
+          0.684,
+          0.296
+        ]
+      ],
+      "text": "ω is angular frequency (rad/s)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.16,
+          0.31,
+          0.586,
+          0.349
+        ]
+      ],
+      "text": "(standard) f = 60 Hz (cycle/s)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.334,
+          0.359,
+          0.478,
+          0.404
+        ]
+      ],
+      "normalized_math": "\\omega = 2\\pi f",
+      "spoken_math_alternative": "Omega equals two pi f.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.124,
+          0.414,
+          0.164,
+          0.439
+        ]
+      ],
+      "level": 2,
+      "text": "Ex",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.191,
+          0.414,
+          0.54,
+          0.442
+        ]
+      ],
+      "text": "Convert 60 Hz to ω:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.193,
+          0.449,
+          0.61,
+          0.493
+        ]
+      ],
+      "normalized_math": "\\left(60\\,\\frac{\\mathrm{cycles}}{\\mathrm{s}}\\right)\\left(\\frac{2\\pi\\,\\mathrm{rad}}{\\mathrm{cycle}}\\right)=377\\,\\frac{\\mathrm{rad}}{\\mathrm{s}}",
+      "spoken_math_alternative": "Sixty cycles per second times two pi radians per cycle equals three hundred seventy-seven radians per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.071,
+          0.522,
+          0.553,
+          0.568
+        ]
+      ],
+      "level": 2,
+      "text": "“Average” voltage",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.333,
+          0.521,
+          0.553,
+          0.567
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\sqrt{\\overline{V^2}}",
+      "spoken_math_alternative": "V R M S equals the square root of the average of V squared.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.046,
+          0.58,
+          0.762,
+          0.653
+        ]
+      ],
+      "text": "FACT: the average value of sin² θ (or cos² θ) over a cycle is 1/2.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.091,
+          0.65,
+          0.701,
+          0.796
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn graph with vertical axis y and horizontal axis t. The y-axis has a mark at 1. A repeating rounded waveform begins at zero, rises to approximately 1, returns to the axis, and repeats; portions dip slightly below the axis. The curve is labeled “Sin(ωt).”",
+      "figure_alternative": "Repeating waveform labeled Sin(ωt), plotted against time with a marked amplitude of 1.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.068,
+          0.82,
+          0.249,
+          0.87
+        ]
+      ],
+      "text": "“average” →",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.208,
+          0.841,
+          0.529,
+          0.894
+        ]
+      ],
+      "normalized_math": "\\left\\langle \\sin^2(\\omega t)\\right\\rangle=\\frac{1}{2}",
+      "spoken_math_alternative": "The average of sine squared of omega t equals one half.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.071,
+          0.897,
+          0.77,
+          0.966
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\left(\\overline{V_0^2\\sin^2(\\omega t)}\\right)^{1/2}=\\left(V_0^2\\left(\\frac{1}{2}\\right)\\right)^{1/2}=\\frac{1}{\\sqrt{2}}V_0",
+      "spoken_math_alternative": "V R M S equals the square root of the average of V naught squared sine squared of omega t, which equals the square root of V naught squared times one half, which equals V naught divided by the square root of two.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.783,
+          0.895,
+          0.975,
+          0.97
+        ]
+      ],
+      "normalized_math": "V_{\\mathrm{RMS}}=\\frac{V_0}{\\sqrt{2}}",
+      "spoken_math_alternative": "V R M S equals V naught divided by the square root of two.",
+      "type": "formula"
+    }
+  ],
+  "warnings": [
+    {
+      "boxes": [
+        [
+          0.091,
+          0.65,
+          0.701,
+          0.796
+        ]
+      ],
+      "code": "suspected-source-error",
+      "message": "The graph is labeled “Sin(ωt),” but its predominantly nonnegative repeating shape and the surrounding discussion concern sin²(ωt); the visible label may be missing a superscript 2. The slight dips below zero are preserved in the description.",
+      "node_indices": [
+        13
+      ]
+    }
+  ]
+}

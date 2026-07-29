@@ -1,0 +1,309 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.104,
+          0.021,
+          0.176,
+          0.043
+        ]
+      ],
+      "level": 1,
+      "text": "UNITS",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.105,
+          0.056,
+          0.283,
+          0.087
+        ]
+      ],
+      "text": "I (current)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.331,
+          0.045,
+          0.449,
+          0.084
+        ]
+      ],
+      "normalized_math": "[A] = C/s",
+      "spoken_math_alternative": "The unit ampere equals coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.108,
+          0.093,
+          0.31,
+          0.133
+        ]
+      ],
+      "text": "V (potential difference)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.338,
+          0.088,
+          0.462,
+          0.127
+        ]
+      ],
+      "normalized_math": "[V] = J/C",
+      "spoken_math_alternative": "The unit volt equals joules per coulomb.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.503,
+          0.052,
+          0.646,
+          0.084
+        ]
+      ],
+      "text": "P (power)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.651,
+          0.044,
+          0.787,
+          0.082
+        ]
+      ],
+      "normalized_math": "[W] = J/s",
+      "spoken_math_alternative": "The unit watt equals joules per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.51,
+          0.093,
+          0.674,
+          0.125
+        ]
+      ],
+      "text": "R (resistance)",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.66,
+          0.086,
+          0.866,
+          0.158
+        ]
+      ],
+      "normalized_math": "[Ω] = V/A = (V·s)/C = (J·s)/C^2",
+      "spoken_math_alternative": "The unit ohm equals volts per ampere, which equals volt seconds per coulomb, which equals joule seconds per coulomb squared.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.106,
+          0.194,
+          0.298,
+          0.228
+        ]
+      ],
+      "level": 2,
+      "text": "UNITS: Watts",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.242,
+          0.214,
+          0.724,
+          0.264
+        ]
+      ],
+      "normalized_math": "W = AV = (C/s)(J/C) = J/s",
+      "spoken_math_alternative": "Watts equal amperes times volts, equal coulombs per second times joules per coulomb, equal joules per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.128,
+          0.292,
+          0.586,
+          0.329
+        ]
+      ],
+      "text": "Power can also be expressed:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.143,
+          0.338,
+          0.666,
+          0.382
+        ]
+      ],
+      "normalized_math": "(V = IR) → P = I(IR) = I^2R",
+      "spoken_math_alternative": "Using V equals I R, power equals I times I R, which equals I squared R.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.145,
+          0.397,
+          0.66,
+          0.441
+        ]
+      ],
+      "normalized_math": "(I = V/R) → P = (V/R)V = V^2/R",
+      "spoken_math_alternative": "Using I equals V over R, power equals V over R times V, which equals V squared over R.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.158,
+          0.451,
+          0.329,
+          0.516
+        ]
+      ],
+      "normalized_math": "P = IV",
+      "spoken_math_alternative": "Power equals current times voltage.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.374,
+          0.453,
+          0.512,
+          0.512
+        ]
+      ],
+      "normalized_math": "P = I^2R",
+      "spoken_math_alternative": "Power equals current squared times resistance.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.614,
+          0.45,
+          0.735,
+          0.518
+        ]
+      ],
+      "normalized_math": "P = V^2/R",
+      "spoken_math_alternative": "Power equals voltage squared divided by resistance.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.151,
+          0.549,
+          0.684,
+          0.592
+        ]
+      ],
+      "level": 1,
+      "text": "Power Sources (Voltage Source)",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.099,
+          0.636,
+          0.381,
+          0.708
+        ]
+      ],
+      "text": "• Battery (DC)\ndirect current",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.451,
+          0.634,
+          0.836,
+          0.77
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Line graph of voltage V versus time t in seconds. A nearly horizontal line remains at approximately 1.5 volts, illustrating a constant DC voltage source.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.09,
+          0.785,
+          0.39,
+          0.879
+        ]
+      ],
+      "text": "• Generator (AC)\nalternating current",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.45,
+          0.784,
+          0.739,
+          0.817
+        ]
+      ],
+      "level": 2,
+      "text": "Advantages over DC:",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.477,
+          0.821,
+          0.815,
+          0.872
+        ]
+      ],
+      "text": "• Easier/safer to transmit over long distances.",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.479,
+          0.884,
+          0.838,
+          0.922
+        ]
+      ],
+      "text": "• Easy/efficient to generate.",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": []
+}

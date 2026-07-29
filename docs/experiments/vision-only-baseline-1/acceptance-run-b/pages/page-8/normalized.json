@@ -1,0 +1,384 @@
+{
+  "candidates": [],
+  "page": 8,
+  "page_dimensions": {
+    "height_points": 803.25,
+    "width_points": 612.0
+  },
+  "schema_version": "1.0",
+  "semantic_layer": [
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn voltage-versus-time graph. The vertical axis is labeled V, with dashed horizontal guides at +V₀ and −V₀. A sinusoidal waveform oscillates about the horizontal t(s) axis. An orange bracket beneath the graph marks the interval labeled “1 cycle.”",
+      "figure_alternative": "Sinusoidal voltage waveform ranging from +V₀ to −V₀ over time, with one cycle marked.",
+      "id": "page-8-s0001",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0001"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0002",
+      "normalized_math": "V = V_0\\sin(\\omega t)",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0002"
+      ],
+      "spoken_math_alternative": "V equals V naught sine of omega t.",
+      "type": "formula"
+    },
+    {
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "Hand-drawn series circuit containing a resistor, capacitor, and circular AC voltage-source symbol. An arrow identifies the circular sine-wave symbol with the text “circuit symbol for AC voltage source.”",
+      "id": "page-8-s0003",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0003"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0004",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0004"
+      ],
+      "text": "Peak voltage: V₀",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0005",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0005"
+      ],
+      "text": "ω is angular frequency (rad/s)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0006",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0006"
+      ],
+      "text": "(standard) f = 60 Hz (cycle/s)",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0007",
+      "normalized_math": "\\omega = 2\\pi f",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0007"
+      ],
+      "spoken_math_alternative": "Omega equals two pi f.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0008",
+      "level": 2,
+      "page": 8,
+      "source_regions": [
+        "page-8-r0008"
+      ],
+      "text": "Ex",
+      "type": "heading"
+    },
+    {
+      "id": "page-8-s0009",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0009"
+      ],
+      "text": "Convert 60 Hz to ω:",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0010",
+      "normalized_math": "\\left(60\\,\\frac{\\mathrm{cycles}}{\\mathrm{s}}\\right)\\left(\\frac{2\\pi\\,\\mathrm{rad}}{\\mathrm{cycle}}\\right)=377\\,\\frac{\\mathrm{rad}}{\\mathrm{s}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0010"
+      ],
+      "spoken_math_alternative": "Sixty cycles per second times two pi radians per cycle equals three hundred seventy-seven radians per second.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0011",
+      "level": 2,
+      "page": 8,
+      "source_regions": [
+        "page-8-r0012"
+      ],
+      "text": "“Average” voltage",
+      "type": "heading"
+    },
+    {
+      "id": "page-8-s0012",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\sqrt{\\overline{V^2}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0011"
+      ],
+      "spoken_math_alternative": "V R M S equals the square root of the average of V squared.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0013",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0013"
+      ],
+      "text": "FACT: the average value of sin² θ (or cos² θ) over a cycle is 1/2.",
+      "type": "paragraph"
+    },
+    {
+      "complexity": "complex",
+      "detailed_figure_description": "Hand-drawn graph with vertical axis y and horizontal axis t. The y-axis has a mark at 1. A repeating rounded waveform begins at zero, rises to approximately 1, returns to the axis, and repeats; portions dip slightly below the axis. The curve is labeled “Sin(ωt).”",
+      "figure_alternative": "Repeating waveform labeled Sin(ωt), plotted against time with a marked amplitude of 1.",
+      "id": "page-8-s0014",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0014"
+      ],
+      "type": "figure"
+    },
+    {
+      "id": "page-8-s0015",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0015"
+      ],
+      "text": "“average” →",
+      "type": "paragraph"
+    },
+    {
+      "id": "page-8-s0016",
+      "normalized_math": "\\left\\langle \\sin^2(\\omega t)\\right\\rangle=\\frac{1}{2}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0016"
+      ],
+      "spoken_math_alternative": "The average of sine squared of omega t equals one half.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0017",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\left(\\overline{V_0^2\\sin^2(\\omega t)}\\right)^{1/2}=\\left(V_0^2\\left(\\frac{1}{2}\\right)\\right)^{1/2}=\\frac{1}{\\sqrt{2}}V_0",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0018"
+      ],
+      "spoken_math_alternative": "V R M S equals the square root of the average of V naught squared sine squared of omega t, which equals the square root of V naught squared times one half, which equals V naught divided by the square root of two.",
+      "type": "formula"
+    },
+    {
+      "id": "page-8-s0018",
+      "normalized_math": "V_{\\mathrm{RMS}}=\\frac{V_0}{\\sqrt{2}}",
+      "page": 8,
+      "source_regions": [
+        "page-8-r0017"
+      ],
+      "spoken_math_alternative": "V R M S equals V naught divided by the square root of two.",
+      "type": "formula"
+    }
+  ],
+  "source_regions": [
+    {
+      "bbox_points": [
+        50.184,
+        0.80325,
+        343.944,
+        155.02725
+      ],
+      "id": "page-8-r0001",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        375.156,
+        44.982,
+        512.856,
+        82.73475
+      ],
+      "id": "page-8-r0002",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        465.12,
+        126.9135,
+        592.416,
+        310.85775
+      ],
+      "id": "page-8-r0003",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        118.728,
+        168.6825,
+        263.772,
+        200.00925
+      ],
+      "id": "page-8-r0004",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        109.548,
+        207.2385,
+        418.608,
+        237.762
+      ],
+      "id": "page-8-r0005",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        97.92,
+        249.0075,
+        358.632,
+        280.33425
+      ],
+      "id": "page-8-r0006",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        204.408,
+        288.36675,
+        292.536,
+        324.513
+      ],
+      "id": "page-8-r0007",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        75.888,
+        332.5455,
+        100.368,
+        352.62675
+      ],
+      "id": "page-8-r0008",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        116.892,
+        332.5455,
+        330.48,
+        355.0365
+      ],
+      "id": "page-8-r0009",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        118.116,
+        360.65925,
+        373.32,
+        396.00225
+      ],
+      "id": "page-8-r0010",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        203.796,
+        418.49325,
+        338.436,
+        455.44275
+      ],
+      "id": "page-8-r0011",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        43.452,
+        419.2965,
+        338.436,
+        456.246
+      ],
+      "id": "page-8-r0012",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        28.152,
+        465.885,
+        466.344,
+        524.52225
+      ],
+      "id": "page-8-r0013",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        55.692,
+        522.1125,
+        429.012,
+        639.387
+      ],
+      "id": "page-8-r0014",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        41.616,
+        658.665,
+        152.388,
+        698.8275
+      ],
+      "id": "page-8-r0015",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        127.296,
+        675.53325,
+        323.748,
+        718.1055
+      ],
+      "id": "page-8-r0016",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        479.196,
+        718.90875,
+        596.7,
+        779.1525
+      ],
+      "id": "page-8-r0017",
+      "page": 8
+    },
+    {
+      "bbox_points": [
+        43.452,
+        720.51525,
+        471.24,
+        775.9395
+      ],
+      "id": "page-8-r0018",
+      "page": 8
+    }
+  ],
+  "warnings": [
+    {
+      "code": "suspected-source-error",
+      "id": "page-8-w0001",
+      "message": "The graph is labeled “Sin(ωt),” but its predominantly nonnegative repeating shape and the surrounding discussion concern sin²(ωt); the visible label may be missing a superscript 2. The slight dips below zero are preserved in the description.",
+      "page": 8,
+      "semantic_nodes": [
+        "page-8-s0014"
+      ],
+      "source_regions": [
+        "page-8-r0014"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "nodes": [
+    {
+      "boxes": [
+        [
+          0.088,
+          0.03,
+          0.875,
+          0.143
+        ]
+      ],
+      "text": "Example: A steady current of 2.5 A is created in a wire for 1.0 minute. How much charge passed by any given point, and how many electrons would this be?",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.263,
+          0.159,
+          0.739,
+          0.208
+        ]
+      ],
+      "normalized_math": "I = \\frac{Q}{\\Delta t} \\;\\rightarrow\\; I = \\frac{2.5\\ \\mathrm{C}}{\\mathrm{s}} = \\frac{Q}{t}",
+      "spoken_math_alternative": "I equals Q divided by delta t, which leads to I equals 2.5 coulombs per second, equal to Q divided by t.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.127,
+          0.232,
+          0.619,
+          0.269
+        ]
+      ],
+      "normalized_math": "Q = I t = \\left(\\frac{2.5\\ \\mathrm{C}}{\\mathrm{s}}\\right)(60\\ \\mathrm{s}) = 150\\ \\mathrm{C}",
+      "spoken_math_alternative": "Q equals I times t, equal to 2.5 coulombs per second times 60 seconds, equal to 150 coulombs.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.163,
+          0.299,
+          0.359,
+          0.326
+        ]
+      ],
+      "text": "# of electrons:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.203,
+          0.333,
+          0.801,
+          0.383
+        ]
+      ],
+      "normalized_math": "N = (150\\ \\mathrm{C})\\left(\\frac{1\\ e^-}{1.6\\times10^{-19}\\ \\mathrm{C}}\\right) = 9.4\\times10^{20}\\ \\text{electrons}",
+      "spoken_math_alternative": "N equals 150 coulombs times one electron per 1.6 times 10 to the negative 19 coulombs, equal to 9.4 times 10 to the 20 electrons.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.173,
+          0.407,
+          0.307,
+          0.433
+        ]
+      ],
+      "text": "In moles:",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.14,
+          0.427,
+          0.907,
+          0.509
+        ]
+      ],
+      "normalized_math": "n = 9.4\\times10^{20}\\ \\text{electrons}\\left(\\frac{1}{6.022\\times10^{23}\\ \\text{electrons}/\\mathrm{mol}}\\right) = 0.0016\\ \\mathrm{mol}",
+      "spoken_math_alternative": "n equals 9.4 times 10 to the 20 electrons times one divided by 6.022 times 10 to the 23 electrons per mole, equal to 0.0016 mole.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.464,
+          0.524,
+          0.739,
+          0.553
+        ]
+      ],
+      "level": 1,
+      "text": "Electrical Resistance",
+      "type": "heading"
+    },
+    {
+      "boxes": [
+        [
+          0.077,
+          0.552,
+          0.41,
+          0.802
+        ]
+      ],
+      "complexity": "complex",
+      "detailed_figure_description": "A closed rectangular circuit contains a battery on the left and a zigzag resistor on the right. The battery is labeled V, with its upper terminal marked positive and its lower terminal marked negative. The resistor is labeled R. Multiple arrows labeled e⁻ show electron flow counterclockwise: rightward along the bottom wire, upward through the resistor side, leftward along the top wire, and downward along the battery side.",
+      "figure_alternative": "Battery-and-resistor circuit showing counterclockwise electron flow.",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.475,
+          0.585,
+          0.889,
+          0.656
+        ]
+      ],
+      "complexity": "simple",
+      "detailed_figure_description": null,
+      "figure_alternative": "The circuit symbol for a resistor: R followed by a horizontal wire with a zigzag section. An arrow labels it “circuit symbol.”",
+      "type": "figure"
+    },
+    {
+      "boxes": [
+        [
+          0.476,
+          0.668,
+          0.752,
+          0.716
+        ]
+      ],
+      "normalized_math": "\\text{UNIT: }\\Omega\\ \\text{ Ohm}",
+      "spoken_math_alternative": "Unit: omega, ohm.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.461,
+          0.714,
+          0.619,
+          0.771
+        ]
+      ],
+      "text": "Greek Omega",
+      "type": "paragraph"
+    },
+    {
+      "boxes": [
+        [
+          0.657,
+          0.72,
+          0.942,
+          0.775
+        ]
+      ],
+      "normalized_math": "[\\Omega] = \\left[\\frac{V}{A}\\right] = \\left[\\frac{J/C}{C/s}\\right]",
+      "spoken_math_alternative": "The units of ohms equal volts per ampere, equal joules per coulomb divided by coulombs per second.",
+      "type": "formula"
+    },
+    {
+      "boxes": [
+        [
+          0.087,
+          0.831,
+          0.915,
+          0.973
+        ]
+      ],
+      "text": "A resistor resists the flow of current. They’re often used to limit current in a part of a circuit. Wires themselves have some resistance, but we’ll usually ignore it.",
+      "type": "paragraph"
+    }
+  ],
+  "warnings": []
+}
